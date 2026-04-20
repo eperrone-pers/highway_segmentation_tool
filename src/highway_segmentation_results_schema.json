@@ -1,0 +1,483 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mottmac.com/schemas/highway-segmentation/results/v1.0.0",
+  "title": "Highway Segmentation Analysis Results",
+  "description": "Simplified schema for Highway Segmentation analysis results - Phase 1 implementation with essential features",
+  "version": "1.1.0",
+  "type": "object",
+  "required": ["analysis_metadata", "input_parameters", "route_results"],
+
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "format": "uri"
+    },
+
+    "analysis_metadata": {
+      "type": "object",
+      "title": "Analysis Context and Summary Statistics",
+      "required": ["timestamp", "analysis_method", "analysis_status", "input_file_info", "analysis_summary"],
+      "properties": {
+        "analysis_id": {
+          "type": "string",
+          "description": "Optional: Analysis identifier for tracking purposes"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Analysis start timestamp in ISO 8601 format"
+        },
+        "software_version": {
+          "type": "object",
+          "properties": {
+            "application": {
+              "type": "string",
+              "default": "Highway Segmentation"
+            },
+            "version": {
+              "type": "string",
+              "description": "Application version"
+            }
+          }
+        },
+        "analysis_method": {
+          "type": "string",
+          "description": "Optimization method key used for analysis (extensible - supports any configured method)"
+        },
+        "analysis_status": {
+          "type": "string",
+          "enum": ["completed", "failed", "partial", "interrupted"],
+          "description": "Final status of the analysis"
+        },
+        "input_file_info": {
+          "type": "object",
+          "title": "Input Data File Metadata",
+          "required": ["data_file_name", "total_data_rows", "total_routes_available", "column_info"],
+          "properties": {
+            "data_file_path": {
+              "type": "string",
+              "description": "Complete path to input data file"
+            },
+            "data_file_name": {
+              "type": "string",
+              "description": "Data file name without path"
+            },
+            "data_file_size_bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "File size in bytes"
+            },
+            "data_file_modified": {
+              "type": "string",
+              "format": "date-time",
+              "description": "File last modification timestamp"
+            },
+            "total_data_rows": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Total rows in input data file"
+            },
+            "total_routes_available": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Number of routes available in dataset"
+            },
+            "column_info": {
+              "type": "object",
+              "required": ["total_columns", "x_column", "y_column"],
+              "properties": {
+                "total_columns": {
+                  "type": "integer",
+                  "minimum": 3,
+                  "description": "Total columns in dataset"
+                },
+                "x_column": {
+                  "type": "string",
+                  "description": "Name of x-coordinate column"
+                },
+                "y_column": {
+                  "type": "string",
+                  "description": "Name of y-value column"
+                },
+                "route_column": {
+                  "type": ["string", "null"],
+                  "description": "Name of route identifier column (null for single route)"
+                }
+              }
+            }
+          }
+        },
+        "analysis_summary": {
+          "type": "object",
+          "title": "Analysis-Wide Summary Statistics",
+          "required": ["total_processing_time", "total_routes_processed", "total_length_processed"],
+          "properties": {
+            "total_processing_time": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Total analysis runtime in seconds"
+            },
+            "total_routes_processed": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Number of routes successfully analyzed"
+            },
+            "total_length_processed": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Total route length analyzed (miles/km)"
+            },
+            "total_segments_generated": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Optional: Total segments across all routes"
+            },
+            "total_breakpoints_generated": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Optional: Total breakpoints across all routes"
+            },
+            "total_pareto_points": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Optional: Total pareto points across all routes"
+            },
+            "average_processing_time_per_route": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Optional: Average processing time per route"
+            },
+            "total_data_points_processed": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Optional: Total input data points processed"
+            },
+            "total_gaps_identified": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Optional: Total data gaps found across all routes"
+            },
+            "average_segments_per_route": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Optional: Average segments per route"
+            }
+          }
+        }
+      }
+    },
+
+    "method_specific_analysis_stats": {
+      "type": "object",
+      "title": "Method-Specific Analysis Statistics",
+      "description": "Optional post-analysis method-specific data about the full analysis. Each optimization method can populate this with their own performance metrics and statistics.",
+      "additionalProperties": true,
+      "patternProperties": {
+        ".*": {
+          "anyOf": [
+            {"type": "string"},
+            {"type": "number"},
+            {"type": "boolean"},
+            {"type": "array"},
+            {"type": "object"}
+          ]
+        }
+      }
+    },
+    "input_parameters": {
+      "type": "object",
+      "title": "Complete Reproducibility Parameters",
+      "required": ["optimization_method_config", "method_parameters", "route_processing"],
+      "properties": {
+        "optimization_method_config": {
+          "type": "object",
+          "title": "Method Identification",
+          "required": ["method_key", "display_name"],
+          "properties": {
+            "method_key": {
+              "type": "string",
+              "description": "Internal method identifier"
+            },
+            "display_name": {
+              "type": "string",
+              "description": "Human-readable method name"
+            },
+            "description": {
+              "type": "string",
+              "description": "Detailed method description"
+            }
+          }
+        },
+        "method_parameters": {
+          "type": "object",
+          "title": "Extensible Method Parameters",
+          "description": "Complete parameter set for the optimization method - extensible to support any future method",
+          "patternProperties": {
+            ".*": {
+              "anyOf": [
+                {"type": "string"},
+                {"type": "number"},
+                {"type": "boolean"},
+                {"type": "array"},
+                {"type": "object"}
+              ]
+            }
+          },
+          "additionalProperties": true
+        },
+        "route_processing": {
+          "type": "object",
+          "title": "Route Selection and Processing Configuration", 
+          "required": ["route_mode", "selected_routes"],
+          "properties": {
+            "route_mode": {
+              "type": "string",
+              "enum": ["single_route", "multi_route"],
+              "description": "Route processing mode"
+            },
+            "route_column": {
+              "type": ["string", "null"],
+              "description": "Route identifier column name"
+            },
+            "x_column": {
+              "type": "string",
+              "description": "X-coordinate column name"
+            },
+            "y_column": {
+              "type": "string",
+              "description": "Y-value column name"
+            },
+            "selected_routes": {
+              "type": "array",
+              "items": {"type": "string"},
+              "minItems": 1,
+              "description": "Array of route IDs to process"
+            },
+            "route_filtering_applied": {
+              "type": "boolean",
+              "description": "Whether route filtering was used to select subset of available routes"
+            },
+            "total_routes_in_source": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Total routes available in source data"
+            },
+            "total_routes_processed": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Number of routes actually processed"
+            }
+          }
+        }
+      }
+    },
+    "route_results": {
+      "type": "array",
+      "title": "Per-Route Analysis Results",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["route_info", "input_data_analysis", "processing_results"],
+        "properties": {
+          "route_info": {
+            "type": "object",
+            "title": "Route Identification",
+            "required": ["route_id"],
+            "properties": {
+              "route_id": {
+                "type": "string",
+                "description": "Unique route identifier"
+              }
+            }
+          },
+          "input_data_analysis": {
+            "type": "object",
+            "title": "Route Data Analysis",
+            "required": ["data_summary", "gap_analysis", "mandatory_segments"],
+            "properties": {
+              "data_summary": {
+                "type": "object",
+                "required": ["total_data_points", "data_range"],
+                "properties": {
+                  "total_data_points": {
+                    "type": "integer",
+                    "minimum": 3,
+                    "description": "Data points for this route"
+                  },
+                  "data_range": {
+                    "type": "object",
+                    "required": ["x_min", "x_max", "y_min", "y_max"],
+                    "properties": {
+                      "x_min": {"type": "number"},
+                      "x_max": {"type": "number"},
+                      "y_min": {"type": "number"},
+                      "y_max": {"type": "number"}
+                    }
+                  }
+                }
+              },
+              "gap_analysis": {
+                "type": "object",
+                "required": ["gap_segments", "total_gaps"],
+                "properties": {
+                  "gap_segments": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": ["start", "end", "length"],
+                      "properties": {
+                        "start": {"type": "number"},
+                        "end": {"type": "number"},
+                        "length": {"type": "number", "minimum": 0}
+                      }
+                    }
+                  },
+                  "total_gaps": {"type": "integer", "minimum": 0},
+                  "total_gap_length": {"type": "number", "minimum": 0},
+                  "largest_gap": {"type": "number", "minimum": 0},
+                  "gap_threshold_used": {"type": "number", "minimum": 0},
+                  "breakpoint_consolidation": {
+                    "type": "object",
+                    "properties": {
+                      "original_breakpoints": {
+                        "type": "array",
+                        "items": {"type": "number"}
+                      },
+                      "removed_breakpoints": {
+                        "type": "array",
+                        "items": {"type": "number"}
+                      },
+                      "consolidation_reason": {"type": "string"}
+                    }
+                  }
+                }
+              },
+              "mandatory_segments": {
+                "type": "object",
+                "required": ["mandatory_breakpoints", "analyzable_segments"],
+                "properties": {
+                  "mandatory_breakpoints": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "minItems": 2,
+                    "description": "Breakpoints that must be preserved in all solutions"
+                  },
+                  "analyzable_segments": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": ["start", "end", "length", "type"],
+                      "properties": {
+                        "start": {"type": "number"},
+                        "end": {"type": "number"}, 
+                        "length": {"type": "number", "minimum": 0},
+                        "type": {"type": "string", "enum": ["data", "boundary"]}
+                      }
+                    }
+                  },
+                  "total_analyzable_length": {"type": "number", "minimum": 0}
+                }
+              }
+            }
+          },
+          "processing_results": {
+            "type": "object",
+            "title": "Unified Pareto Results",
+            "required": ["pareto_points"],
+            "properties": {
+              "pareto_points": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "required": ["point_id", "objective_values"],
+                  "properties": {
+                    "point_id": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "description": "Sequential pareto point identifier"
+                    },
+                    "objective_values": {
+                      "type": "array",
+                      "items": {"type": "number"},
+                      "minItems": 1,
+                      "description": "Objective function values (1 for single-objective, multiple for multi-objective)"
+                    },
+                    "segmentation": {
+                      "type": "object",
+                      "required": ["breakpoints", "segment_lengths"],
+                      "properties": {
+                        "breakpoints": {
+                          "type": "array",
+                          "items": {"type": "number"},
+                          "minItems": 2,
+                          "description": "All breakpoints including mandatory + optimization-generated"
+                        },
+                        "segment_lengths": {
+                          "type": "array",
+                          "items": {"type": "number", "minimum": 0},
+                          "description": "Length of each segment"
+                        },
+                        "segment_count": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "description": "Total number of segments"
+                        },
+                        "total_length": {
+                          "type": "number",
+                          "minimum": 0,
+                          "description": "Total route length"
+                        },
+                        "average_segment_length": {
+                          "type": "number",
+                          "minimum": 0,
+                          "description": "Average segment length"
+                        },
+                        "segment_details": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "segment_index": {"type": "integer", "minimum": 0},
+                              "start": {"type": "number"},
+                              "end": {"type": "number"},
+                              "length": {"type": "number", "minimum": 0},
+                              "is_mandatory": {"type": "boolean"},
+                              "data_point_count": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "description": "Number of original data points within this segment"
+                              },
+                              "y_value_min": {
+                                "type": ["number", "null"],
+                                "description": "Minimum Y value among data points in this segment (null if no data points)"
+                              },
+                              "y_value_max": {
+                                "type": ["number", "null"],
+                                "description": "Maximum Y value among data points in this segment (null if no data points)"
+                              },
+                              "y_value_avg": {
+                                "type": ["number", "null"],
+                                "description": "Average Y value among data points in this segment (null if no data points)"
+                              },
+                              "y_value_std": {
+                                "type": ["number", "null"],
+                                "description": "Standard deviation of Y values in this segment (null if fewer than 2 points)"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+
+  "additionalProperties": false
+}

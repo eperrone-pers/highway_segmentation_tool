@@ -1,0 +1,12 @@
+# Regression test outputs - generated during testing
+outputs/
+*.json  
+*.xlsx
+*.csv
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+__pycache__/
+.pytest_cache/

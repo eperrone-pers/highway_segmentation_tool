@@ -1,0 +1,37 @@
+# Core dependencies
+numpy>=1.21.0
+pandas>=1.5.0
+matplotlib>=3.5.0
+
+# Statistical analysis dependencies  
+scipy>=1.9.0
+
+# Excel export functionality
+openpyxl>=3.0.0
+
+# GUI framework (typically included with Python)
+# tkinter  # Built into Python standard library
+
+# Enhanced features
+markdown>=3.0
+
+# JSON schema validation (used in extensible results)
+jsonschema>=4.17.0
+
+# Path handling utilities (Python 3.4+)
+# pathlib  # Built into Python standard library
+
+# Data handling and type hints (Python 3.8+)
+# typing  # Built into Python standard library
+# dataclasses  # Built into Python standard library
+
+# Testing Framework
+pytest>=7.0.0
+pytest-cov>=4.0.0
+pytest-mock>=3.10.0
+pytest-benchmark>=4.0.0
+
+# Additional testing utilities
+parameterized>=0.8.1
+factory-boy>=3.2.0  # For test data generation
+faker>=18.0.0       # For generating fake realistic data

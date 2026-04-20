@@ -1,0 +1,55 @@
+[tool.pytest.ini_options]
+# Pytest configuration for Highway Segmentation GA Phase 1 tests
+
+# Test discovery
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
+# Markers for test organization
+markers = [
+    "unit: Unit tests for individual components",
+    "integration: Integration tests for component interactions", 
+    "ui: UI and dialog tests",
+    "phase1: Phase 1 multi-route processing tests",
+    "route: Route processing functionality tests",
+    "data_dependent: Tests that require external data files",
+    "slow: Tests that take significant time to run",
+    "mock_only: Tests using only mock objects",
+    "file_io: Tests involving file system operations"
+]
+
+# Test output configuration
+addopts = [
+    "-ra",  # Show short test summary for all outcomes
+    "--strict-markers",  # Require all markers to be defined
+    "--strict-config",  # Require configuration to be valid
+    "--tb=short",  # Short traceback format
+    "-v",  # Verbose output
+    "--durations=10",  # Show 10 slowest tests
+    "--color=yes",  # Colored output
+    "--disable-warnings"  # Disable warnings for cleaner output
+]
+
+# Minimum version requirements
+minversion = "6.0"
+
+# Filter warnings
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+    "ignore:.*tkinter.*:UserWarning"
+]
+
+# Log configuration
+log_cli = true
+log_cli_level = "INFO"
+log_cli_format = "%(asctime)s [%(levelname)8s] %(name)s: %(message)s"
+log_cli_date_format = "%Y-%m-%d %H:%M:%S"
+
+# Timeout for long-running tests
+timeout = 300
+
+# Coverage configuration (optional - can be enabled later)
+# addopts = ["--cov=src", "--cov-report=html", "--cov-report=term-missing"]

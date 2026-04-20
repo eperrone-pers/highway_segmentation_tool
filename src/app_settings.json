@@ -1,0 +1,66 @@
+{
+  "files": {
+    "data_file_path": "C:/Users/PER97076/OneDrive - Mott MacDonald/Documents/SegmentationTool/highway_segmentation_tool/data/AndreTestMultiRoute.csv",
+    "save_file_path": "C:/Users/PER97076/OneDrive - Mott MacDonald/Documents/SegmentationTool/highway_segmentation_tool/Results/init_test.json"
+  },
+  "optimization": {
+    "optimization_method": "multi",
+    "population_size": 100,
+    "num_generations": 100,
+    "min_length": 0.5,
+    "max_length": 5.0,
+    "gap_threshold": 0.5,
+    "mutation_rate": 0.05,
+    "crossover_rate": 0.8,
+    "elite_ratio": 0.05,
+    "target_avg_length": 2.0,
+    "penalty_weight": 1000.0,
+    "length_tolerance": 0.2,
+    "cache_clear_interval": 50,
+    "enable_performance_stats": true,
+    "custom_save_name": "init_test",
+    "alpha": 0.05,
+    "method": 2,
+    "use_segment_length": true,
+    "min_segment_datapoints": 50,
+    "max_segments": null,
+    "min_section_difference": 1.0,
+    "dynamic_parameters_by_method": {
+      "multi": {
+        "min_length": 0.5,
+        "max_length": 5.0,
+        "population_size": 100,
+        "num_generations": 100,
+        "crossover_rate": 0.8,
+        "mutation_rate": 0.05,
+        "cache_clear_interval": 50,
+        "enable_performance_stats": true
+      }
+    },
+    "use_asymmetric_penalty": true,
+    "above_target_penalty_multiplier": 0.8,
+    "below_target_penalty_multiplier": 1.5,
+    "enable_diagnostic_output": false
+  },
+  "ui_state": {
+    "selected_columns": [],
+    "window_geometry": "1100x700+52+52",
+    "last_data_directory": "",
+    "last_save_directory": "",
+    "x_column": "BDFO",
+    "y_column": "SCI",
+    "route_column": "RDB",
+    "selected_routes": [],
+    "gap_threshold": 0.5
+  },
+  "advanced": {
+    "nsga2_settings": {
+      "diversity_metric": "crowding_distance",
+      "selection_pressure": 2.0
+    },
+    "constraint_settings": {
+      "max_constraint_violations": 5,
+      "penalty_factor": 1.0
+    }
+  }
+}
