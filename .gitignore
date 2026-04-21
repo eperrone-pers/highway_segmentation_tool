@@ -70,6 +70,7 @@ Thumbs.db
 # Project-specific
 Results/
 data/
+deliverables/
 *.log
 *.csv.bak
 *.res.bak

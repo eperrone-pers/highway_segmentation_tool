@@ -761,13 +761,12 @@ class OptimizationMethodConfig:
     method_key: str                          # Internal identifier (e.g., "single", "multi", "constrained")
     display_name: str                        # User-friendly name for dropdown
     description: str                         # Tooltip/help description for users
-    runner_function: str                     # Function name in optimization_runners module
     parameters: List[ParameterDefinition]    # Complete parameter list for this method
     return_type: str                         # "single_objective" or "multi_objective" (controls visualization)
 
-    # Preferred dispatch mechanism (Option 2A): importable method class path
+    # Dispatch mechanism: importable method class path
     # Example: "analysis.methods.aashto_cda.AashtoCdaMethod"
-    method_class_path: Optional[str] = None
+    method_class_path: str
     
     # Optional visualization configuration (backwards compatible)
     objective_names: Optional[List[str]] = None           # Names for objectives in plots (e.g., ["Data Fit", "Segment Count"])
@@ -786,7 +785,6 @@ OPTIMIZATION_METHODS = [
         method_key="single",
         display_name="Single-Objective GA",
         description="Traditional genetic algorithm focused on minimizing data deviation only. Fast convergence, single best solution.",
-        runner_function="run_single_objective",
         parameters=SINGLE_OBJECTIVE_GA_PARAMETERS,
         return_type="single_objective",  # Shows segmentation graph only
         method_class_path="analysis.methods.single_objective.SingleObjectiveMethod",
@@ -795,7 +793,6 @@ OPTIMIZATION_METHODS = [
         method_key="multi", 
         display_name="Multi-Objective NSGA-II",
         description="Pareto front optimization exploring trade-offs between total deviation and average segment length. Multiple optimal solutions.",
-        runner_function="run_nsga2",
         parameters=MULTI_OBJECTIVE_NSGA2_PARAMETERS,
         return_type="multi_objective",  # Shows pareto front + segmentation graph
         method_class_path="analysis.methods.multi_objective.MultiObjectiveMethod",
@@ -821,7 +818,6 @@ OPTIMIZATION_METHODS = [
         method_key="constrained",
         display_name="Constrained Single-Objective", 
         description="Target-length optimization with penalty-based fitness for specific average segment length requirements.",
-        runner_function="run_constrained_single_objective",
         parameters=CONSTRAINED_SINGLE_OBJECTIVE_PARAMETERS,
         return_type="single_objective",  # Shows segmentation graph only
         method_class_path="analysis.methods.constrained.ConstrainedMethod",
@@ -830,7 +826,6 @@ OPTIMIZATION_METHODS = [
         method_key="aashto_cda",
         display_name="AASHTO CDA Statistical Analysis",
         description="Enhanced AASHTO Cumulative Difference Approach for deterministic statistical change point detection. Fast, statistically-justified segmentation without evolutionary computation.",
-        runner_function="run_aashto_cda",
         parameters=AASHTO_CDA_PARAMETERS,
         return_type="single_objective",  # Shows segmentation graph only
         method_class_path="analysis.methods.aashto_cda.AashtoCdaMethod",
@@ -841,18 +836,18 @@ OPTIMIZATION_METHODS = [
     #     method_key="deterministic",
     #     display_name="Deterministic Breakpoint Detection",
     #     description="Statistical analysis-based deterministic segmentation without evolutionary computation.",
-    #     runner_function="run_deterministic_breakpoint",
     #     parameters=DETERMINISTIC_BREAKPOINT_PARAMETERS,  # No GA parameters at all!
-    #     return_type="single_objective"  # Shows segmentation graph only
+    #     return_type="single_objective",  # Shows segmentation graph only
+    #     method_class_path="analysis.methods.deterministic.DeterministicMethod",
     # ),
     #
     # OptimizationMethodConfig(
     #     method_key="machine_learning",
     #     display_name="ML-Based Segmentation", 
     #     description="Machine learning approach using trained models for pattern recognition.",
-    #     runner_function="run_ml_segmentation",
     #     parameters=ML_SEGMENTATION_PARAMETERS,  # Completely different parameter set!
-    #     return_type="single_objective"  # Shows segmentation graph only  
+    #     return_type="single_objective",  # Shows segmentation graph only
+    #     method_class_path="analysis.methods.ml_segmentation.MlSegmentationMethod",
     # )
 ]
 
@@ -868,12 +863,11 @@ def get_optimization_method(method_key: str) -> OptimizationMethodConfig:
 def resolve_method_class(method_key: str) -> Type:
     """Resolve a configured analysis method class from `OptimizationMethodConfig.method_class_path`.
 
-    This is the foundation for Option 2A (config-driven dispatch). The controller
-    may use this in the future to avoid hardcoded per-method branches.
+    Used for config-driven dispatch via an importable class path.
     """
     method_config = get_optimization_method(method_key)
-    class_path = getattr(method_config, 'method_class_path', None)
-    if not class_path or not isinstance(class_path, str):
+    class_path = method_config.method_class_path
+    if not class_path:
         raise ValueError(
             f"Method '{method_key}' is missing a valid method_class_path in OPTIMIZATION_METHODS"
         )

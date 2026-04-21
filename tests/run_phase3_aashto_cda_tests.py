@@ -103,36 +103,45 @@ def main():
     # Test configurations
     test_configs = []
     
+    unit_test_path = Path('tests/unit/test_aashto_cda_method.py')
+    integration_test_path = Path('tests/integration/test_aashto_cda_integration.py')
+
     if not args.integration_only:
-        test_configs.append({
-            'name': 'AASHTO CDA Unit Tests',
-            'cmd': ['python', '-m', 'pytest', 'tests/unit/test_aashto_cda_method.py', '-v'],
-            'description': 'Core algorithm and method class unit tests'
-        })
+        if unit_test_path.exists():
+            test_configs.append({
+                'name': 'AASHTO CDA Unit Tests',
+                'cmd': [sys.executable, '-m', 'pytest', str(unit_test_path), '-v'],
+                'description': 'Core algorithm and method class unit tests'
+            })
+        else:
+            print(f"(skipping) Unit test file not found: {unit_test_path}")
     
     if not args.unit_only:
-        test_configs.append({
-            'name': 'AASHTO CDA Integration Tests', 
-            'cmd': ['python', '-m', 'pytest', 'tests/integration/test_aashto_cda_integration.py', '-v'],
-            'description': 'Framework integration and workflow tests'
-        })
+        if integration_test_path.exists():
+            test_configs.append({
+                'name': 'AASHTO CDA Integration Tests',
+                'cmd': [sys.executable, '-m', 'pytest', str(integration_test_path), '-v'],
+                'description': 'Framework integration and workflow tests'
+            })
+        else:
+            print(f"(skipping) Integration test file not found: {integration_test_path}")
         
         # Configuration registry tests
         test_configs.append({
             'name': 'Configuration Registry Tests',
-            'cmd': ['python', '-m', 'pytest', '-k', 'aashto_cda', 'tests/quick_controller_test.py', '-v'],
+            'cmd': [sys.executable, '-m', 'pytest', '-k', 'aashto_cda', 'tests/quick_controller_test.py', '-v'],
             'description': 'Method registry and parameter configuration tests'
         })
     
     # Import validation test (quick check)
     test_configs.insert(0, {
         'name': 'Import Validation',
-        'cmd': ['python', '-c', 
-               'from src.config import get_optimization_method; '
-               'from src.optimization_runners import run_aashto_cda; '
-               'from src.analysis.methods.aashto_cda import AashtoCdaMethod; '
-               'print("✓ All AASHTO CDA imports successful")'],
-        'description': 'Validate all AASHTO CDA imports work correctly'
+         'cmd': [sys.executable, '-c',
+             'from config import resolve_method_class; '
+             'cls = resolve_method_class("aashto_cda"); '
+             'cls(); '
+             'print("✓ AASHTO CDA method_class_path import/instantiate successful")'],
+         'description': 'Validate AASHTO CDA dispatch import path works'
     })
     
     # Run all test configurations

@@ -397,7 +397,7 @@ class OptimizationController:
             route_data_points = len(data.route_data)
             self.app.log_message(f"Route {route_id}: Running {method_config.display_name} ({route_data_points} points)")
 
-            # Dispatch is now configuration-driven via method_class_path (Option 2A)
+            # Dispatch is configuration-driven via method_class_path
             analysis_result = None
             try:
                 cls = resolve_method_class(method_key)

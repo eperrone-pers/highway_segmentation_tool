@@ -2,7 +2,7 @@
 
 Audience: Python developers extending the Highway Segmentation GA application.
 
-This document is **not** about how your algorithm works internally. It is about **how to connect your algorithm to the system** so that:
+This document describes **how to connect a new analysis method to the system** so that:
 
 - it appears in the GUI,
 - its parameters are validated and rendered dynamically,
@@ -17,20 +17,20 @@ Section 6 includes the **multi-objective** example (showing Pareto outputs and m
 
 ---
 
-## 1) What this software does (purpose)
+## 1) Method inputs and outputs
 
-At its core, this application turns a stream of route data (an $x$ axis like milepoint and a measured $y$ value) into a **segmentation** of the route.
+Each analysis method consumes route data and produces a segmentation.
 
-In practice that means each analysis method produces:
+In practice, each analysis method produces:
 
 - A **list of breakpoint locations** (milepoints) that define the segment boundaries.
 - (Optionally) per-segment statistics (length, mean value, etc.).
 
-The whole point of the extensible architecture is that you can implement **your own breakpoint-selection method** (GA, NSGA-II, statistical CDA, ML, rules-based, etc.) and then register it so it appears in the GUI, runs under the controller, exports JSON, and visualizes correctly.
+You can implement **your own breakpoint-selection method** (GA, NSGA-II, statistical CDA, ML, rules-based, etc.) and register it so it appears in the GUI, runs under the controller, exports JSON, and visualizes correctly.
 
-## 2) The extensible design (what is configurable?)
+## 2) Files and configuration involved
 
-At a high level the application is split into:
+The application is split into:
 
 1. **Method configuration (declarative)**
    - Defines what methods exist and what parameters they expose.
@@ -40,9 +40,9 @@ At a high level the application is split into:
    - The actual algorithm, implemented as a class deriving from `AnalysisMethodBase`.
    - Lives in `src/analysis/methods/<your_method>.py`.
 
-3. **Controller dispatch (runtime wiring)**
+3. **Controller dispatch (runtime method selection)**
     - Chooses which method to instantiate and run based on the GUI-selected `method_key`.
-    - In the current architecture, this is **config-driven** via `OptimizationMethodConfig.method_class_path` (no per-method `elif` branches).
+    - Dispatch is **config-driven** via `OptimizationMethodConfig.method_class_path`.
     - Lives in `src/optimization_controller.py` (dispatch) and `src/config.py` (registry + class resolver).
 
 4. **Results export**
@@ -53,9 +53,7 @@ At a high level the application is split into:
    - Determines whether to show Pareto plots based on the configured `return_type`.
    - Lives in `src/enhanced_visualization.py`.
 
-### 1.1 Runtime flow (mental model)
-
-The diagram below is intentionally **generic**. When you add a method, it plugs into the same dispatch / results / export pipeline.
+### 1.1 Runtime flow
 
 ```mermaid
 flowchart TD
@@ -77,9 +75,9 @@ flowchart TD
 
 ---
 
-### 1.2 AASHTO CDA wiring (single-objective example)
+### 1.2 AASHTO CDA integration (single-objective example)
 
-This diagram focuses only on the **AASHTO CDA** method and the specific configuration points it uses.
+This diagram focuses on the **AASHTO CDA** method and the configuration points it uses.
 
 ```mermaid
 flowchart TD
@@ -99,7 +97,7 @@ flowchart TD
 
 ---
 
-## 3) The “extension points” you must touch
+## 3) Extension points
 
 When you add a new method, the system expects you to provide **four** things:
 
@@ -108,7 +106,9 @@ When you add a new method, the system expects you to provide **four** things:
 3. A **method implementation** deriving from `AnalysisMethodBase` that returns an `AnalysisResult`
 4. A **config registry entry** that points at your implementation via `method_class_path`
 
-Note: with Option 2A, you do **not** add per-method branches in the controller.
+The controller dispatches methods by importing the class specified by `OptimizationMethodConfig.method_class_path`.
+
+Method registry entries are validated at app startup via `validate_optimization_method_registry()` (called from `src/gui_main.py`).
 
 ---
 
@@ -123,15 +123,14 @@ Each method registered in `OPTIMIZATION_METHODS` is an `OptimizationMethodConfig
 - `method_key` (str): Internal identifier. This is what the GUI/controller store and what JSON export persists as the analysis method.
 - `display_name` (str): User-facing name shown in the dropdown.
 - `description` (str): Help/tooltip text shown in the UI.
-- `runner_function` (str): Name of a runner function. Note: retained for backward compatibility/documentation, but the controller does not use it for dispatch.
-- `method_class_path` (optional str): Importable Python path to the analysis method class (example: `"analysis.methods.aashto_cda.AashtoCdaMethod"`). This is the **preferred dispatch mechanism** (Option 2A).
+- `method_class_path` (str): Importable Python path to the analysis method class (example: `"analysis.methods.aashto_cda.AashtoCdaMethod"`). Used for dispatch.
 - `parameters` (`List[ParameterDefinition]`): The complete list of method-specific parameters.
   - This drives both dynamic UI creation and validation.
 - `return_type` (str): Controls high-level behavior.
   - Supported values in this repo: `"single_objective"` and `"multi_objective"`.
-- `objective_names` / `objective_descriptions` (optional): Backwards-compatible objective metadata.
-  - Note: These fields exist in config but are not currently consumed by the enhanced visualization.
-- `objective_plot_configs` (optional): The preferred, per-objective plotting configuration for multi-objective methods.
+- `objective_names` / `objective_descriptions` (optional): Objective metadata.
+    - These fields exist in config but are not currently consumed by the enhanced visualization.
+- `objective_plot_configs` (optional): The preferred, per-objective plotting configuration for multi-objective methods (see `ObjectivePlotConfig` below).
 
 #### `ParameterDefinition` and parameter types (method parameters)
 
@@ -183,14 +182,12 @@ Fields:
     - `"negate"` only.
   - Behavior for `transform="negate"`:
     - Values are multiplied by `-1` before plotting.
-    - This is used for the NSGA-II method where deviation is stored as a negative number (GA maximizes a negative value to minimize deviation).
+    - This is used for the methods where an objective used for the pareto might be negated in order to either maximize or minimize aa value (Many optmizations maximizes a negative value to minimize a score).
 - `reverse_scale` (bool): Defined in config, but not currently used by the enhanced visualization.
-
-Concrete implementation detail (current behavior): the enhanced visualization checks `transform == 'negate'` and negates the objective values before plotting.
 
 ## 4) Step-by-step: AASHTO CDA as a single-objective method
 
-### Step 0 — Choose your `method_key` and `return_type`
+### Step 1 — Choose your `method_key` and `return_type`
 
 Your `method_key` is used everywhere:
 
@@ -211,7 +208,6 @@ OptimizationMethodConfig(
     method_key="aashto_cda",
     display_name="AASHTO CDA Statistical Analysis",
     description="Enhanced AASHTO Cumulative Difference Approach for deterministic statistical change point detection. Fast, statistically-justified segmentation without evolutionary computation.",
-    runner_function="run_aashto_cda",
     parameters=AASHTO_CDA_PARAMETERS,
     return_type="single_objective",  # Shows segmentation graph only
     method_class_path="analysis.methods.aashto_cda.AashtoCdaMethod",
@@ -225,7 +221,7 @@ Notes:
 
 ---
 
-### Step 1 — Define your method parameters (dynamic UI + validation)
+### Step 2 — Define your method parameters (dynamic UI + validation)
 
 Parameters are defined as `ParameterDefinition` instances in `src/config.py`. AASHTO CDA provides a concrete pattern for a non-GA deterministic method.
 
@@ -305,27 +301,9 @@ Where it is used:
 - `src/parameter_manager.py` validates parameters by iterating `method_config.parameters`
 - `src/ui_builder.py` creates parameter widgets dynamically from the same list
 
-Example (validation loop):
-
-```python
-# src/parameter_manager.py
-method_config = get_optimization_method(method_key)
-params = self.get_optimization_parameters()
-
-for param_def in method_config.parameters:
-    if param_def.name not in params:
-        if getattr(param_def, 'required', True):
-            errors.append(f"Missing required parameter: {param_def.display_name}")
-        continue
-
-    ok, msg = param_def.validate_value(params.get(param_def.name))
-    if not ok and msg:
-        errors.append(msg)
-```
-
 ---
 
-### Step 2 — Register your method in the config registry
+### Step 3 — Register your method in the config registry
 
 To make the method appear in the GUI dropdown and be recognized system-wide, you must add an entry to `OPTIMIZATION_METHODS`.
 
@@ -339,7 +317,6 @@ OPTIMIZATION_METHODS = [
         method_key="aashto_cda",
         display_name="AASHTO CDA Statistical Analysis",
         description="...",
-        runner_function="run_aashto_cda",
         parameters=AASHTO_CDA_PARAMETERS,
         return_type="single_objective",
         method_class_path="analysis.methods.aashto_cda.AashtoCdaMethod"
@@ -355,9 +332,14 @@ Important fields:
 - `return_type`: drives visualization behavior
 - `method_class_path`: tells the controller what class to import and run
 
+Dispatch configuration (no controller code changes):
+
+- You add `method_class_path="analysis.methods.your_method.YourMethod"` in `OPTIMIZATION_METHODS`.
+- The controller imports and instantiates that class at runtime (and the app validates these paths at startup).
+
 ---
 
-### Step 3 — Implement the method (derive from `AnalysisMethodBase`)
+### Step 4 — Implement the method (derive from `AnalysisMethodBase`)
 
 All methods should implement:
 
@@ -389,9 +371,9 @@ class AashtoCdaMethod(AnalysisMethodBase):
         return AnalysisResult(...)
 ```
 
-#### 3.1 Pull parameter defaults from config (single source of truth)
+#### 3.1 Pull parameter defaults from config
 
-AASHTO CDA intentionally **does not hardcode literals** for defaults; it reads defaults from `config.py`:
+AASHTO CDA reads defaults from `config.py`:
 
 ```python
 # src/analysis/methods/aashto_cda.py
@@ -402,8 +384,6 @@ alpha = kwargs.get('alpha', param_defaults['alpha'])
 method = kwargs.get('method', param_defaults['method'])
 use_segment_length = kwargs.get('use_segment_length', param_defaults['use_segment_length'])
 ```
-
-This pattern is recommended for new methods.
 
 #### 3.2 Return results in the unified `AnalysisResult` format
 
@@ -443,29 +423,10 @@ return AnalysisResult(
 )
 ```
 
-Practical guidance for new methods:
+Output contract:
 
-- Required output contract: each solution must include breakpoint locations in `'chromosome'` (sorted list of milepoints including start and end).
-- Optional: include per-segment records/stats if your method already computes them (useful for export and downstream reporting).
-- Always include `input_parameters` for traceability.
-
----
-
-### Step 4 — No controller wiring required (Option 2A)
-
-With Option 2A enabled, you do **not** add per-method branches to `src/optimization_controller.py`.
-
-Instead:
-
-- You add `method_class_path="analysis.methods.your_method.YourMethod"` in `OPTIMIZATION_METHODS`.
-- The controller imports and instantiates that class at runtime.
-
-The established calling convention remains the same:
-
-- The framework passes `(data, route_id, x_column, y_column, gap_threshold)` positionally.
-- Everything else flows through `**kwargs`.
-
-Implementation detail (current behavior): the application validates all configured `method_class_path` values at startup (see `validate_optimization_method_registry()` in `src/config.py`, called from `src/gui_main.py`).
+- Each solution must include breakpoint locations in `'chromosome'` (sorted list of milepoints including start and end).
+- Include `input_parameters` for reproducibility.
 
 ---
 
@@ -500,7 +461,7 @@ Use this checklist when you build your own method (not CDA):
 
 ## 6) Multi-objective example (NSGA-II)
 
-This section shows how the existing **multi-objective** method is wired and how it differs from the single-objective CDA example.
+This section shows how the existing **multi-objective** method is configured and how it differs from the single-objective CDA example.
 
 The core differences are:
 
@@ -518,7 +479,6 @@ OptimizationMethodConfig(
     method_key="multi",
     display_name="Multi-Objective NSGA-II",
     description="Pareto front optimization exploring trade-offs between total deviation and average segment length. Multiple optimal solutions.",
-    runner_function="run_nsga2",
     parameters=MULTI_OBJECTIVE_NSGA2_PARAMETERS,
     return_type="multi_objective",  # Shows pareto front + segmentation graph
     method_class_path="analysis.methods.multi_objective.MultiObjectiveMethod",
@@ -541,21 +501,18 @@ OptimizationMethodConfig(
 )
 ```
 
-Key takeaway:
-
-- The method returns raw GA objective values (including negative deviation), and the **configuration** provides the plotting/interpretation transforms.
+The method returns raw GA objective values (including negative deviation). The configuration provides plotting/interpretation transforms.
 
 What `transform="negate"` means (current implementation):
 
 - In the enhanced visualization (`update_pareto_graph`), if an objective config has `transform == 'negate'`, the plotted values are negated before display.
-- This lets the GA store “minimize deviation” as “maximize negative deviation” internally, while still showing a positive deviation axis to the user.
-- Today, `"negate"` is the only transform implemented in the visualization.
+- `"negate"` is the only transform implemented in the visualization.
 
 ### 6.2 Dispatch behavior (config-driven)
 
 For multi-objective methods, the controller still invokes `run_analysis(...)` the same way, but it selects the implementation class via `method_class_path`.
 
-What matters for adding your own multi-objective method:
+Requirements:
 
 - Keep the same `run_analysis(data, route_id, x_column, y_column, gap_threshold, **kwargs)` calling convention.
 - Put the **full Pareto set** in `AnalysisResult.all_solutions`.
@@ -600,14 +557,14 @@ return AnalysisResult(
 )
 ```
 
-Recommended pattern for your own multi-objective method:
+Multi-objective output structure:
 
 - Put the objective vector in both `fitness` and `objective_values` as a list in a consistent order.
-- Put any “human-meaningful” derived metrics (like segment count, average segment length) as separate scalar fields.
+- Put derived metrics (e.g., segment count, average segment length) as separate scalar fields.
 
 ### 6.4 Multi-file utilities: where shared GA logic lives
 
-Multi-objective methods in this repo deliberately call into shared utility modules rather than re-implementing operators.
+Multi-objective methods in this repo call shared utility modules for common operators.
 
 #### Shared operators and NSGA-II helpers
 
@@ -650,3 +607,307 @@ How to apply this pattern to your own new method:
 
 - Put any reusable operators/statistics in `src/analysis/utils/<something>.py`.
 - Keep `src/analysis/methods/<your_method>.py` focused on orchestration and producing a correct `AnalysisResult`.
+
+---
+
+## Appendix A — Single Objective output Template
+
+Copy/paste starter for a new *single-objective (single-result)* method implementation.
+
+Filename to create:
+
+- `src/analysis/methods/<new_analysis_method>.py`
+
+Required behavior summary:
+
+- Must implement `AnalysisMethodBase`.
+- Must expose `method_name` and `method_key`.
+- Must implement `run_analysis(data, route_id, x_column, y_column, gap_threshold, **kwargs)`.
+- Must return an `AnalysisResult` with exactly **one primary solution** in `all_solutions`.
+- The primary solution must include `'chromosome'` (sorted breakpoints including start/end).
+
+```python
+"""<New Analysis Method> (Single Objective)
+
+Template for implementing a single-objective analysis method under the
+config-driven dispatch architecture.
+
+How to register this method in the application:
+1) Add a method entry in `src/config.py` with:
+   - method_key="<your_key>"
+   - return_type="single_objective"
+   - method_class_path="analysis.methods.<new_analysis_method>.<NewMethodClass>"
+2) Add `List[ParameterDefinition]` in `src/config.py` and reference it from the
+   `OptimizationMethodConfig.parameters` field.
+
+Notes:
+- Avoid hardcoding parameter defaults; read them from config.
+- Keep results schema-friendly: always include `input_parameters` and `data_summary`.
+"""
+
+from __future__ import annotations
+
+import time
+from typing import Any, Dict
+
+import numpy as np
+
+from analysis.base import AnalysisMethodBase, AnalysisResult
+from config import get_optimization_method
+
+
+class <NewMethodClass>(AnalysisMethodBase):
+    @property
+    def method_name(self) -> str:
+        return "<New Analysis Method (Single)>"
+
+    @property
+    def method_key(self) -> str:
+        return "<your_method_key>"  # Must match config registry
+
+    def run_analysis(
+        self,
+        data: Any,
+        route_id: str,
+        x_column: str,
+        y_column: str,
+        gap_threshold: float,
+        **kwargs,
+    ) -> AnalysisResult:
+        """Run the analysis for one route.
+
+        Required inputs (provided by the framework/controller):
+        - data: RouteAnalysis (preferred) or DataFrame fallback
+        - route_id: str route identifier
+        - x_column/y_column: column names for DataFrame fallback
+        - gap_threshold: framework-level gap detection threshold
+
+        Method-specific inputs:
+        - passed via **kwargs and should map to ParameterDefinition names.
+        """
+        start_time = time.time()
+
+        # 1) Resolve parameter defaults from config (single source of truth)
+        method_config = get_optimization_method(self.method_key)
+        if not method_config:
+            raise ValueError(f"Method configuration not found for '{self.method_key}'")
+
+        param_defaults = {p.name: p.default_value for p in method_config.parameters}
+
+        # 2) Read method parameters (example placeholders)
+        # NOTE: Keep these in sync with the config parameter list.
+        min_length = kwargs.get("min_length", param_defaults.get("min_length"))
+        max_length = kwargs.get("max_length", param_defaults.get("max_length"))
+        enable_diagnostic_output = kwargs.get(
+            "enable_diagnostic_output", param_defaults.get("enable_diagnostic_output", False)
+        )
+
+        # 3) Normalize/prepare input data
+        # Preferred: RouteAnalysis objects expose route_data + mandatory_breakpoints.
+        if hasattr(data, "route_data") and hasattr(data, "mandatory_breakpoints"):
+            route_analysis = data
+            route_df = route_analysis.route_data
+            mandatory_breakpoints = sorted(list(route_analysis.mandatory_breakpoints))
+        else:
+            # Fallback: DataFrame; build RouteAnalysis via analyze_route_gaps
+            from data_loader import analyze_route_gaps
+
+            route_analysis = analyze_route_gaps(
+                data,
+                x_column,
+                y_column,
+                route_id=route_id,
+                gap_threshold=gap_threshold,
+            )
+            route_df = route_analysis.route_data
+            mandatory_breakpoints = sorted(list(route_analysis.mandatory_breakpoints))
+
+        # 4) TODO: run your algorithm
+        # Output must be a sorted list of breakpoints including start and end.
+        x_values = np.asarray(route_df.iloc[:, 0])
+        route_start = float(x_values.min())
+        route_end = float(x_values.max())
+
+        # Example placeholder: trivial segmentation (replace with your algorithm)
+        chromosome = [route_start, route_end]
+
+        # 5) Build the standardized solution payload
+        # REQUIRED: 'chromosome'
+        # RECOMMENDED: 'fitness', 'objective_values', derived stats
+        solution: Dict[str, Any] = {
+            "chromosome": chromosome,
+            "fitness": 0.0,
+            "objective_values": [0.0],
+            "num_segments": max(0, len(chromosome) - 1),
+            "avg_segment_length": float(route_end - route_start) if route_end > route_start else 0.0,
+        }
+
+        # 6) Return AnalysisResult (single-objective => list of exactly 1 solution)
+        input_parameters = {
+            "gap_threshold": gap_threshold,
+            "min_length": min_length,
+            "max_length": max_length,
+            "enable_diagnostic_output": enable_diagnostic_output,
+        }
+
+        data_summary = {
+            "route_id": route_id,
+            "num_points": int(len(route_df)),
+            "x_min": float(route_start),
+            "x_max": float(route_end),
+            "mandatory_breakpoints": mandatory_breakpoints,
+        }
+
+        return AnalysisResult(
+            method_name=self.method_name,
+            method_key=self.method_key,
+            route_id=route_id,
+            all_solutions=[solution],
+            mandatory_breakpoints=mandatory_breakpoints,
+            processing_time=float(time.time() - start_time),
+            optimization_stats={},
+            input_parameters=input_parameters,
+            data_summary=data_summary,
+        )
+```
+
+---
+
+## Appendix B — Multi-Objective Output Template
+
+Copy/paste starter for a new *multi-objective (Pareto front)* method implementation.
+
+Filename to create:
+
+- `src/analysis/methods/<new_analysis_method>.py`
+
+Required behavior summary:
+
+- Must implement `AnalysisMethodBase`.
+- Must return an `AnalysisResult` where `all_solutions` is a **Pareto set** (length ≥ 1).
+- Each solution must include:
+  - `'chromosome'`: sorted breakpoints
+  - `'objective_values'`: a list of floats in a consistent order (length = number of objectives)
+  - `'fitness'`: typically identical to `'objective_values'` (kept for compatibility)
+- In `src/config.py`, set:
+  - `return_type="multi_objective"`
+  - `objective_plot_configs=[...]` so the Pareto plot knows transforms/labels.
+
+```python
+"""<New Analysis Method> (Multi Objective)
+
+Template for implementing a multi-objective analysis method that returns a Pareto
+front in `AnalysisResult.all_solutions`.
+
+Configuration requirements:
+- `OptimizationMethodConfig.return_type = "multi_objective"`
+- `OptimizationMethodConfig.method_class_path` points at this class
+- `OptimizationMethodConfig.objective_plot_configs` defines labels/transforms
+"""
+
+from __future__ import annotations
+
+import time
+from typing import Any, Dict, List
+
+import numpy as np
+
+from analysis.base import AnalysisMethodBase, AnalysisResult
+from config import get_optimization_method
+
+
+class <NewMethodClass>(AnalysisMethodBase):
+    @property
+    def method_name(self) -> str:
+        return "<New Analysis Method (Multi)>"
+
+    @property
+    def method_key(self) -> str:
+        return "<your_method_key>"  # Must match config registry
+
+    def run_analysis(
+        self,
+        data: Any,
+        route_id: str,
+        x_column: str,
+        y_column: str,
+        gap_threshold: float,
+        **kwargs,
+    ) -> AnalysisResult:
+        start_time = time.time()
+
+        method_config = get_optimization_method(self.method_key)
+        if not method_config:
+            raise ValueError(f"Method configuration not found for '{self.method_key}'")
+        param_defaults = {p.name: p.default_value for p in method_config.parameters}
+
+        # Example placeholders — update to your actual parameters.
+        min_length = kwargs.get("min_length", param_defaults.get("min_length"))
+        max_length = kwargs.get("max_length", param_defaults.get("max_length"))
+
+        # Normalize/prepare input
+        if hasattr(data, "route_data") and hasattr(data, "mandatory_breakpoints"):
+            route_analysis = data
+            route_df = route_analysis.route_data
+            mandatory_breakpoints = sorted(list(route_analysis.mandatory_breakpoints))
+        else:
+            from data_loader import analyze_route_gaps
+
+            route_analysis = analyze_route_gaps(
+                data,
+                x_column,
+                y_column,
+                route_id=route_id,
+                gap_threshold=gap_threshold,
+            )
+            route_df = route_analysis.route_data
+            mandatory_breakpoints = sorted(list(route_analysis.mandatory_breakpoints))
+
+        x_values = np.asarray(route_df.iloc[:, 0])
+        route_start = float(x_values.min())
+        route_end = float(x_values.max())
+
+        # TODO: run your multi-objective algorithm and produce a Pareto front.
+        # The objective vector ordering must match the method's config plotting metadata.
+        # Example objective order:
+        #   objective_values = [objective_1_value, objective_2_value]
+        pareto_solutions: List[Dict[str, Any]] = []
+
+        # Example placeholder: one trivial solution (replace with actual Pareto set)
+        chromosome = [route_start, route_end]
+        objective_values = [0.0, 0.0]
+        pareto_solutions.append(
+            {
+                "chromosome": chromosome,
+                "objective_values": objective_values,
+                "fitness": objective_values,
+                "num_segments": max(0, len(chromosome) - 1),
+                "avg_segment_length": float(route_end - route_start) if route_end > route_start else 0.0,
+            }
+        )
+
+        input_parameters = {
+            "gap_threshold": gap_threshold,
+            "min_length": min_length,
+            "max_length": max_length,
+        }
+        data_summary = {
+            "route_id": route_id,
+            "num_points": int(len(route_df)),
+            "x_min": float(route_start),
+            "x_max": float(route_end),
+            "mandatory_breakpoints": mandatory_breakpoints,
+        }
+
+        return AnalysisResult(
+            method_name=self.method_name,
+            method_key=self.method_key,
+            route_id=route_id,
+            all_solutions=pareto_solutions,
+            mandatory_breakpoints=mandatory_breakpoints,
+            processing_time=float(time.time() - start_time),
+            optimization_stats={},
+            input_parameters=input_parameters,
+            data_summary=data_summary,
+        )
+```
