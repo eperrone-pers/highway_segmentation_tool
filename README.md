@@ -26,12 +26,15 @@ Highway segmentation analysis using genetic algorithms (single/multi-objective, 
 Prereq: install dependencies (see **Developer Quickstart** below).
 
 ### Option 1: Simple Launcher (Recommended)
+
 ```bash
 python src/run.py
 ```
+
 Launches the GUI interface directly.
 
 ### Option 2: Direct GUI Launch
+
 ```bash
 python src/gui_main.py
 ```
@@ -74,13 +77,16 @@ python src/run.py
 
 More details: see `SETUP_ENVIRONMENT.md`, `USER_GUIDE.md`, `docs/`, and `tests/README.md`.
 
+To create a re-distributable zip package (excluding generated outputs), run `scripts/package_deliverable.ps1`.
+
 ## GUI Interface Features
 
 The GUI provides an intuitive way to configure all parameters:
 
-### Configuration Sections:
+### Configuration Sections
+
 - **Data File:** Browse and load CSV highway data
-- **Segmentation Parameters:** 
+- **Segmentation Parameters:**
   - Min/Max segment lengths (miles)
   - Data gap threshold for mandatory breakpoints
   - Population size
@@ -88,7 +94,8 @@ The GUI provides an intuitive way to configure all parameters:
 - **Performance Settings:** Enable statistics, cache management
 - **Real-time Status:** Progress tracking and results logging
 
-### GUI Benefits:
+### GUI Benefits
+
 - **Parameter Validation:** Automatic validation of numeric inputs
 - **Tool Tips:** Helpful explanations for each parameter
 - **Visual Feedback:** Data loading status, optimization progress
@@ -97,7 +104,7 @@ The GUI provides an intuitive way to configure all parameters:
 ## Configuration Parameters
 
 | Parameter | Default | Description |
-|-----------|---------|-------------|
+| --- | --- | --- |
 | Min Segment Length | 0.5 miles | Minimum allowed segment length |
 | Max Segment Length | 10 miles | Maximum allowed segment length |
 | Gap Threshold | 0.5 miles | Data gaps ≥ this create mandatory breakpoints |
@@ -111,10 +118,12 @@ The GUI provides an intuitive way to configure all parameters:
 The repository is delivered with sample input CSVs in `data/`.
 
 CSV file with columns:
+
 - `milepoint`: Highway milepoint locations
 - `structural_strength_ind`: Structural strength index values
 
 Example:
+
 ```csv
 milepoint,structural_strength_ind
 196.853,75.2
@@ -136,17 +145,20 @@ milepoint,structural_strength_ind
 ## Algorithm Features
 
 ### Mandatory Breakpoint System
+
 - **Automatic Gap Detection:** Identifies data gaps ≥ threshold
 - **Smart Merging:** Resolves conflicts between mandatory breakpoints and min length constraints
 - **Constraint Preservation:** Ensures critical data boundaries are maintained
 
 ### Multi-Objective Optimization (NSGA-II)
+
 - **Objective 1:** Minimize segmentation deviation (fitness)
 - **Objective 2:** Optimize average segment length
 - **Pareto Front:** Multiple optimal trade-off solutions
 - **Interactive Visualization:** Click points to explore different segmentations
 
 ### Performance Optimizations
+
 - **Fitness Caching:** Avoid redundant evaluations
 - **Diversity Tracking:** Monitor population genetic diversity
 - **Memory Management:** Periodic cache clearing
@@ -154,7 +166,8 @@ milepoint,structural_strength_ind
 
 ## Usage Examples
 
-### GUI Workflow:
+### GUI Workflow
+
 1. Launch: `python src/run.py` → Select option 1
 2. Load data file using "Browse" button
 3. Adjust parameters as needed (hover for tooltips)
@@ -181,12 +194,14 @@ pip install -r requirements.txt
 - **Interactive Plots:** Click Pareto points to explore solutions
 
 ## File Structure
-```
+
+```text
 highway-segmentation-ga/
 ├── src/
 │   ├── run.py                     # Launcher
 │   ├── gui_main.py                # Tkinter GUI
-│   ├── optimization_controller.py # Orchestrates analysis + saving
+│   ├── config.py                  # Method registry + parameters (dispatch via method_class_path)
+│   ├── optimization_controller.py # Orchestrates dispatch (config-driven) + saving
 │   └── analysis/                  # Methods + GA utilities
 ├── data/                           # Bundled sample CSV inputs
 ├── tests/                          # Test suite (includes regression gate)

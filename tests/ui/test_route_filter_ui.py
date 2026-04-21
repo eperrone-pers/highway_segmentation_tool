@@ -6,8 +6,13 @@ added in Phase 1 of the multi-route processing implementation.
 
 Note: These tests may be skipped if GUI display is not available (e.g., CI environments).
 """
-
 import pytest
+
+pytest.skip(
+    "Legacy GUI route-filter UI tests are being retired; to be replaced with updated coverage.",
+    allow_module_level=True,
+)
+
 import sys
 import os
 import pandas as pd

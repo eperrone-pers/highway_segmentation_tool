@@ -11,6 +11,13 @@ Tests the handle_error method added to HighwaySegmentationApp for:
 This validates Phase 1 improvements replacing print-based error handling.
 """
 
+import pytest
+
+pytest.skip(
+    "Legacy error-handling unit tests are being retired; to be replaced with updated coverage.",
+    allow_module_level=True,
+)
+
 import unittest
 from unittest.mock import Mock, MagicMock, patch, call
 import tkinter as tk

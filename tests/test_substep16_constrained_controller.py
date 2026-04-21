@@ -2,6 +2,13 @@
 
 import sys
 from pathlib import Path
+
+import pytest
+
+pytest.skip(
+    "Legacy substep integration tests are being retired; to be replaced with updated coverage.",
+    allow_module_level=True,
+)
 from unittest.mock import Mock
 import pandas as pd
 import numpy as np

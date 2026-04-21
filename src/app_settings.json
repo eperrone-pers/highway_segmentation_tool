@@ -1,10 +1,10 @@
 {
   "files": {
-    "data_file_path": "C:/Users/PER97076/OneDrive - Mott MacDonald/Documents/SegmentationTool/highway_segmentation_tool/data/AndreTestMultiRoute.csv",
-    "save_file_path": "C:/Users/PER97076/OneDrive - Mott MacDonald/Documents/SegmentationTool/highway_segmentation_tool/Results/init_test.json"
+    "data_file_path": "C:/Users/PER97076/OneDrive - Mott MacDonald/Documents/amg-group-files-clone/amg-group-files/team_files/users/eric_files/SegmentationGA/highway-segmentation-ga/data/AndreTestMultiRoute.csv",
+    "save_file_path": "C:/Users/PER97076/OneDrive - Mott MacDonald/Documents/amg-group-files-clone/amg-group-files/team_files/users/eric_files/SegmentationGA/highway-segmentation-ga/Results/multi_route_cda.json"
   },
   "optimization": {
-    "optimization_method": "multi",
+    "optimization_method": "aashto_cda",
     "population_size": 100,
     "num_generations": 100,
     "min_length": 0.5,
@@ -18,13 +18,13 @@
     "length_tolerance": 0.2,
     "cache_clear_interval": 50,
     "enable_performance_stats": true,
-    "custom_save_name": "init_test",
+    "custom_save_name": "multi_route_cda",
     "alpha": 0.05,
     "method": 2,
     "use_segment_length": true,
     "min_segment_datapoints": 50,
     "max_segments": null,
-    "min_section_difference": 1.0,
+    "min_section_difference": 2.0,
     "dynamic_parameters_by_method": {
       "multi": {
         "min_length": 0.5,
@@ -35,6 +35,40 @@
         "mutation_rate": 0.05,
         "cache_clear_interval": 50,
         "enable_performance_stats": true
+      },
+      "constrained": {
+        "min_length": 0.5,
+        "max_length": 5.0,
+        "population_size": 100,
+        "num_generations": 100,
+        "crossover_rate": 0.8,
+        "mutation_rate": 0.05,
+        "elite_ratio": 0.05,
+        "target_avg_length": 2.0,
+        "penalty_weight": 1000.0,
+        "length_tolerance": 0.2,
+        "cache_clear_interval": 50,
+        "enable_performance_stats": true
+      },
+      "single": {
+        "min_length": 0.5,
+        "max_length": 5.0,
+        "population_size": 100,
+        "num_generations": 100,
+        "crossover_rate": 0.8,
+        "mutation_rate": 0.05,
+        "elite_ratio": 0.05,
+        "cache_clear_interval": 50,
+        "enable_performance_stats": true
+      },
+      "aashto_cda": {
+        "alpha": 0.05,
+        "method": 2,
+        "use_segment_length": true,
+        "min_segment_datapoints": 50,
+        "max_segments": null,
+        "min_section_difference": 2.0,
+        "enable_diagnostic_output": false
       }
     },
     "use_asymmetric_penalty": true,
@@ -44,7 +78,7 @@
   },
   "ui_state": {
     "selected_columns": [],
-    "window_geometry": "1100x700+52+52",
+    "window_geometry": "1100x700+78+78",
     "last_data_directory": "",
     "last_save_directory": "",
     "x_column": "BDFO",

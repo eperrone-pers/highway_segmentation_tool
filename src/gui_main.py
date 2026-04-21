@@ -1306,6 +1306,20 @@ def main():
     elif "clam" in style.theme_names():
         style.theme_use("clam")
     
+    # Validate method registry early so misconfigurations fail fast with clear messaging
+    try:
+        from config import validate_optimization_method_registry
+        validate_optimization_method_registry()
+    except Exception as e:
+        messagebox.showerror(
+            "Configuration Error",
+            f"Optimization method registry validation failed.\n\n{e}"
+        )
+        try:
+            root.destroy()
+        finally:
+            return
+
     # Create and run application
     app = HighwaySegmentationGUI(root)
     

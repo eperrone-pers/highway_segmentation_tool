@@ -63,8 +63,8 @@ def main():
     
     args = parser.parse_args()
     
-    # Base pytest command
-    base_cmd = ["python", "-m", "pytest"]
+    # Base pytest command (use the current interpreter so venv execution works)
+    base_cmd = [sys.executable, "-m", "pytest"]
     
     if args.verbose:
         base_cmd.append("-v")

@@ -13,7 +13,7 @@ import json
 from datetime import datetime
 from tkinter import messagebox
 import traceback
-from config import get_optimization_method
+from config import get_optimization_method, resolve_method_class
 
 
 class OptimizationController:
@@ -393,259 +393,123 @@ class OptimizationController:
             dict: Optimization results or None if failed
         """
         try:
-            # Import new analysis methods
-            from analysis.methods.single_objective import SingleObjectiveMethod
-            from analysis.methods.multi_objective import MultiObjectiveMethod
-            from analysis.methods.constrained import ConstrainedMethod
-            
             # Log route-specific start information (unified - always have route_id)
             route_data_points = len(data.route_data)
             self.app.log_message(f"Route {route_id}: Running {method_config.display_name} ({route_data_points} points)")
-            
-            # Run optimization based on method configuration
-            result = None
-            
-            if method_key == "single":
-                population_size = params['population_size']
-                num_generations = params['num_generations']
-                self.app.log_message(f"Running single-objective GA: {population_size} pop, {num_generations} gen")
-                
-                try:
-                    # Use new SingleObjectiveMethod
-                    single_method = SingleObjectiveMethod()
 
-                    # Avoid passing gap_threshold twice (positional + kwargs)
-                    method_params = dict(params)
-                    method_params.pop('gap_threshold', None)
-                    
-                    # Run analysis using universal method signature
-                    analysis_result = single_method.run_analysis(
-                        data, route_id, x_column, y_column, gap_threshold,
-                        log_callback=self.app.log_message,
-                        stop_callback=lambda: self.app.stop_requested,
-                        **method_params  # Pass all method-specific parameters including min/max_length
-                    )
-                    
-                except Exception as e:
-                    self.app.log_message(f"❌ Error in SingleObjectiveMethod: {e}")
-                    analysis_result = None
-                
-                if analysis_result and not self.app.stop_requested:
-                    
-                    # Convert AnalysisResult to legacy format for compatibility
-                    best_solution = analysis_result.best_solution
-                    result = {
-                        'route_id': route_id,
-                        'method_key': method_key,
-                        'best_fitness': best_solution.get('fitness', 0.0),
-                        'objective_values': best_solution.get('objective_values', [best_solution.get('fitness', 0.0)]),  # Preserve unified objective_values for JSON export
-                        'best_segments': best_solution.get('num_segments', 0),  # All methods now provide this
-                        'best_chromosome': best_solution.get('chromosome', []),  # Fixed: was best_breakpoints
-                        'avg_segment_length': best_solution.get('avg_segment_length', 0.0),  # Standardized field name
-                        'execution_time': analysis_result.processing_time,
-                        'mandatory_breakpoints': analysis_result.mandatory_breakpoints,  # Keep as sorted list from analysis
-                        # Method-agnostic optimization results (all optimization methods would have these)
-                        'final_population_fitness': analysis_result.optimization_stats.get('final_population_fitness', []),
-                        'generation_stats': analysis_result.optimization_stats.get('generation_stats', []),
-                        'performance_metrics': analysis_result.optimization_stats.get('performance_metrics', {}),
-                        # Preserve data analysis information (generic to all methods)
-                        'data_summary': analysis_result.data_summary,
-                        'input_parameters': analysis_result.input_parameters,
-                        # Keep full optimization_stats for method-specific JSON extraction
-                        'optimization_stats': analysis_result.optimization_stats
-                    }
-                else:
-                    result = None
-                    self.app.log_message(f"Route {route_id}: Single objective optimization failed")
-            
-            elif method_key == "constrained":
-                target_avg_length = params['target_avg_length']
-                population_size = params['population_size']
-                num_generations = params['num_generations']
-                tolerance = params['length_tolerance']
-                
-                self.app.log_message(f"Running constrained single-objective GA: {population_size} pop, {num_generations} gen")
-                self.app.log_message(f"Target avg length: {target_avg_length:.2f} miles (±{tolerance:.2f} tolerance)")
-                
-                # Use new ConstrainedMethod
-                constrained_method = ConstrainedMethod()
+            # Dispatch is now configuration-driven via method_class_path (Option 2A)
+            analysis_result = None
+            try:
+                cls = resolve_method_class(method_key)
+                method_instance = cls()
 
                 # Avoid passing gap_threshold twice (positional + kwargs)
                 method_params = dict(params)
                 method_params.pop('gap_threshold', None)
-                
-                # Run analysis using universal method signature
-                analysis_result = constrained_method.run_analysis(
-                    data, route_id, x_column, y_column, gap_threshold,
-                    input_parameters=method_params,  # Pass complete params dict to method
-                    log_callback=self.app.log_message,
-                    stop_callback=lambda: self.app.stop_requested,
-                    **method_params  # Also pass as kwargs for consistency
-                )
-                
-                if analysis_result and not self.app.stop_requested:
-                    # Convert AnalysisResult to legacy format for compatibility
-                    best_solution = analysis_result.best_solution
-                    result = {
-                        'route_id': route_id,
-                        'method_key': method_key,
-                        'best_fitness': best_solution.get('fitness', 0.0),
-                        'best_unconstrained_fitness': best_solution.get('unconstrained_fitness', 0.0),
-                        'best_chromosome': best_solution.get('chromosome', []),
-                        'best_avg_length': best_solution.get('avg_segment_length', 0.0),
-                        'target_avg_length': target_avg_length,
-                        'length_deviation': best_solution.get('length_deviation', 0.0),
-                        'tolerance': tolerance,
-                        'execution_time': analysis_result.processing_time,
-                        'mandatory_breakpoints': analysis_result.mandatory_breakpoints,
-                        'fitness_history': analysis_result.optimization_stats.get('best_fitness_history', []),
-                        'length_history': analysis_result.optimization_stats.get('avg_length_history', []),
-                        'performance_metrics': analysis_result.optimization_stats.get('performance_metrics', {}),
-                        
-                        # Preserve data analysis information (generic to all methods)
-                        'data_summary': analysis_result.data_summary,
-                        'input_parameters': analysis_result.input_parameters,
-                        # Keep full optimization_stats for method-specific JSON extraction
-                        'optimization_stats': analysis_result.optimization_stats
-                    }
-                else:
-                    result = None
-                    self.app.log_message(f"Route {route_id}: Constrained optimization failed")
-            
-            elif method_key == "multi":
-                population_size = params['population_size']
-                num_generations = params['num_generations']
-                self.app.log_message(f"Running multi-objective NSGA-II: {population_size} pop, {num_generations} gen")
-                
-                # Use new MultiObjectiveMethod
-                multi_method = MultiObjectiveMethod()
 
-                # Avoid passing gap_threshold twice (positional + kwargs)
-                method_params = dict(params)
-                method_params.pop('gap_threshold', None)
-                
-                # Run analysis using universal method signature
-                analysis_result = multi_method.run_analysis(
-                    data, route_id, x_column, y_column, gap_threshold,
-                    log_callback=self.app.log_message,
-                    stop_callback=lambda: self.app.stop_requested,
-                    **method_params  # Pass all method-specific parameters including min/max_length
-                )
-                
-                if analysis_result and not self.app.stop_requested:
-                    # Convert AnalysisResult to legacy format for compatibility
-                    best_solution = analysis_result.best_solution
-                    result = {
-                        'route_id': route_id,
-                        'method_key': method_key,
-                        'best_fitness': best_solution.get('deviation_fitness', 0.0),  # Multi-obj: deviation fitness
-                        'best_segments': best_solution.get('segment_count', 0),  # Fixed: was num_segments
-                        'best_chromosome': best_solution.get('chromosome', []),
-                        'avg_segment_length': best_solution.get('avg_segment_length', 0.0),
-                        'execution_time': analysis_result.processing_time,
-                        'mandatory_breakpoints': analysis_result.mandatory_breakpoints,
-                        
-                        # Multi-objective specific fields
-                        'pareto_front_size': analysis_result.optimization_stats.get('pareto_front_size', 0),
-                        'best_deviation_fitness': analysis_result.optimization_stats.get('best_deviation_fitness'),
-                        'best_segment_count': analysis_result.optimization_stats.get('best_segment_count'),
-                        'all_solutions': analysis_result.all_solutions,  # Complete Pareto front
-                        
-                        # Standard fields for compatibility
-                        'final_population_fitness': analysis_result.optimization_stats.get('final_population_fitness', []),
-                        'generation_stats': analysis_result.optimization_stats.get('generation_stats', []),
-                        'performance_metrics': analysis_result.optimization_stats.get('performance_metrics', {}),
-                        
-                        # Preserve data analysis information (generic to all methods)
-                        'data_summary': analysis_result.data_summary,
-                        'input_parameters': analysis_result.input_parameters,
-                        # Keep full optimization_stats for method-specific JSON extraction
-                        'optimization_stats': analysis_result.optimization_stats
-                    }
-                else:
-                    result = None
-                    self.app.log_message(f"Route {route_id}: Multi-objective optimization failed")
-            
-            elif method_key == "aashto_cda":
-                # Extract AASHTO CDA specific parameters for logging using method configuration defaults
-                param_defaults = {param.name: param.default_value for param in method_config.parameters}
-                alpha = params.get('alpha', param_defaults['alpha'])
-                error_method = params.get('method', param_defaults['method'])
-                max_segments = params.get('max_segments', param_defaults['max_segments'])
-                
-                self.app.log_message(f"Running AASHTO CDA Statistical Analysis: α={alpha}, method={error_method}")
-                max_segments_text = "unlimited" if max_segments is None else str(max_segments)
-                if min_length is not None:
-                    self.app.log_message(f"Min length: {min_length:.2f} miles, Max segments: {max_segments_text}")
-                else:
-                    self.app.log_message(f"Max segments: {max_segments_text}")
-                
-                try:
-                    # Import and use the AASHTO CDA method class
-                    from analysis.methods.aashto_cda import AashtoCdaMethod
-                    
-                    # Use new AashtoCdaMethod
-                    aashto_method = AashtoCdaMethod()
+                # Reserve callback names so they cannot be overwritten by params
+                method_params.pop('log_callback', None)
+                method_params.pop('stop_callback', None)
+                method_params.pop('input_parameters', None)
 
-                    # Avoid passing gap_threshold twice (positional + kwargs)
-                    method_params = dict(params)
-                    method_params.pop('gap_threshold', None)
-                    
-                    # Run analysis using universal method signature
-                    analysis_result = aashto_method.run_analysis(
-                        data, route_id, x_column, y_column, gap_threshold,
-                        **method_params  # Pass all method-specific parameters
-                    )
-                    
-                    if analysis_result and not self.app.stop_requested:
-                        # Convert AnalysisResult to legacy format for compatibility
-                        best_solution = analysis_result.best_solution
-                        
-                        result = {
-                            'route_id': route_id,
-                            'method_key': method_key,
-                            'best_fitness': analysis_result.get_best_fitness(),
-                            'best_segments': len(analysis_result.best_solution['segments']) if 'segments' in best_solution else best_solution.get('num_segments', 0),
-                            'best_chromosome': best_solution.get('chromosome', []),
-                            'avg_segment_length': best_solution.get('avg_segment_length', 0.0),
-                            'execution_time': analysis_result.processing_time,
-                            'mandatory_breakpoints': analysis_result.mandatory_breakpoints,
-                            
-                            # AASHTO CDA specific fields 
-                            'analysis_method': 'AASHTO Enhanced CDA',
-                            'statistical_parameters': {
-                                'alpha': alpha,
-                                'error_estimation_method': error_method,
-                                'use_segment_length': params.get('use_segment_length', param_defaults['use_segment_length'])
-                            },
-                            'all_solutions': analysis_result.all_solutions,  # Single deterministic solution
-                            
-                            # Method-specific stats from the analysis
-                            'method_stats': analysis_result.optimization_stats,
-                            
-                            # RouteAnalysis data for JSON export (from analysis_result)
-                            'data_summary': analysis_result.data_summary,
-                            'input_parameters': analysis_result.input_parameters,
-                            
-                            # Standard compatibility fields
-                            'final_population_fitness': [],  # Not applicable for deterministic methods
-                            'generation_stats': [],  # Not applicable for deterministic methods 
-                            'performance_metrics': analysis_result.optimization_stats.get('performance_metrics', {}),
-                            'optimization_stats': analysis_result.optimization_stats
-                        }
-                    else:
-                        result = None
-                        self.app.log_message(f"Route {route_id}: AASHTO CDA analysis failed")
-                        
-                except Exception as e:
-                    self.app.log_message(f"❌ Error in AASHTO CDA analysis: {e}")
-                    if hasattr(self.app, 'handle_error'):
-                        self.app.handle_error("AASHTO CDA analysis failed", e, severity="error", show_messagebox=False)
-                    result = None
-            
+                analysis_kwargs = dict(method_params)
+                analysis_kwargs['log_callback'] = self.app.log_message
+                analysis_kwargs['stop_callback'] = lambda: self.app.stop_requested
+                # Provide full parameter dict as a convenience for methods that want it (e.g., constrained)
+                analysis_kwargs['input_parameters'] = method_params
+
+                analysis_result = method_instance.run_analysis(
+                    data, route_id, x_column, y_column, gap_threshold,
+                    **analysis_kwargs,
+                )
+            except Exception as e:
+                self.app.log_message(f"❌ Error running method '{method_key}': {e}")
+                analysis_result = None
+
+            if not analysis_result or self.app.stop_requested:
+                self.app.log_message(f"Route {route_id}: Optimization failed for method_key='{method_key}'")
+                return None
+
+            # Convert AnalysisResult to legacy dict format for compatibility (generic adapter)
+            best_solution = analysis_result.best_solution
+            input_parameters = analysis_result.input_parameters or {}
+
+            def _get_numeric(value, default=0.0):
+                if isinstance(value, (int, float)):
+                    return value
+                if isinstance(value, list) and value and isinstance(value[0], (int, float)):
+                    return value[0]
+                return default
+
+            # Base fields expected across the app
+            result = {
+                'route_id': route_id,
+                'method_key': method_key,
+                'best_fitness': _get_numeric(best_solution.get('deviation_fitness', best_solution.get('fitness', 0.0))),
+                'objective_values': best_solution.get('objective_values', [best_solution.get('fitness', 0.0)]),
+                'best_chromosome': best_solution.get('chromosome', []),
+                'avg_segment_length': best_solution.get('avg_segment_length', 0.0),
+                'execution_time': analysis_result.processing_time,
+                'mandatory_breakpoints': analysis_result.mandatory_breakpoints,
+
+                # Preserve data analysis information (generic to all methods)
+                'data_summary': analysis_result.data_summary,
+                'input_parameters': input_parameters,
+
+                # Keep full optimization_stats for method-specific JSON extraction
+                'optimization_stats': analysis_result.optimization_stats,
+                'performance_metrics': analysis_result.optimization_stats.get('performance_metrics', {}),
+                'final_population_fitness': analysis_result.optimization_stats.get('final_population_fitness', []),
+                'generation_stats': analysis_result.optimization_stats.get('generation_stats', []),
+            }
+
+            # Derive segment count consistently when available
+            if 'segments' in best_solution and isinstance(best_solution.get('segments'), list):
+                result['best_segments'] = len(best_solution.get('segments', []))
             else:
-                raise ValueError(f"Unsupported optimization method: {method_config.display_name} (key: {method_key})")
-            
+                result['best_segments'] = (
+                    best_solution.get('num_segments')
+                    or best_solution.get('segment_count')
+                    or best_solution.get('best_segments')
+                    or 0
+                )
+
+            # Preserve Pareto front if this is a multi-objective method
+            if getattr(method_config, 'return_type', None) == 'multi_objective':
+                result['all_solutions'] = analysis_result.all_solutions
+                result['pareto_front_size'] = analysis_result.optimization_stats.get(
+                    'pareto_front_size', len(analysis_result.all_solutions)
+                )
+                result['best_deviation_fitness'] = analysis_result.optimization_stats.get('best_deviation_fitness')
+                result['best_segment_count'] = analysis_result.optimization_stats.get('best_segment_count')
+
+            # Preserve constrained method fields if present
+            if 'unconstrained_fitness' in best_solution:
+                result['best_unconstrained_fitness'] = best_solution.get('unconstrained_fitness', 0.0)
+            if 'length_deviation' in best_solution:
+                result['length_deviation'] = best_solution.get('length_deviation', 0.0)
+            if 'target_avg_length' in input_parameters:
+                result['target_avg_length'] = input_parameters.get('target_avg_length')
+            if 'length_tolerance' in input_parameters:
+                result['tolerance'] = input_parameters.get('length_tolerance')
+
+            # Preserve history series if present (used by summaries and optional UI)
+            if 'best_fitness_history' in analysis_result.optimization_stats:
+                result['fitness_history'] = analysis_result.optimization_stats.get('best_fitness_history', [])
+            if 'avg_length_history' in analysis_result.optimization_stats:
+                result['length_history'] = analysis_result.optimization_stats.get('avg_length_history', [])
+
+            # Provide AASHTO CDA metadata if the expected statistical fields exist
+            if all(k in input_parameters for k in ['alpha', 'method', 'use_segment_length']):
+                result['analysis_method'] = 'AASHTO Enhanced CDA'
+                result['statistical_parameters'] = {
+                    'alpha': input_parameters.get('alpha'),
+                    'error_estimation_method': input_parameters.get('method'),
+                    'use_segment_length': input_parameters.get('use_segment_length'),
+                }
+                result['all_solutions'] = analysis_result.all_solutions
+                result['method_stats'] = analysis_result.optimization_stats
+
             return result
             
         except Exception as e:
@@ -690,6 +554,11 @@ class OptimizationController:
             # Prepare filename - use user's exact name for consolidated results
             save_name = self.app.custom_save_name.get()
             output_path = self._prepare_save_filename(save_name)
+
+            # User may cancel overwrite prompt or provide invalid name
+            if not output_path:
+                self.app.log_message("Save cancelled - no output path selected")
+                return None
             
             # Convert to JSON path
             if output_path.endswith('.csv'):

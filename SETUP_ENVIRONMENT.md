@@ -3,6 +3,7 @@
 ## Quick Setup Instructions
 
 ### 1. Create Virtual Environment
+
 ```bash
 # Create virtual environment
 python -m venv .venv
@@ -15,6 +16,7 @@ source .venv/bin/activate
 ```
 
 ### 2. Install Dependencies
+
 ```bash
 # Install all requirements
 pip install -r requirements.txt
@@ -24,9 +26,10 @@ pip install -e .
 ```
 
 ### 3. Verify Installation
+
 ```bash
-# Run basic tests to verify setup
-python run_tests.py --quick
+# Run the default test suite (excludes performance tests)
+python run_tests.py
 
 # Regression gate used during development
 python -m pytest tests/regression -q
@@ -36,6 +39,7 @@ python -m pytest tests/test_simple_controller.py -v
 ```
 
 ### 4. Run the Application
+
 ```bash
 # Run GUI application
 python src/gui_main.py
@@ -45,11 +49,13 @@ python src/run.py
 ```
 
 ## Python Version Requirements
+
 - Python 3.8 or higher
 - See `requirements.txt` for all package dependencies
 - See `pyproject.toml` for project configuration
 
 ## Included in this Package
+
 - ✅ Complete source code (src/)
 - ✅ All tests (tests/)
 - ✅ Documentation (README.md, docs/, USER_GUIDE.md)
@@ -58,9 +64,22 @@ python src/run.py
 - ✅ Test runner (run_tests.py)
 
 ## Notes
+
 - Virtual environment excluded (recreate using instructions above)
 - Output directories (Results/, test_results/) are generated outputs and are git-ignored
 - IDE settings (.vscode/) excluded (personal configuration)
 - The refactoring tracker/plans (refactoring/) are developer-only notes and are not required to run the tool
+
+## Regenerating the Delivery Zip
+
+From the project root:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\package_deliverable.ps1
+```
+
+Optional switches:
+
+- Include refactoring notes: `-IncludeRefactoring`
 
 Created: April 14, 2026

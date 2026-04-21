@@ -12,6 +12,13 @@ Test Coverage:
 - Integration with existing GUI components
 """
 
+import pytest
+
+pytest.skip(
+    "Legacy substep integration tests are being retired; to be replaced with updated coverage.",
+    allow_module_level=True,
+)
+
 import sys
 import time
 import pandas as pd

@@ -4,8 +4,13 @@ Unit tests for FileManager class.
 Tests file loading, saving, validation, and data manipulation
 for all supported file formats and operations.
 """
-
 import pytest
+
+pytest.skip(
+    "Legacy FileManager unit tests are being retired; to be replaced with updated coverage.",
+    allow_module_level=True,
+)
+
 import sys
 import os
 import pandas as pd

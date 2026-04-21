@@ -102,8 +102,9 @@ def test_simple_controller_creation():
     
     # Create mock application
     mock_app = create_mock_app()
-    
-    print(f"Created mock app with {len(mock_app.data)} data points")
+
+    data_points = len(mock_app.data.route_data) if hasattr(mock_app.data, 'route_data') else len(mock_app.data)
+    print(f"Created mock app with {data_points} data points")
     
     # Create optimization controller
     controller = OptimizationController(mock_app)
@@ -116,7 +117,7 @@ def test_simple_controller_creation():
     print(f"Population: {params['population_size']}, Generations: {params['num_generations']}")
     
     print("✅ Controller simple test PASSED")
-    return True
+
 
 
 if __name__ == "__main__":

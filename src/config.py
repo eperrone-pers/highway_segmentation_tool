@@ -9,9 +9,10 @@ Date: March 2026
 """
 
 from dataclasses import dataclass
-from typing import Dict, Tuple, Any, List, Optional, Union
+from typing import Dict, Tuple, Any, List, Optional, Union, Type
 from abc import ABC, abstractmethod
 import tkinter as tk
+import importlib
 
 
 # ===== PARAMETER DEFINITION CLASSES FOR EXTENSIBLE FRAMEWORK =====
@@ -763,6 +764,10 @@ class OptimizationMethodConfig:
     runner_function: str                     # Function name in optimization_runners module
     parameters: List[ParameterDefinition]    # Complete parameter list for this method
     return_type: str                         # "single_objective" or "multi_objective" (controls visualization)
+
+    # Preferred dispatch mechanism (Option 2A): importable method class path
+    # Example: "analysis.methods.aashto_cda.AashtoCdaMethod"
+    method_class_path: Optional[str] = None
     
     # Optional visualization configuration (backwards compatible)
     objective_names: Optional[List[str]] = None           # Names for objectives in plots (e.g., ["Data Fit", "Segment Count"])
@@ -783,7 +788,8 @@ OPTIMIZATION_METHODS = [
         description="Traditional genetic algorithm focused on minimizing data deviation only. Fast convergence, single best solution.",
         runner_function="run_single_objective",
         parameters=SINGLE_OBJECTIVE_GA_PARAMETERS,
-        return_type="single_objective"  # Shows segmentation graph only
+        return_type="single_objective",  # Shows segmentation graph only
+        method_class_path="analysis.methods.single_objective.SingleObjectiveMethod",
     ),
     OptimizationMethodConfig(
         method_key="multi", 
@@ -792,6 +798,7 @@ OPTIMIZATION_METHODS = [
         runner_function="run_nsga2",
         parameters=MULTI_OBJECTIVE_NSGA2_PARAMETERS,
         return_type="multi_objective",  # Shows pareto front + segmentation graph
+        method_class_path="analysis.methods.multi_objective.MultiObjectiveMethod",
         objective_names=["Total Deviation", "Average Segment Length"],
         objective_descriptions=[
             "Total deviation from target values (algorithm maximizes negative deviation for minimization)",
@@ -816,7 +823,8 @@ OPTIMIZATION_METHODS = [
         description="Target-length optimization with penalty-based fitness for specific average segment length requirements.",
         runner_function="run_constrained_single_objective",
         parameters=CONSTRAINED_SINGLE_OBJECTIVE_PARAMETERS,
-        return_type="single_objective"  # Shows segmentation graph only
+        return_type="single_objective",  # Shows segmentation graph only
+        method_class_path="analysis.methods.constrained.ConstrainedMethod",
     ),
     OptimizationMethodConfig(
         method_key="aashto_cda",
@@ -824,7 +832,8 @@ OPTIMIZATION_METHODS = [
         description="Enhanced AASHTO Cumulative Difference Approach for deterministic statistical change point detection. Fast, statistically-justified segmentation without evolutionary computation.",
         runner_function="run_aashto_cda",
         parameters=AASHTO_CDA_PARAMETERS,
-        return_type="single_objective"  # Shows segmentation graph only
+        return_type="single_objective",  # Shows segmentation graph only
+        method_class_path="analysis.methods.aashto_cda.AashtoCdaMethod",
     )
     # FUTURE METHODS - Easy to add with completely different parameter sets:
     #
@@ -854,6 +863,76 @@ def get_optimization_method(method_key: str) -> OptimizationMethodConfig:
         if method.method_key == method_key:
             return method
     raise ValueError(f"Unknown optimization method key: {method_key}")
+
+
+def resolve_method_class(method_key: str) -> Type:
+    """Resolve a configured analysis method class from `OptimizationMethodConfig.method_class_path`.
+
+    This is the foundation for Option 2A (config-driven dispatch). The controller
+    may use this in the future to avoid hardcoded per-method branches.
+    """
+    method_config = get_optimization_method(method_key)
+    class_path = getattr(method_config, 'method_class_path', None)
+    if not class_path or not isinstance(class_path, str):
+        raise ValueError(
+            f"Method '{method_key}' is missing a valid method_class_path in OPTIMIZATION_METHODS"
+        )
+
+    if '.' not in class_path:
+        raise ValueError(
+            f"Invalid method_class_path for method '{method_key}': '{class_path}' (expected module.ClassName)"
+        )
+
+    module_path, class_name = class_path.rsplit('.', 1)
+    try:
+        module = importlib.import_module(module_path)
+    except Exception as e:
+        raise ImportError(
+            f"Could not import module '{module_path}' for method '{method_key}' (method_class_path='{class_path}'): {e}"
+        ) from e
+
+    try:
+        cls = getattr(module, class_name)
+    except AttributeError as e:
+        raise ImportError(
+            f"Module '{module_path}' does not define class '{class_name}' for method '{method_key}' (method_class_path='{class_path}')"
+        ) from e
+
+    return cls
+
+
+def validate_optimization_method_registry() -> None:
+    """Validate that all configured methods have importable, compatible implementations.
+
+    This is intended to run at application startup so configuration errors fail fast.
+    """
+    errors: List[str] = []
+    try:
+        from analysis.base import AnalysisMethodBase
+    except Exception as e:
+        raise ImportError(f"Could not import AnalysisMethodBase for validation: {e}") from e
+
+    for method in OPTIMIZATION_METHODS:
+        try:
+            cls = resolve_method_class(method.method_key)
+            if not isinstance(cls, type):
+                raise TypeError(
+                    f"Resolved object is not a class (got {type(cls).__name__})"
+                )
+            if not issubclass(cls, AnalysisMethodBase):
+                raise TypeError(
+                    f"{cls.__module__}.{cls.__name__} does not inherit from AnalysisMethodBase"
+                )
+        except Exception as e:
+            errors.append(
+                f"- method_key='{method.method_key}', display_name='{method.display_name}': {e}"
+            )
+
+    if errors:
+        raise ValueError(
+            "Optimization method registry validation failed. Fix OPTIMIZATION_METHODS in src/config.py:\n"
+            + "\n".join(errors)
+        )
 
 def get_optimization_method_names() -> list:
     """Get list of all optimization method display names for dropdown."""

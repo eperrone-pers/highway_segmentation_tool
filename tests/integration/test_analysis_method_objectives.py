@@ -193,19 +193,30 @@ class TestMultiObjectiveMethodCorrectness(TestAnalysisMethodObjectiveUsage):
                 f"Solution {i}: Deviation objective should be negative (NSGA-II maximizes -deviation), "
                 f"got {deviation_obj}"
             )
-            assert length_obj > 0, (
-                f"Solution {i}: Length objective should be positive (NSGA-II maximizes +length), " 
+            assert length_obj >= 0, (
+                f"Solution {i}: Length objective should be non-negative (NSGA-II maximizes +length), "
                 f"got {length_obj}"
             )
             
             # Additional sanity checks
             avg_segment_length = solution.get('avg_segment_length', 0)
             assert avg_segment_length > 0, f"Solution {i} should have positive avg segment length"
-            
-            # Length objective should approximately match calculated average
-            tolerance = 0.3  # Allow calculation differences due to algorithmic precision
-            assert abs(length_obj - avg_segment_length) <= tolerance, (
-                f"Solution {i}: Length objective ({length_obj}) should match calculated avg ({avg_segment_length})"
+
+            # The multi-objective length objective is computed in the GA as the
+            # average NON-mandatory internal segment length. The method-level
+            # `avg_segment_length` stored in each solution is the overall average
+            # across *all* segments, so they are not expected to match.
+            chromosome = solution.get('chromosome')
+            assert chromosome is not None, f"Solution {i} should include chromosome"
+            segment_lengths = np.diff(chromosome)
+
+            # GA definition: internal segments only (exclude first and last), and
+            # return 0.0 when there are no internal segments.
+            internal_lengths = segment_lengths[1:-1]
+            expected_non_mandatory_avg = float(np.mean(internal_lengths)) if internal_lengths.size else 0.0
+            assert np.isclose(length_obj, expected_non_mandatory_avg, atol=1e-9), (
+                f"Solution {i}: Length objective ({length_obj}) should equal the GA-defined non-mandatory "
+                f"internal average ({expected_non_mandatory_avg})"
             )
     
     def test_multi_objective_pareto_front_mathematical_validity(self, sample_route_data, basic_params):
