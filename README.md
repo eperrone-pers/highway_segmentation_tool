@@ -1,11 +1,11 @@
 # Highway Segmentation Tool
 
-This tool provides a framework for segmenting routes based on attribute data and then displaying the results graphically. The framework allows Python developers to add their own segmentation algorithms and then display the segmentation results on screen.  As of nwo there are 4 segmentation methods included in the framewwork.
+This tool provides a framework for segmenting routes based on attribute data and then displaying the results graphically. The framework allows Python developers to add their own segmentation algorithms and then display the segmentation results on screen.  As of nwo there are 4 segmentation methods included in the framework.
 
 ## Features
 
 - **Optimization Methods (config-driven):**
-  - Single-objective GA: Looks for segmentation that minimizes variation in a pavement measure to the average measure within a segment for a given route.
+  - Single-objective GA: Looks for segmentation that minimizes variation in a pavement measure to the average measure across all segments for a given route.
   - NSGA-II multi-objective segmentation: Performs a multi-objective analysis that minimizes variation of an attribute compared to average within each chosen segment while also trying to maximize the average segment length along a route.
   - Constrained single-objective GA: Target-length optimization using penalty-based fitness that tries to achieve a selected target average length while minimizing deviation.
   - Enhanced AASHTO Cumulative Difference Approach (CDA) for Pavement Data Segmentation Method (Katicha, S., Flintsch, G. (2025), "Enhanced AASHTO Cumulative Difference Approach (CDA) for Pavement Data Segmentation" Transportation Research Record, Accepted.)
