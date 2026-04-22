@@ -14,7 +14,7 @@ def test_uniform_population():
     """Test the uniform initial population generation algorithm"""
     
     # Load data
-    data = pd.read_csv('data/txdot_data.csv')
+    data = pd.read_csv('tests/test_data/test_data_single_route.csv')
     # Use default highway column names for analysis
     x_column, y_column = "milepoint", "structural_strength_ind"
     route_analysis = analyze_route_gaps(data, x_column, y_column, route_id="UNIFORM_POPULATION_TEST", gap_threshold=0.5)

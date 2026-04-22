@@ -14,8 +14,8 @@ Test Coverage:
         - aashto_cda: AASHTO Enhanced Cumulative Difference Approach
     
     Data Configurations:
-        - single_route: Single route data (txdot_data.csv)
-        - multi_route: Multi-route data (AndreTestMultiRoute.csv)
+        - single_route: Single route data (test_data_single_route.csv)
+        - multi_route: Multi-route data (TestMultiRoute.csv)
         
     Total Test Matrix: 4 methods × 2 datasets = 8 comprehensive tests
 

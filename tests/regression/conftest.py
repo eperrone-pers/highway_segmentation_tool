@@ -88,8 +88,8 @@ def test_parameters():
             - aashto_cda: alpha, segment limits, diagnostic controls
             
         Data Configurations:
-            - single_route: txdot_data.csv configuration
-            - multi_route: AndreTestMultiRoute.csv configuration
+            - single_route: test_data_single_route.csv configuration
+            - multi_route: TestMultiRoute.csv configuration
     
     Usage:
         Parameters optimized for regression testing balance:
@@ -191,13 +191,13 @@ def data_configurations(test_parameters, test_data_dir):
     
     Data Configuration Structure:
         single_route Configuration:
-            - File: txdot_data.csv (TxDOT highway pavement data)
+            - File: test_data_single_route.csv (single-route test data)
             - X Column: 'milepoint' (highway distance markers)
             - Y Column: 'structural_strength_ind' (pavement strength measurements)
             - Route Column: None (single continuous route processing)
             
         multi_route Configuration:
-            - File: AndreTestMultiRoute.csv (multi-route engineering data)
+            - File: TestMultiRoute.csv (anonymized multi-route engineering data)
             - X Column: 'BDFO' (bearing/distance from origin measurements)
             - Y Column: 'D60' (material property measurements)
             - Route Column: 'RDB' (route database identifier)

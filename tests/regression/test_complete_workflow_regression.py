@@ -18,12 +18,12 @@ Test Architecture:
         - 8 Total Test Combinations: Complete method × dataset matrix
         
     Production Data Scenarios:
-        Single Route (txdot_data.csv):
+        Single Route (test_data_single_route.csv):
             - X-axis: milepoint (highway distance markers)
             - Y-axis: structural_strength_ind (pavement strength measurements)
             - Route: No separation (single continuous route)
             
-        Multi Route (AndreTestMultiRoute.csv):
+        Multi Route (TestMultiRoute.csv):
             - X-axis: BDFO (bearing/distance measurements)
             - Y-axis: D60 (material property measurements)
             - Route: RDB (route identifier for multi-route processing)
@@ -893,8 +893,8 @@ class TestCompleteWorkflowRegression:
                 - "aashto_cda": AASHTO Enhanced Cumulative Difference Approach
                 
             dataset (str): Data configuration identifier
-                - "single_route": TxDOT single-route data (txdot_data.csv)
-                - "multi_route": Multi-route data (AndreTestMultiRoute.csv)
+                - "single_route": Single-route test data (test_data_single_route.csv)
+                - "multi_route": Multi-route data (TestMultiRoute.csv)
                 
             tmp_path (Path): Pytest temporary directory for test isolation
         
@@ -937,10 +937,10 @@ class TestCompleteWorkflowRegression:
         project_root = Path(__file__).parent.parent.parent
         data_dir = project_root / "tests" / "test_data"
         if dataset == "single_route":
-            data_file = data_dir / "txdot_data.csv"
+            data_file = data_dir / "test_data_single_route.csv"
             x_col, y_col, route_col = "milepoint", "structural_strength_ind", None
         else:
-            data_file = data_dir / "AndreTestMultiRoute.csv"
+            data_file = data_dir / "TestMultiRoute.csv"
             x_col, y_col, route_col = "BDFO", "D60", "RDB"
             
         # Check data file exists
@@ -1072,8 +1072,8 @@ class TestRegressionValidation:
         project_root = Path(__file__).parent.parent.parent
         data_dir = project_root / "tests" / "test_data"
 
-        single_route_file = data_dir / "txdot_data.csv"
-        multi_route_file = data_dir / "AndreTestMultiRoute.csv"
+        single_route_file = data_dir / "test_data_single_route.csv"
+        multi_route_file = data_dir / "TestMultiRoute.csv"
 
         # Check if at least one data file exists
         if not single_route_file.exists() and not multi_route_file.exists():

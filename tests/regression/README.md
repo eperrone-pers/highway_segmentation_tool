@@ -6,7 +6,7 @@ Comprehensive regression tests that validate the complete workflow for all optim
 
 This test suite runs **8 total tests** covering all combinations of:
 - **4 Methods**: `single`, `multi`, `constrained`, `aashto_cda`  
-- **2 Datasets**: `single_route` (txdot_data.csv), `multi_route` (AndreTestMultiRoute.csv)
+- **2 Datasets**: `single_route` (test_data_single_route.csv), `multi_route` (TestMultiRoute.csv)
 
 ## Test Structure
 
@@ -59,12 +59,12 @@ pytest test_complete_workflow_regression.py -k "single and single_route" -v
 
 ## Test Data Configuration
 
-### Single Route Data (txdot_data.csv)
+### Single Route Data (test_data_single_route.csv)
 - **X Column**: `milepoint`  
 - **Y Column**: `structural_strength_ind`
 - **Route Column**: `null` (no route separation)
 
-### Multi Route Data (AndreTestMultiRoute.csv)  
+### Multi Route Data (TestMultiRoute.csv)  
 - **X Column**: `BDFO`
 - **Y Column**: `D60`
 - **Route Column**: `RDB`
@@ -121,7 +121,7 @@ See `test_parameters_template.json` for full configuration.
 
 **Import Errors**: Ensure you're running from the correct directory and have all dependencies installed.
 
-**Missing Test Data**: Verify `tests/test_data/txdot_data.csv` and `AndreTestMultiRoute.csv` exist.
+**Missing Test Data**: Verify `tests/test_data/test_data_single_route.csv` and `TestMultiRoute.csv` exist.
 
 **Schema Validation Fails**: Check that `src/highway_segmentation_results_schema.json` exists and is valid.
 

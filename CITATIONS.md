@@ -16,7 +16,7 @@ Transportation Research Record, Accepted.
 
 The AASHTO CDA method implementation (`src/analysis/methods/aashto_cda.py`) is distributed under the BSD 2-Clause License:
 
-**Copyright (c) 2025, Samer Katicha**
+Copyright (c) 2025, Samer Katicha**
 
 Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
 
@@ -47,16 +47,17 @@ The AASHTO CDA method is based on:
 
 When using this software in academic research, please:
 
-1. **Cite the primary research** (Katicha & Flintsch, 2025) when using AASHTO CDA results
-2. **Acknowledge the software** if using the complete Highway Segmentation GA framework
-3. **Respect the BSD license terms** for any code redistribution
+1. Cite the primary research (Katicha & Flintsch, 2025) when using AASHTO CDA results
+2. Acknowledge the software if using the complete Highway Segmentation GA framework
+3. Respect the BSD license terms** for any code redistribution
 
 ## Additional Documentation
 
 For detailed technical information about the AASHTO CDA method:
+
 - See `docs/AASHTO_CDA_USER_GUIDE.md` for implementation details
 - See `docs/AashtoCDADocs/` for original MATLAB reference implementation
 
 ---
 
-*Last updated: April 2026*
+Last updated: April 2026

@@ -24,11 +24,11 @@ class TestGapDetection:
     """Test core gap detection functionality."""
     
     def test_txdot_known_gaps(self):
-        """Test gap detection with known gaps in txdot_data.csv."""
+        """Test gap detection with known gaps in the single-route test CSV."""
         # Load actual TXDOT data
-        data_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'txdot_data.csv')
+        data_path = os.path.join(os.path.dirname(__file__), 'test_data', 'test_data_single_route.csv')
         if not os.path.exists(data_path):
-            pytest.skip("txdot_data.csv not available")
+            pytest.skip("test_data_single_route.csv not available")
             
         df = pd.read_csv(data_path)
         analysis = analyze_route_gaps(

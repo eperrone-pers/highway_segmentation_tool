@@ -1,6 +1,6 @@
 {
   "files": {
-    "data_file_path": "C:/Users/PER97076/OneDrive - Mott MacDonald/Documents/amg-group-files-clone/amg-group-files/team_files/users/eric_files/SegmentationGA/highway-segmentation-ga/data/AndreTestMultiRoute.csv",
+    "data_file_path": "C:/Users/PER97076/OneDrive - Mott MacDonald/Documents/amg-group-files-clone/amg-group-files/team_files/users/eric_files/SegmentationGA/highway-segmentation-ga/tests/test_data/TestMultiRoute.csv",
     "save_file_path": "C:/Users/PER97076/OneDrive - Mott MacDonald/Documents/amg-group-files-clone/amg-group-files/team_files/users/eric_files/SegmentationGA/highway-segmentation-ga/Results/multi_route_cda.json"
   },
   "optimization": {

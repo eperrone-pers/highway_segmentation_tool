@@ -43,8 +43,8 @@ class TestJsonValidationWorkflow:
     @pytest.fixture
     def sample_data_path(self):
         """Get path to sample test data."""
-        data_dir = Path(project_root) / 'data'
-        sample_file = data_dir / 'AndreTestMultiRoute.csv'  
+        data_dir = Path(project_root) / 'tests' / 'test_data'
+        sample_file = data_dir / 'TestMultiRoute.csv'
         if not sample_file.exists():
             pytest.skip(f"Sample data file not found: {sample_file}")
         return str(sample_file)

@@ -3,7 +3,7 @@
 Performance Optimization Test for Population Generation
 =====================================================
 Tests the optimized _generate_chromosome_by_splitting method performance
-using the test TxDOT data in tests/test_data/txdot_data.csv.
+using the single-route test data in tests/test_data/test_data_single_route.csv.
 
 This test can be run repeatedly to validate performance improvements
 and ensure optimization changes don't introduce regressions.
@@ -26,7 +26,7 @@ def test_with_real_data():
     print("=" * 50)
     
     # Load the real data from test data directory
-    data_file = 'test_data/txdot_data.csv'
+    data_file = 'test_data/test_data_single_route.csv'
     if not os.path.exists(data_file):
         print(f"❌ Data file not found: {data_file}")
         return

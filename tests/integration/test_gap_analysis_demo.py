@@ -15,15 +15,15 @@ from data_loader import load_highway_data, analyze_route_gaps
 
 
 def test_gap_analysis():
-    """Test gap analysis with txdot_data.csv to validate results."""
+    """Test gap analysis with single-route test data to validate results."""
     print("\n" + "="*60)
     print("TESTING GAP ANALYSIS WITH TXDOT DATA")
     print("="*60)
     
     # Load test data
-    data = load_highway_data("data/txdot_data.csv")
+    data = load_highway_data("tests/test_data/test_data_single_route.csv")
     if data is None:
-        print("ERROR: Could not load txdot_data.csv")
+        print("ERROR: Could not load single-route test data")
         return
     
     # Analyze the route

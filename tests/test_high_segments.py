@@ -14,7 +14,7 @@ def test_high_segment_generation():
     """Test if we can generate and preserve high-segment chromosomes"""
     
     # Load data
-    data = pd.read_csv('data/txdot_data.csv')
+    data = pd.read_csv('tests/test_data/test_data_single_route.csv')
     # Use default highway column names for analysis
     x_column, y_column = "milepoint", "structural_strength_ind"
     route_analysis = analyze_route_gaps(data, x_column, y_column, route_id="HIGH_SEGMENTS_TEST", gap_threshold=0.5)

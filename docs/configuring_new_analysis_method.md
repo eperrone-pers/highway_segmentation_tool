@@ -129,7 +129,7 @@ Each method registered in `OPTIMIZATION_METHODS` is an `OptimizationMethodConfig
 - `return_type` (str): Controls high-level behavior.
   - Supported values in this repo: `"single_objective"` and `"multi_objective"`.
 - `objective_names` / `objective_descriptions` (optional): Objective metadata.
-    - These fields exist in config but are not currently consumed by the enhanced visualization.
+  - These fields exist in config but are not currently consumed by the enhanced visualization.
 - `objective_plot_configs` (optional): The preferred, per-objective plotting configuration for multi-objective methods (see `ObjectivePlotConfig` below).
 
 #### `ParameterDefinition` and parameter types (method parameters)
@@ -182,7 +182,7 @@ Fields:
     - `"negate"` only.
   - Behavior for `transform="negate"`:
     - Values are multiplied by `-1` before plotting.
-    - This is used for the methods where an objective used for the pareto might be negated in order to either maximize or minimize aa value (Many optmizations maximizes a negative value to minimize a score).
+    - This is used for the methods where an objective used for the pareto might be negated in order to either maximize or minimize aa value (Many optimizations maximizes a negative value to minimize a score).
 - `reverse_scale` (bool): Defined in config, but not currently used by the enhanced visualization.
 
 ## 4) Step-by-step: AASHTO CDA as a single-objective method

@@ -43,18 +43,18 @@ from data_loader import RouteAnalysis, analyze_route_gaps
 
 # Test data paths
 PROJECT_ROOT = Path(__file__).parent.parent
-DATA_DIR = PROJECT_ROOT / "data"
-TXDOT_DATA_PATH = DATA_DIR / "txdot_data.csv"
+DATA_DIR = PROJECT_ROOT / "tests" / "test_data"
+TXDOT_DATA_PATH = DATA_DIR / "test_data_single_route.csv"
 
 # === DATA FIXTURES ===
 
 @pytest.fixture(scope="session")
 def txdot_data():
-    """Load the actual TxDOT highway data for realistic testing."""
+    """Load the single-route test data for realistic testing."""
     if TXDOT_DATA_PATH.exists():
         return pd.read_csv(TXDOT_DATA_PATH)
     else:
-        pytest.skip(f"TxDOT data file not found: {TXDOT_DATA_PATH}")
+        pytest.skip(f"Single-route test data file not found: {TXDOT_DATA_PATH}")
 
 @pytest.fixture
 def sample_highway_data():
@@ -144,8 +144,8 @@ def multi_route_test_data():
 
 @pytest.fixture  
 def andre_test_multi_route_data():
-    """Load the actual AndreTestMultiRoute.csv test data."""
-    test_data_path = PROJECT_ROOT / "tests" / "test_data" / "AndreTestMultiRoute.csv"
+    """Load the anonymized multi-route test data (TestMultiRoute.csv)."""
+    test_data_path = PROJECT_ROOT / "tests" / "test_data" / "TestMultiRoute.csv"
     if test_data_path.exists():
         return pd.read_csv(test_data_path)
     else:

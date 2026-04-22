@@ -22,7 +22,7 @@ def test_unified_nsga2_breakpoint2():
     print("=" * 60)
     
     # Load multi-route test data
-    data_file = r"data\AndreTestMultiRoute.csv"
+    data_file = r"tests\test_data\TestMultiRoute.csv"
     print(f"\n1. Loading multi-route test data: {data_file}")
     
     try:
@@ -168,7 +168,7 @@ def create_small_test_file():
     print("\n5. Creating small test file for future quick tests...")
     
     # Load full data
-    df = pd.read_csv(r"data\AndreTestMultiRoute.csv")
+    df = pd.read_csv(r"tests\test_data\TestMultiRoute.csv")
     
     # Get first 50 rows from first 2 routes
     routes = sorted(df['RDB'].unique())[:2]
