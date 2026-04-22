@@ -1,25 +1,14 @@
-# Highway Segmentation GA
+# Highway Segmentation Tool
 
-Highway segmentation analysis using genetic algorithms (single/multi-objective, constrained) and AASHTO Enhanced CDA. Results are written as schema-compliant JSON (with optional Excel export) and the GUI supports multi-route inputs.
+This tool provides a framework for segmenting routes based on attribute data and then displaying the results graphically. The framework allows Python developers to add their own segmentation algorithms and then display the segmentation results on screen.  As of nwo there are 4 segmentation methods included in the framewwork.
 
 ## Features
 
-- **Two Optimization Methods:**
-  - Single-objective GA: Fast convergence to one best solution
-  - NSGA-II multi-objective: Find multiple trade-off solutions (Pareto front)
-
-- **Smart Constraint Handling:**
-  - Automatic data gap detection and mandatory breakpoint insertion
-  - Smart constraint merging to resolve conflicts between gap preservation and segment length limits
-  - Configurable segment length constraints (min/max miles)
-
-- **Advanced Performance Features:**
-  - Fitness result caching for improved performance
-  - Population diversity tracking and analysis
-  - Interactive Pareto front visualization
-  - Results export (schema-compliant JSON + Excel)
-
-- **GUI Interface:** Easy parameter configuration with visual controls
+- **Optimization Methods (config-driven):**
+  - Single-objective GA: Looks for segmentation that minimizes variation in a pavement measure to the average measure within a segment for a given route.
+  - NSGA-II multi-objective segmentation: Performs a multi-objective analysis that minimizes variation of an attribute compared to average within each chosen segment while also trying to maximize the average segment length along a route.
+  - Constrained single-objective GA: Target-length optimization using penalty-based fitness that tries to achieve a selected target average length while minimizing deviation.
+  - Enhanced AASHTO Cumulative Difference Approach (CDA) for Pavement Data Segmentation Method (Katicha, S., Flintsch, G. (2025), "Enhanced AASHTO Cumulative Difference Approach (CDA) for Pavement Data Segmentation" Transportation Research Record, Accepted.)
 
 ## Quick Start
 
@@ -85,13 +74,10 @@ The GUI provides an intuitive way to configure all parameters:
 
 ### Configuration Sections
 
-- **Data File:** Browse and load CSV highway data
-- **Segmentation Parameters:**
-  - Min/Max segment lengths (miles)
-  - Data gap threshold for mandatory breakpoints
-  - Population size
-- **Optimization Method:** Radio buttons for Single vs Multi-objective
-- **Performance Settings:** Enable statistics, cache management
+- **File Operations:** Select CSV, optional route column, X/Y columns, gap threshold, and results save path
+- **Optimization Method:** Dropdown selection populated from the method registry (`OPTIMIZATION_METHODS`)
+- **Method Parameters:** Dynamically generated, method-specific parameter groups (defined in `src/config.py`)
+- **Performance & Caching:** Caching and performance options (where applicable)
 - **Real-time Status:** Progress tracking and results logging
 
 ### GUI Benefits
@@ -103,15 +89,19 @@ The GUI provides an intuitive way to configure all parameters:
 
 ## Configuration Parameters
 
-| Parameter | Default | Description |
-| --- | --- | --- |
-| Min Segment Length | 0.5 miles | Minimum allowed segment length |
-| Max Segment Length | 10 miles | Maximum allowed segment length |
-| Gap Threshold | 0.5 miles | Data gaps ≥ this create mandatory breakpoints |
-| Population Size | 100 | Number of individuals per generation |
-| Single-Obj Generations | 200 | Generations for single-objective method |
-| Multi-Obj Generations | 100 | Generations for NSGA-II method |
-| Cache Clear Interval | 50 | Clear fitness cache every N generations |
+Defaults are defined in `src/config.py` and vary by selected method.
+
+| Parameter | Default | Applies To | Description |
+| --- | --- | --- | --- |
+| Gap Threshold | 0.5 miles | All methods | Data gaps ≥ this create mandatory breakpoints |
+| Min Segment Length | 0.5 miles | GA-based methods | Minimum allowed segment length |
+| Max Segment Length | 10 miles | GA-based methods | Maximum allowed segment length |
+| Population Size | 100 | GA-based methods | Number of individuals per generation |
+| Generations (single-objective GA) | 200 | `single` | Generations for the single-objective GA |
+| Generations (NSGA-II multi-objective) | 100 | `multi` | Generations for the multi-objective NSGA-II |
+| Generations (constrained) | 150 | `constrained` | Generations for constrained optimization |
+| Target Avg Length | 2.0 miles | `constrained` | Target average segment length |
+| Alpha | 0.05 | `aashto_cda` | Significance level for CDA change-point detection |
 
 ## Data Format
 
@@ -168,10 +158,10 @@ milepoint,structural_strength_ind
 
 ### GUI Workflow
 
-1. Launch: `python src/run.py` → Select option 1
+1. Launch: `python src/run.py`
 2. Load data file using "Browse" button
 3. Adjust parameters as needed (hover for tooltips)
-4. Select optimization method (Single/Multi-objective)
+4. Select optimization method from the dropdown
 5. Click "Start Optimization"
 6. View results in status panel and exported files
 
