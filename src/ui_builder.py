@@ -42,7 +42,7 @@ class UIBuilder:
         main_frame.grid(row=0, column=0, sticky="nsew")
         # Configure grid weights for responsive layout
         main_frame.grid_rowconfigure(1, weight=1)
-        main_frame.grid_columnconfigure(0, minsize=ui_config.left_pane_width, weight=0)  # Left pane: fixed width with minimum size
+        main_frame.grid_columnconfigure(0, weight=0)  # Left pane: auto-size to fit content
         main_frame.grid_columnconfigure(1, weight=0)  # Scrollbar column (fixed width when visible)  
         main_frame.grid_columnconfigure(2, weight=1)  # Right pane gets all remaining horizontal space
         
@@ -67,7 +67,9 @@ class UIBuilder:
         
         # Scrollable frame inside canvas
         scrollable_frame = ttk.Frame(left_canvas)
-        left_canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        # Configure scrollable frame to expand properly
+        scrollable_frame.grid_columnconfigure(0, weight=1)
+        canvas_window = left_canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         
         # Track scrollbar state
         scrollbar_visible = False
@@ -98,10 +100,12 @@ class UIBuilder:
                 left_scrollbar.grid_remove()
                 scrollbar_visible = False
             
-            # Configure frame width to match canvas (responsive sizing while respecting minimum)
-            effective_canvas_width = max(canvas_width, ui_config.main_canvas_width) if canvas_width > 1 else ui_config.main_canvas_width
-            if frame_width < effective_canvas_width:
-                left_canvas.itemconfig(left_canvas.find_all()[0], width=effective_canvas_width)
+            # Configure frame width to accommodate all content
+            # Ensure the scrollable frame is wide enough for its contents
+            if canvas_width > 1:
+                # Set the canvas window width to be at least as wide as the frame needs
+                required_width = max(frame_width, canvas_width)
+                left_canvas.itemconfig(canvas_window, width=required_width)
         
         def on_mousewheel(event):
             # Only scroll if scrollbar is visible (scrolling is needed)
@@ -141,7 +145,7 @@ class UIBuilder:
         file_ops_frame = ttk.LabelFrame(parent, text="📁 File Operations", padding="6")  # Reduced from 10
         file_ops_frame.grid(row=row, column=0, sticky="ew", pady=3)  # Reduced from 5
         file_ops_frame.columnconfigure(1, weight=1)  # Entry fields get primary weight
-        file_ops_frame.columnconfigure(2, weight=1)  # Route info label gets space to expand
+        file_ops_frame.columnconfigure(2, weight=0)  # Buttons should not expand
         
         # === DATA LOADING SECTION ===
         # File selection
@@ -151,7 +155,7 @@ class UIBuilder:
         self.app.data_entry.grid(row=0, column=1, sticky="ew", padx=ui_config.standard_padding_x)
         
         ttk.Button(file_ops_frame, text="Browse...", 
-                  command=self.app.browse_data_file).grid(row=0, column=2, padx=ui_config.standard_padding_x)
+                  command=self.app.browse_data_file).grid(row=0, column=2, padx=ui_config.standard_padding_x, sticky="w")
         
         # Route column selection (for multi-route data files)
         ttk.Label(file_ops_frame, text="Route Column (Optional):").grid(row=1, column=0, sticky="w", pady=(5, 0))  # Reduced from (10, 0)
@@ -237,6 +241,7 @@ class UIBuilder:
         method_frame = ttk.LabelFrame(parent, text="🔬 Optimization Method", padding="6")  # Reduced from 10
         method_frame.grid(row=row, column=0, sticky="ew", pady=3)  # Reduced from 5
         method_frame.columnconfigure(1, weight=1)
+        method_frame.columnconfigure(0, weight=0)  # Labels should not expand
         
         # Method selection dropdown (replaces radio buttons for extensibility)
         ttk.Label(method_frame, text="Optimization Method:").grid(row=0, column=0, sticky="w")
