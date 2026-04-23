@@ -187,7 +187,14 @@ class RouteFilterDialog:
     def _bind_events(self):
         """Bind event handlers."""
         # Combobox type-ahead filtering
-        self.route_combo_var.trace("w", self._on_combo_change)
+        # NOTE: On macOS (Tk 8.6+), the older Tcl syntax `trace variable ...` can
+        # raise: "bad option 'variable': must be add, info, or remove".
+        # Prefer the modern tkinter API.
+        try:
+            self.route_combo_var.trace_add("write", self._on_combo_change)
+        except AttributeError:
+            # Fallback for very old Python/Tkinter
+            self.route_combo_var.trace("w", self._on_combo_change)
         
         # Combobox selection and keyboard events
         self.route_combo.bind("<<ComboboxSelected>>", self._on_combo_selected)
