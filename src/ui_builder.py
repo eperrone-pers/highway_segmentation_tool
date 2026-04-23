@@ -56,14 +56,13 @@ class UIBuilder:
     
     def create_scrollable_left_pane(self, parent):
         """Create the scrollable left pane for input controls."""
-        # Left canvas without fixed width to allow better resize behavior
-        left_canvas = tk.Canvas(parent)
+        # Left canvas - let it expand naturally to fit contents
+        left_canvas = tk.Canvas(parent, highlightthickness=0)
         left_scrollbar = ttk.Scrollbar(parent, orient="vertical", command=left_canvas.yview)
         left_canvas.configure(yscrollcommand=left_scrollbar.set)
         
-        # Grid placement - canvas always visible, scrollbar only when needed
+        # Grid placement - canvas expands, scrollbar only when needed
         left_canvas.grid(row=1, column=0, sticky="nsew", padx=ui_config.standard_padding_x)
-        # Note: scrollbar grid placement will be dynamic
         
         # Scrollable frame inside canvas
         scrollable_frame = ttk.Frame(left_canvas)
@@ -74,38 +73,34 @@ class UIBuilder:
         # Track scrollbar state
         scrollbar_visible = False
         
-        # Configure scrolling
+        # Configure scrolling with simplified logic for cross-platform compatibility
         def configure_scroll_region(event=None):
-            # Update scroll region
+            # Update scroll region first
             left_canvas.configure(scrollregion=left_canvas.bbox("all"))
             
-            # Get dimensions
-            canvas_width = left_canvas.winfo_width()
+            # Get current dimensions
             canvas_height = left_canvas.winfo_height()
-            frame_width = scrollable_frame.winfo_reqwidth()
             frame_height = scrollable_frame.winfo_reqheight()
+            frame_width = scrollable_frame.winfo_reqwidth()
             
             nonlocal scrollbar_visible
             
-            # Determine if scrollbar is needed
-            needs_scrolling = frame_height > canvas_height
+            # Handle vertical scrollbar visibility
+            needs_scrolling = frame_height > canvas_height and canvas_height > 1
             
             if needs_scrolling and not scrollbar_visible:
                 # Show scrollbar
                 left_scrollbar.grid(row=1, column=1, sticky="ns")
                 scrollbar_visible = True
-                
             elif not needs_scrolling and scrollbar_visible:
-                # Hide scrollbar  
+                # Hide scrollbar
                 left_scrollbar.grid_remove()
                 scrollbar_visible = False
             
-            # Configure frame width to accommodate all content
-            # Ensure the scrollable frame is wide enough for its contents
-            if canvas_width > 1:
-                # Set the canvas window width to be at least as wide as the frame needs
-                required_width = max(frame_width, canvas_width)
-                left_canvas.itemconfig(canvas_window, width=required_width)
+            # Set canvas width to match frame's required width
+            # This ensures all content is visible without cutoff
+            if frame_width > 0:
+                left_canvas.configure(width=frame_width)
         
         def on_mousewheel(event):
             # Only scroll if scrollbar is visible (scrolling is needed)
@@ -118,16 +113,21 @@ class UIBuilder:
             for child in widget.winfo_children():
                 bind_to_mousewheel(child)
         
+        # Bind events
         scrollable_frame.bind("<Configure>", configure_scroll_region)
-        left_canvas.bind("<Configure>", configure_scroll_region)  # Also listen to canvas resize
+        left_canvas.bind("<Configure>", configure_scroll_region)
         left_canvas.bind("<MouseWheel>", on_mousewheel)
         
-        # Bind mousewheel to all widgets after they're created
-        def setup_mousewheel_binding():
-            bind_to_mousewheel(scrollable_frame)
+        # Force initial layout update for macOS compatibility
+        def setup_initial_layout():
+            """Set up initial layout and mousewheel binding after widgets are created."""
+            scrollable_frame.update_idletasks()  # Force geometry update
+            configure_scroll_region()  # Update layout
+            bind_to_mousewheel(scrollable_frame)  # Setup mouse wheel
         
-        # Schedule the binding setup after widget creation
-        scrollable_frame.after(100, setup_mousewheel_binding)
+        # Schedule the setup after widget creation with multiple attempts for reliability
+        scrollable_frame.after(50, setup_initial_layout)
+        scrollable_frame.after(200, setup_initial_layout)  # Backup call for slow systems
         
         return scrollable_frame
     
@@ -144,8 +144,10 @@ class UIBuilder:
         """Create the unified file operations section (data loading, column selection, and results saving)."""
         file_ops_frame = ttk.LabelFrame(parent, text="📁 File Operations", padding="6")  # Reduced from 10
         file_ops_frame.grid(row=row, column=0, sticky="ew", pady=3)  # Reduced from 5
-        file_ops_frame.columnconfigure(1, weight=1)  # Entry fields get primary weight
-        file_ops_frame.columnconfigure(2, weight=0)  # Buttons should not expand
+        # Configure columns for proper widget spacing
+        file_ops_frame.columnconfigure(1, weight=1)  # Entry fields expand
+        file_ops_frame.columnconfigure(2, weight=0)  # Buttons maintain natural size
+        file_ops_frame.columnconfigure(0, weight=0)  # Labels maintain natural size
         
         # === DATA LOADING SECTION ===
         # File selection
