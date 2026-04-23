@@ -368,12 +368,22 @@ class FileManager:
             
             # Store the RouteAnalysis object (contains both data and gap info)
             self.app.data = route_analysis
-            
-            # CRITICAL: Reset all state after loading new data to ensure clean state
-            self.app.available_routes = []
-            self.app.selected_routes = []
+
+            # Reset optimization controller state to prevent stale thread/progress state,
+            # but preserve route selection (it is owned by the GUI/user).
             if hasattr(self.app, 'optimization_controller'):
                 self.app.optimization_controller.reset_state()
+
+            # Re-detect routes after load so available_routes stays in sync with the file.
+            # This also preserves any existing user selection by intersecting it with
+            # the newly detected distinct routes.
+            try:
+                if (hasattr(self.app, 'route_column') and
+                    self.app.route_column.get() and
+                    self.app.route_column.get() != "None - treat as single route"):
+                    self.detect_available_routes()
+            except Exception as e:
+                self.app.log_message(f"Warning: Could not re-detect routes after load: {e}")
                 
             filepath = self.get_data_file_path()
             self.app.log_message(f"Data loaded: {len(route_analysis.route_data)} points from {os.path.basename(filepath)} (X: {x_col}, Y: {y_col})")

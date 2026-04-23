@@ -69,7 +69,9 @@ Thumbs.db
 
 # Project-specific
 Results/
+data/
 deliverables/
+src/app_settings.json
 *.log
 *.csv.bak
 *.res.bak
@@ -91,5 +93,3 @@ dmypy.json
 *.prof
 *.pstats
 *.cprof
-src/app_settings.json
-src/app_settings.json

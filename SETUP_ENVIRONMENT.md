@@ -54,29 +54,6 @@ python src/run.py
 - See `requirements.txt` for all package dependencies
 - See `pyproject.toml` for project configuration
 
-## macOS tkinter Installation
-
-If you encounter a `No module named '_tkinter'` error when running the GUI (`python src/gui_main.py`), you need to install tkinter:
-
-**Option 1: Install via Homebrew (recommended)**
-```bash
-# Check your Python version first
-python3 --version  # e.g., 3.11
-
-# Install tkinter for your Python version
-brew install python-tk@3.11  # Replace 3.11 with your actual version
-```
-
-**Option 2: Reinstall Python from python.org**
-Download and install Python from [python.org](https://www.python.org), which includes tkinter by default.
-
-**Verify the installation:**
-```bash
-python3 -m tkinter  # Should open a test window
-```
-
-tkinter is part of Python's standard library but requires system-level installation that pip cannot handle. This affects the GUI application but not the command-line interface (`python src/run.py`).
-
 ## Included in this Package
 
 - ✅ Complete source code (src/)
@@ -89,6 +66,7 @@ tkinter is part of Python's standard library but requires system-level installat
 ## Notes
 
 - Virtual environment excluded (recreate using instructions above)
+- User settings file (`src/app_settings.json`) is generated locally by the app and is git-ignored
 - Output directories (Results/, test_results/) are generated outputs and are git-ignored
 - IDE settings (.vscode/) excluded (personal configuration)
 - The refactoring tracker/plans (refactoring/) are developer-only notes and are not required to run the tool

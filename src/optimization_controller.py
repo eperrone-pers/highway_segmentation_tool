@@ -46,12 +46,9 @@ class OptimizationController:
         self.optimization_thread = None
         self.is_running = False
         self._optimization_start_time = None
-        
-        # Clear any cached route information
-        if hasattr(self.app, 'selected_routes'):
-            self.app.selected_routes = []
-        if hasattr(self.app, 'available_routes'):
-            self.app.available_routes = []
+        # Note: do not mutate self.app.available_routes / self.app.selected_routes here.
+        # Route selection is UI state owned by the GUI; clearing it here can erase a
+        # user's filter right before optimization starts (especially when auto-loading).
 
     def _prepare_save_filename(self, custom_name):
         """
@@ -269,9 +266,23 @@ class OptimizationController:
                     self.app.log_message(f"[ERROR] Route column '{actual_route_column}' not found in data!")
                     return
             
-            # Get all unique routes in the data (exclude combined analysis routes)
-            selected_routes = getattr(self.app, 'selected_routes', all_routes) or all_routes
-            
+            # Determine routes to process.
+            # Important: an explicit empty selection ([]) is an error in multi-route mode.
+            if is_single_route_mode:
+                selected_routes = all_routes
+            else:
+                raw_selected_routes = getattr(self.app, 'selected_routes', None)
+                if raw_selected_routes is None:
+                    selected_routes = all_routes
+                elif isinstance(raw_selected_routes, (list, tuple)):
+                    if len(raw_selected_routes) == 0:
+                        raise ValueError(
+                            "No routes selected. Please open Route Filter and select at least one route."
+                        )
+                    selected_routes = list(raw_selected_routes)
+                else:
+                    selected_routes = all_routes
+
             # Filter to only routes that actually exist in the data
             routes_to_process = [route for route in selected_routes if route in all_routes]
             

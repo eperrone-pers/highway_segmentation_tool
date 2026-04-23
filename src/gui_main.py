@@ -491,16 +491,27 @@ class HighwaySegmentationGUI:
         # Import and create route filter dialog
         try:
             from route_filter_dialog import RouteFilterDialog
+            self.log_message("Opening route filter dialog...")
+            
             dialog = RouteFilterDialog(self.root, self.available_routes, self.selected_routes)
             result = dialog.show()
             
-            if result:
+            if result is not None:
                 self.selected_routes = result
                 self._update_route_info_display()
                 self.log_message(f"Route selection updated: {len(self.selected_routes)} routes selected")
+            else:
+                self.log_message("Route filter dialog cancelled or failed")
+                
         except Exception as e:
-            self.log_message(f"ERROR: Failed to open route filter dialog: {str(e)}")
-            messagebox.showerror("Dialog Error", f"Error opening route filter dialog: {str(e)}")
+            error_msg = f"Failed to open route filter dialog: {str(e)}"
+            self.log_message(f"ERROR: {error_msg}")
+            # Use simpler error dialog for better macOS compatibility
+            try:
+                messagebox.showerror("Dialog Error", error_msg)
+            except:
+                # Fallback if messagebox also fails
+                print(f"Critical error: {error_msg}")
     
     def _update_route_info_display(self):
         """Update the route info label to show selected route count."""

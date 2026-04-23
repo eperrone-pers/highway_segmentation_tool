@@ -7,7 +7,7 @@ and standard Windows selection patterns.
 """
 
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox
 
 
 class RouteFilterDialog:
@@ -44,6 +44,10 @@ class RouteFilterDialog:
         self.dialog.grab_set()  # Make modal
         self.dialog.resizable(True, True)
         
+        # Ensure dialog appears properly on macOS
+        self.dialog.lift()  # Bring to front
+        self.dialog.attributes('-topmost', True)  # Stay on top initially
+        
         # Center the dialog
         self._center_dialog()
         
@@ -53,24 +57,29 @@ class RouteFilterDialog:
         # Bind events
         self._bind_events()
         
-        # Initialize route display
-        self._update_routes_display()
+        # Initialize route display with delay for macOS
+        self.dialog.after(50, self._initialize_display)
     
     def _center_dialog(self):
-        """Center the dialog on the parent window."""
-        self.dialog.update_idletasks()
+        """Center the dialog on the parent window with macOS compatibility."""
+        self.dialog.update_idletasks()  # Ensure geometry is calculated
         
         # Get parent window position and size
-        parent_x = self.parent.winfo_x()
-        parent_y = self.parent.winfo_y()
-        parent_width = self.parent.winfo_width()
-        parent_height = self.parent.winfo_height()
+        try:
+            parent_x = self.parent.winfo_x()
+            parent_y = self.parent.winfo_y()
+            parent_width = self.parent.winfo_width()
+            parent_height = self.parent.winfo_height()
+        except tk.TclError:
+            # Fallback if parent info unavailable
+            parent_x, parent_y = 100, 100
+            parent_width, parent_height = 800, 600
         
         # Calculate center position
         dialog_width = 500
         dialog_height = 600
-        x = parent_x + (parent_width // 2) - (dialog_width // 2)
-        y = parent_y + (parent_height // 2) - (dialog_height // 2)
+        x = max(0, parent_x + (parent_width // 2) - (dialog_width // 2))
+        y = max(0, parent_y + (parent_height // 2) - (dialog_height // 2))
         
         self.dialog.geometry(f"{dialog_width}x{dialog_height}+{x}+{y}")
     
@@ -171,6 +180,9 @@ class RouteFilterDialog:
         # Route count summary
         self.summary_label = ttk.Label(action_frame, text="", foreground="blue")
         self.summary_label.pack(side="left")
+        
+        # Force geometry update for macOS
+        main_frame.update_idletasks()
     
     def _bind_events(self):
         """Bind event handlers."""
@@ -183,8 +195,8 @@ class RouteFilterDialog:
         self.route_combo.bind("<KeyRelease>", self._on_combo_keyrelease)
         
         # Routes listbox events
-        self.routes_listbox.bind("<Button-1>", self._on_route_click)
-        self.routes_listbox.bind("<Double-Button-1>", self._toggle_selected_route)
+        # Use ButtonRelease so the click position/selection is stable across platforms
+        self.routes_listbox.bind("<ButtonRelease-1>", self._on_route_click)
         
         # Global keyboard shortcuts
         self.dialog.bind("<Control-a>", lambda e: self._select_all())
@@ -192,6 +204,24 @@ class RouteFilterDialog:
         
         # Focus on combobox
         self.route_combo.focus_set()
+    
+    def _initialize_display(self):
+        """Initialize the display after widget creation - macOS compatible."""
+        try:
+            # Ensure widgets are properly created before updating display
+            self.dialog.update_idletasks()
+            
+            # Update route display
+            self._update_routes_display()
+            
+            # Focus on combobox
+            self.route_combo.focus_set()
+            
+            # Remove topmost after initialization
+            self.dialog.attributes('-topmost', False)
+        except Exception as e:
+            # Log error but don't crash - dialog should still be usable
+            print(f"Warning: Display initialization error: {e}")
     
     def _on_combo_change(self, *_):
         """Handle combobox text changes with type-ahead filtering."""
@@ -320,12 +350,29 @@ class RouteFilterDialog:
             self.route_combo.focus_set()
     
     def _on_route_click(self, event=None):
-        """Handle single click on route in listbox."""
-        selection = self.routes_listbox.curselection()
-        if selection:
-            # Single click just selects the item in the listbox
-            # Double click or button will toggle the selection
-            pass
+        """Toggle selection of the clicked route (single-click UX)."""
+        if event is None:
+            return
+
+        # Identify which row was clicked (more reliable than curselection on some platforms)
+        index = self.routes_listbox.nearest(event.y)
+        if index is None:
+            return
+
+        if index < 0 or index >= len(self.displayed_routes):
+            return
+
+        route = self.displayed_routes[index]
+        if route in self.selected_routes:
+            self.selected_routes.remove(route)
+        else:
+            self.selected_routes.append(route)
+
+        self._update_routes_display()
+        # Keep the clicked row selected for keyboard follow-up
+        if index < self.routes_listbox.size():
+            self.routes_listbox.selection_clear(0, tk.END)
+            self.routes_listbox.selection_set(index)
     
     def _toggle_selected_route(self, event=None):
         """Toggle selection of the currently selected route in the listbox."""
@@ -416,6 +463,12 @@ class RouteFilterDialog:
     
     def _ok_clicked(self):
         """Handle OK button click."""
+        if not self.selected_routes:
+            messagebox.showwarning(
+                "No Routes Selected",
+                "Please select at least one route (or click Cancel to keep your previous selection).",
+            )
+            return
         self._cleanup_timer()
         self.result = self.selected_routes.copy()  # Return copy of selected routes
         self.dialog.destroy()
@@ -428,6 +481,18 @@ class RouteFilterDialog:
     
     def show(self):
         """Show the dialog and return the result."""
-        self.dialog.wait_window()
-        self._cleanup_timer()  # Ensure cleanup even if dialog closed via X button
-        return self.result
+        try:
+            # Ensure dialog is visible and properly initialized
+            self.dialog.deiconify()  # Ensure dialog is shown
+            self.dialog.lift()  # Bring to front
+            self.dialog.focus_force()  # Force focus to dialog
+            
+            # Wait for user interaction
+            self.dialog.wait_window()
+            
+            return self.result
+        except Exception as e:
+            print(f"Error showing route filter dialog: {e}")
+            return None
+        finally:
+            self._cleanup_timer()  # Ensure cleanup even if dialog closed via X button
