@@ -1312,9 +1312,16 @@ def main():
     
     # Configure ttk style
     style = ttk.Style()
-    if "winnative" in style.theme_names():
+    # Prefer platform-native ttk themes for visual consistency.
+    # Forcing non-native themes (e.g. "clam" on macOS) can lead to odd
+    # backgrounds (including black) and mismatched widget styling.
+    import sys
+    theme_names = set(style.theme_names())
+    if sys.platform.startswith("win") and "winnative" in theme_names:
         style.theme_use("winnative")
-    elif "clam" in style.theme_names():
+    elif sys.platform == "darwin" and "aqua" in theme_names:
+        style.theme_use("aqua")
+    elif "clam" in theme_names:
         style.theme_use("clam")
     
     # Validate method registry early so misconfigurations fail fast with clear messaging
