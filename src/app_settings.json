@@ -45,7 +45,7 @@
         "mutation_rate": 0.05,
         "elite_ratio": 0.05,
         "target_avg_length": 2.0,
-        "penalty_weight": 1000.0,
+        "penalty_weight": 10000.0,
         "length_tolerance": 0.2,
         "cache_clear_interval": 50,
         "enable_performance_stats": true
@@ -78,11 +78,11 @@
   },
   "ui_state": {
     "selected_columns": [],
-    "window_geometry": "1100x700+78+78",
+    "window_geometry": "1920x1009+2448+-1100",
     "last_data_directory": "",
     "last_save_directory": "",
     "x_column": "BDFO",
-    "y_column": "SCI",
+    "y_column": "D60",
     "route_column": "RDB",
     "selected_routes": [],
     "gap_threshold": 0.5
