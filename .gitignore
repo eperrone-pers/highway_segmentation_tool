@@ -92,3 +92,4 @@ dmypy.json
 *.prof
 *.pstats
 *.cprof
+src/app_settings.json
