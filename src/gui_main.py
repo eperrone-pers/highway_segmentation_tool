@@ -1317,8 +1317,9 @@ def main():
         )
         try:
             root.destroy()
-        finally:
-            return
+        except Exception:
+            pass
+        return
 
     # Create and run application
     app = HighwaySegmentationGUI(root)
