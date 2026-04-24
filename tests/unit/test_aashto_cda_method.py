@@ -196,21 +196,17 @@ class TestAashtoCdaMethod:
         assert result.input_parameters['alpha'] == 0.05
     
     def test_run_analysis_with_dataframe_fallback(self, cda_method, sample_route_data):
-        """Test run_analysis with DataFrame fallback mode."""
-        result = cda_method.run_analysis(
-            data=sample_route_data,
-            route_id="CDA_ANALYSIS",
-            x_column='milepoint',
-            y_column='measurement',
-            gap_threshold=0.5,
-            alpha=0.1,  # Less sensitive
-            method=2,
-        )
-        
-        # Verify fallback worked
-        assert isinstance(result, AnalysisResult)
-        assert result.route_id == "CDA_ANALYSIS"  # Default fallback ID
-        assert len(result.all_solutions) >= 1
+        """DataFrame inputs are no longer supported (RouteAnalysis required)."""
+        with pytest.raises(TypeError):
+            cda_method.run_analysis(
+                data=sample_route_data,
+                route_id="CDA_ANALYSIS",
+                x_column='milepoint',
+                y_column='measurement',
+                gap_threshold=0.5,
+                alpha=0.1,
+                method=2,
+            )
     
     def test_run_analysis_parameter_validation(self, cda_method, route_analysis_object):
         """Test parameter validation in run_analysis."""
@@ -352,55 +348,47 @@ class TestAashtoCdaErrorHandling:
     def test_empty_data_handling(self, cda_method):
         """Test handling of empty or invalid data."""
         empty_df = pd.DataFrame({'x': [], 'y': []})
-        
-        result = cda_method.run_analysis(
-            data=empty_df,
-            route_id="empty",
-            x_column='x',
-            y_column='y',
-            gap_threshold=0.5,
-            alpha=0.05,
-            method=2
-        )
-        
-        # Should return error result gracefully
-        assert isinstance(result, AnalysisResult)
-        assert len(result.all_solutions) == 0
+
+        with pytest.raises(TypeError):
+            cda_method.run_analysis(
+                data=empty_df,
+                route_id="empty",
+                x_column='x',
+                y_column='y',
+                gap_threshold=0.5,
+                alpha=0.05,
+                method=2
+            )
     
     def test_single_point_data(self, cda_method):
         """Test handling of data with only one point."""
         single_point_df = pd.DataFrame({'x': [0], 'y': [1.0]})
-        
-        result = cda_method.run_analysis(
-            data=single_point_df, 
-            route_id="single_point",
-            x_column='x',
-            y_column='y',
-            gap_threshold=0.5,
-            alpha=0.05,
-            method=2
-        )
-        
-        # Should handle gracefully
-        assert isinstance(result, AnalysisResult)
+
+        with pytest.raises(TypeError):
+            cda_method.run_analysis(
+                data=single_point_df, 
+                route_id="single_point",
+                x_column='x',
+                y_column='y',
+                gap_threshold=0.5,
+                alpha=0.05,
+                method=2
+            )
     
     def test_missing_columns_handling(self, cda_method):
         """Test handling of DataFrame with missing required columns."""
         bad_df = pd.DataFrame({'wrong': [1, 2, 3], 'columns': [4, 5, 6]})
-        
-        result = cda_method.run_analysis(
-            data=bad_df,
-            route_id="missing_columns",
-            x_column='x',
-            y_column='y',
-            gap_threshold=0.5,
-            alpha=0.05,
-            method=2
-        )
-        
-        # Should return error result
-        assert isinstance(result, AnalysisResult)
-        assert len(result.all_solutions) == 0
+
+        with pytest.raises(TypeError):
+            cda_method.run_analysis(
+                data=bad_df,
+                route_id="missing_columns",
+                x_column='x',
+                y_column='y',
+                gap_threshold=0.5,
+                alpha=0.05,
+                method=2
+            )
 
 
 if __name__ == "__main__":

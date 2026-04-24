@@ -126,6 +126,11 @@ class SingleObjectiveMethod(AnalysisMethodBase):
             num_generations=num_generations,
             gap_threshold=gap_threshold
         )
+        if not hasattr(data, 'route_data'):
+            raise TypeError(
+                "SingleObjectiveMethod.run_analysis expects a RouteAnalysis object (with .route_data). "
+                "Use analyze_route_gaps(...) to build one from a DataFrame."
+            )
         
         start_time = time.time()
         
@@ -170,9 +175,9 @@ class SingleObjectiveMethod(AnalysisMethodBase):
             if stop_callback and stop_callback():
                 log(f"\\n[STOPPED] Optimization stopped by user at generation {gen+1}")
                 break
-                
+
             gen_start_time = time.time()
-            
+
             # Progress reporting
             progress_interval = max(1, num_generations // 50)
             if gen % progress_interval == 0 or gen == 0:
@@ -337,7 +342,7 @@ class SingleObjectiveMethod(AnalysisMethodBase):
         }
         
         # Prepare data summary - use RouteAnalysis data_range for schema compliance
-        actual_data = data.route_data if hasattr(data, 'route_data') else data
+        actual_data = data.route_data
         
         # Use data_range from RouteAnalysis if available (ensures consistency with mandatory breakpoints)
         if hasattr(ga, 'route_analysis') and ga.route_analysis and hasattr(ga.route_analysis, 'data_range'):
@@ -368,7 +373,7 @@ class SingleObjectiveMethod(AnalysisMethodBase):
         
         log("[OK] Single-objective optimization complete!")
         
-        # Create and return AnalysisResult  
+        # Create and return AnalysisResult
         return AnalysisResult(
             method_name=self.method_name,
             method_key=self.method_key,

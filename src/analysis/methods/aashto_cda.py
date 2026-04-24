@@ -374,7 +374,7 @@ class AashtoCdaMethod(AnalysisMethodBase):
         return segments
     
     def run_analysis(self, 
-                    data,  # RouteAnalysis object (primary) or DataFrame (fallback)
+                    data,  # RouteAnalysis object
                     route_id: str,
                     x_column: str,
                     y_column: str,
@@ -387,10 +387,10 @@ class AashtoCdaMethod(AnalysisMethodBase):
         between mandatory breakpoints independently, then unions results (not single-pass).
         
         Args:
-            data: RouteAnalysis object (preferred) or DataFrame (fallback)
+            data: RouteAnalysis object (required)
             route_id: Route identifier for this analysis
-            x_column: Name of distance column (for DataFrame fallback)
-            y_column: Name of measurement column (for DataFrame fallback)
+            x_column: Name of distance column (in RouteAnalysis.route_data)
+            y_column: Name of measurement column (in RouteAnalysis.route_data)
             gap_threshold: Data gap detection threshold
             **kwargs: Method-specific parameters including:
                 - alpha: Significance level for change point detection (default: 0.05)
@@ -401,13 +401,19 @@ class AashtoCdaMethod(AnalysisMethodBase):
                 - min_section_difference: Minimum difference between adjacent sections (default: 0.0)
                 - enable_diagnostic_output: Enable detailed diagnostics (default: False)
             min_section_difference: Minimum difference between adjacent segment means
-            gap_threshold: Data gap detection threshold (DataFrame fallback only)
+            gap_threshold: Data gap detection threshold
             enable_diagnostic_output: Enable detailed diagnostic information
             **kwargs: Additional parameters (ignored)
             
         Returns:
             AnalysisResult with breakpoints and segment information
         """
+        if not hasattr(data, 'route_data'):
+            raise TypeError(
+                "AashtoCdaMethod.run_analysis expects a RouteAnalysis object (with .route_data). "
+                "Use analyze_route_gaps(...) to build one from a DataFrame."
+            )
+
         try:
             # Extract method defaults strictly from method configuration
             method_config = get_optimization_method('aashto_cda')
@@ -430,31 +436,12 @@ class AashtoCdaMethod(AnalysisMethodBase):
             if not isinstance(alpha, (int, float)) or not (0.0 < float(alpha) < 0.5):
                 raise ValueError(f"alpha must be between 0 and 0.5 (exclusive), got: {alpha}")
             
-            # Handle RouteAnalysis objects (primary) or DataFrame fallback (testing edge cases)
-            if hasattr(data, 'route_data'):
-                # Primary case: RouteAnalysis object (follows GA pattern)
-                route_analysis = data
-                route_data = route_analysis.route_data
-                x_values = route_data.iloc[:, 0].values  # First column = x/distance
-                y_values = route_data.iloc[:, 1].values  # Second column = y/measurements
-                mandatory_breakpoints = sorted(route_analysis.mandatory_breakpoints)
-                # Use provided route_id parameter
-            else:
-                # Fallback case: DataFrame (create RouteAnalysis on the fly)
-                # NOTE: Use absolute import because tests often import 'analysis' as the top-level package
-                # (src/ is on PYTHONPATH). Relative import (from ...data_loader) can fail in that context.
-                from data_loader import analyze_route_gaps
-                route_analysis = analyze_route_gaps(
-                    data,
-                    x_column,
-                    y_column,
-                    route_id=route_id,
-                    gap_threshold=gap_threshold,
-                )
-                route_data = route_analysis.route_data  
-                x_values = route_data[x_column].values
-                y_values = route_data[y_column].values
-                mandatory_breakpoints = sorted(route_analysis.mandatory_breakpoints)
+            # RouteAnalysis-only contract
+            route_analysis = data
+            route_data = route_analysis.route_data
+            x_values = route_data.iloc[:, 0].values  # First column = x/distance
+            y_values = route_data.iloc[:, 1].values  # Second column = y/measurements
+            mandatory_breakpoints = sorted(route_analysis.mandatory_breakpoints)
             
             # Validate min_segment_datapoints parameter (sample-std safe)
             if not isinstance(min_segment_datapoints, int) or min_segment_datapoints < 3:

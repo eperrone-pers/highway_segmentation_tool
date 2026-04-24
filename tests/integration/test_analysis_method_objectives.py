@@ -31,6 +31,7 @@ try:
     from analysis.methods.multi_objective import MultiObjectiveMethod
     from analysis.methods.constrained import ConstrainedMethod
     from analysis.utils.genetic_algorithm import HighwaySegmentGA
+    from data_loader import analyze_route_gaps
 except ImportError as e:
     pytest.skip(f"Required analysis modules not available: {e}", allow_module_level=True)
 
@@ -45,14 +46,22 @@ class TestAnalysisMethodObjectiveUsage:
         x_values = np.linspace(0, 10, 50)
         y_values = np.random.normal(2.0, 0.3, 50)
         
-        # Create DataFrame expected by existing analysis methods
+        # Create DataFrame and then RouteAnalysis (required contract)
         route_df = pd.DataFrame({
             'BDFO': x_values,
             'SCI': y_values
         })
+
+        route_analysis = analyze_route_gaps(
+            route_df,
+            x_column='BDFO',
+            y_column='SCI',
+            route_id='test_route_001',
+            gap_threshold=0.3,
+        )
         
         return {
-            'dataframe': route_df,
+            'route_analysis': route_analysis,
             'x_column': 'BDFO',
             'y_column': 'SCI',
             'route_id': 'test_route_001'
@@ -86,7 +95,7 @@ class TestSingleObjectiveMethodCorrectness(TestAnalysisMethodObjectiveUsage):
         params = dict(basic_params)
         gap_threshold = params.pop('gap_threshold')
         result = method.run_analysis(
-            data=sample_route_data['dataframe'],
+            data=sample_route_data['route_analysis'],
             route_id=sample_route_data['route_id'],
             x_column=sample_route_data['x_column'],
             y_column=sample_route_data['y_column'],
@@ -123,7 +132,7 @@ class TestSingleObjectiveMethodCorrectness(TestAnalysisMethodObjectiveUsage):
         params = dict(basic_params)
         gap_threshold = params.pop('gap_threshold')
         result = method.run_analysis(
-            data=sample_route_data['dataframe'],
+            data=sample_route_data['route_analysis'],
             route_id=sample_route_data['route_id'],
             x_column=sample_route_data['x_column'],
             y_column=sample_route_data['y_column'],
@@ -166,7 +175,7 @@ class TestMultiObjectiveMethodCorrectness(TestAnalysisMethodObjectiveUsage):
         params = dict(basic_params)
         gap_threshold = params.pop('gap_threshold')
         result = method.run_analysis(
-            data=sample_route_data['dataframe'],
+            data=sample_route_data['route_analysis'],
             route_id=sample_route_data['route_id'],
             x_column=sample_route_data['x_column'],
             y_column=sample_route_data['y_column'],
@@ -236,7 +245,7 @@ class TestMultiObjectiveMethodCorrectness(TestAnalysisMethodObjectiveUsage):
         params = dict(extended_params)
         gap_threshold = params.pop('gap_threshold')
         result = method.run_analysis(
-            data=sample_route_data['dataframe'],
+            data=sample_route_data['route_analysis'],
             route_id=sample_route_data['route_id'],
             x_column=sample_route_data['x_column'],
             y_column=sample_route_data['y_column'],
@@ -308,7 +317,7 @@ class TestConstrainedMethodCorrectness(TestAnalysisMethodObjectiveUsage):
         
         # Run constrained analysis using new input_parameters format
         result = method.run_analysis(
-            data=sample_route_data['dataframe'],
+            data=sample_route_data['route_analysis'],
             route_id=sample_route_data['route_id'],
             x_column=sample_route_data['x_column'],
             y_column=sample_route_data['y_column'],
@@ -367,7 +376,7 @@ class TestConstrainedMethodCorrectness(TestAnalysisMethodObjectiveUsage):
         
         # Run analysis using new input_parameters format
         result = method.run_analysis(
-            data=sample_route_data['dataframe'],
+            data=sample_route_data['route_analysis'],
             route_id=sample_route_data['route_id'],
             x_column=sample_route_data['x_column'],
             y_column=sample_route_data['y_column'],
@@ -435,7 +444,7 @@ class TestIntegratedObjectiveConsistency(TestAnalysisMethodObjectiveUsage):
             if method_name in ['single_objective', 'multi_objective']:
                 # Single and multi-objective use old API with positional arguments
                 result = method_instance.run_analysis(
-                    data=sample_route_data['dataframe'],
+                    data=sample_route_data['route_analysis'],
                     route_id=sample_route_data['route_id'],
                     x_column=sample_route_data['x_column'],
                     y_column=sample_route_data['y_column'],
@@ -446,7 +455,7 @@ class TestIntegratedObjectiveConsistency(TestAnalysisMethodObjectiveUsage):
             elif method_name == 'constrained':
                 # Constrained uses new input_parameters API
                 result = method_instance.run_analysis(
-                    data=sample_route_data['dataframe'],
+                    data=sample_route_data['route_analysis'],
                     route_id=sample_route_data['route_id'],
                     x_column=sample_route_data['x_column'], 
                     y_column=sample_route_data['y_column'],

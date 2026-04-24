@@ -359,9 +359,8 @@ class AashtoCdaMethod(AnalysisMethodBase):
     @property
     def method_key(self) -> str:
         return "aashto_cda"
-
     def run_analysis(self,
-                    data,  # RouteAnalysis object (primary) or DataFrame (fallback)
+                    data,  # RouteAnalysis object
                     route_id: str,
                     x_column: str,
                     y_column: str,
@@ -677,9 +676,9 @@ class <NewMethodClass>(AnalysisMethodBase):
         """Run the analysis for one route.
 
         Required inputs (provided by the framework/controller):
-        - data: RouteAnalysis (preferred) or DataFrame fallback
+        - data: RouteAnalysis (required)
         - route_id: str route identifier
-        - x_column/y_column: column names for DataFrame fallback
+        - x_column/y_column: column names for RouteAnalysis.route_data
         - gap_threshold: framework-level gap detection threshold
 
         Method-specific inputs:
@@ -703,24 +702,16 @@ class <NewMethodClass>(AnalysisMethodBase):
         )
 
         # 3) Normalize/prepare input data
-        # Preferred: RouteAnalysis objects expose route_data + mandatory_breakpoints.
-        if hasattr(data, "route_data") and hasattr(data, "mandatory_breakpoints"):
-            route_analysis = data
-            route_df = route_analysis.route_data
-            mandatory_breakpoints = sorted(list(route_analysis.mandatory_breakpoints))
-        else:
-            # Fallback: DataFrame; build RouteAnalysis via analyze_route_gaps
-            from data_loader import analyze_route_gaps
-
-            route_analysis = analyze_route_gaps(
-                data,
-                x_column,
-                y_column,
-                route_id=route_id,
-                gap_threshold=gap_threshold,
+        # RouteAnalysis-only contract: gap analysis must be performed upstream.
+        if not (hasattr(data, "route_data") and hasattr(data, "mandatory_breakpoints")):
+            raise TypeError(
+                "Expected RouteAnalysis input (with route_data and mandatory_breakpoints). "
+                "Use analyze_route_gaps(...) to build one from a DataFrame."
             )
-            route_df = route_analysis.route_data
-            mandatory_breakpoints = sorted(list(route_analysis.mandatory_breakpoints))
+
+        route_analysis = data
+        route_df = route_analysis.route_data
+        mandatory_breakpoints = sorted(list(route_analysis.mandatory_breakpoints))
 
         # 4) TODO: run your algorithm
         # Output must be a sorted list of breakpoints including start and end.

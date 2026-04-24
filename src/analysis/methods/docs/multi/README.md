@@ -17,7 +17,7 @@ Given a route sampled at positions $x_i$ with measurements $y_i$, the goal is to
 The method consumes either:
 
 - a `RouteAnalysis` object (preferred), which contains precomputed mandatory breakpoints from gap detection, or
-- a raw DataFrame (fallback/testing path).
+
 
 Key fields:
 

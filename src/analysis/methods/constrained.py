@@ -79,7 +79,7 @@ class ConstrainedMethod(AnalysisMethodBase):
         x_column: str, 
         y_column: str,
         gap_threshold: float,
-        **kwargs
+        **kwargs,
     ) -> AnalysisResult:
         """
         Execute constrained single-objective genetic algorithm analysis.
@@ -105,6 +105,12 @@ class ConstrainedMethod(AnalysisMethodBase):
         input_parameters = kwargs.get('input_parameters', None)
         log_callback = kwargs.get('log_callback', None)
         stop_callback = kwargs.get('stop_callback', None)
+
+        if not hasattr(data, 'route_data'):
+            raise TypeError(
+                "ConstrainedMethod.run_analysis expects a RouteAnalysis object (with .route_data). "
+                "Use analyze_route_gaps(...) to build one from a DataFrame."
+            )
         
         # Logging setup
         def log(message: str):
@@ -161,7 +167,7 @@ class ConstrainedMethod(AnalysisMethodBase):
         ga.enable_segment_cache_mode(True)
         
         # ===== GAP-AWARE TARGET SEGMENT CALCULATION =====
-        route_data = data.route_data if hasattr(data, 'route_data') else data
+        route_data = data.route_data
         total_distance = route_data[x_column].max() - route_data[x_column].min()
         mandatory_breakpoints = sorted(list(ga.mandatory_breakpoints))
         
@@ -363,7 +369,7 @@ class ConstrainedMethod(AnalysisMethodBase):
         }
         
         # Data summary - consistent with other methods, use RouteAnalysis data_range for per-route bounds
-        route_data = data.route_data if hasattr(data, 'route_data') else data
+        route_data = data.route_data
         
         # Use data_range from RouteAnalysis if available (ensures consistency with mandatory breakpoints)
         if hasattr(ga, 'route_analysis') and ga.route_analysis and hasattr(ga.route_analysis, 'data_range'):

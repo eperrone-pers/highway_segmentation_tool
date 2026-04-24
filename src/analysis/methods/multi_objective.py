@@ -91,6 +91,12 @@ class MultiObjectiveMethod(AnalysisMethodBase):
         Returns:
             AnalysisResult with Pareto front in all_solutions and best compromise in best_solution
         """
+        if not hasattr(data, 'route_data'):
+            raise TypeError(
+                "MultiObjectiveMethod.run_analysis expects a RouteAnalysis object (with .route_data). "
+                "Use analyze_route_gaps(...) to build one from a DataFrame."
+            )
+
         # Get method configuration and default parameters
         method_config = get_optimization_method('multi')
         if not method_config:
@@ -134,9 +140,8 @@ class MultiObjectiveMethod(AnalysisMethodBase):
         log(f"Objectives: Minimize deviation (data fit) vs. Maximize average segment length")
         log(f"Parameters: {population_size} individuals, {num_generations} generations")
         
-        # Initialize genetic algorithm with data - handle both DataFrame and RouteAnalysis objects  
-        actual_data = data.route_data if hasattr(data, 'route_data') else data
-        ga = HighwaySegmentGA(actual_data, x_column, y_column, min_length=min_length, max_length=max_length,
+        # Initialize genetic algorithm (RouteAnalysis-only contract)
+        ga = HighwaySegmentGA(data, x_column, y_column, min_length=min_length, max_length=max_length,
                             population_size=population_size, crossover_rate=crossover_rate, mutation_rate=mutation_rate, 
                             gap_threshold=gap_threshold)  # Pass explicit parameters
         
@@ -225,7 +230,7 @@ class MultiObjectiveMethod(AnalysisMethodBase):
             if generation < num_generations - 1:  # Skip on last generation
                 # Tournament selection based on dominance and crowding distance
                 mating_pool = nsga2_tournament_selection(
-                    population, fitness_values, fronts, crowding_distances, population_size
+                    population, fronts, fitness_values, crowding_distances, population_size
                 )
                 
                 # Generate offspring through crossover and mutation
@@ -291,8 +296,8 @@ class MultiObjectiveMethod(AnalysisMethodBase):
                 population = next_population
             
             # Cache clearing for performance
-            if generation % cache_clear_interval == 0 and hasattr(ga, 'fitness_cache'):
-                ga.fitness_cache.clear()
+            if cache_clear_interval and (generation + 1) % int(cache_clear_interval) == 0 and hasattr(ga, 'clear_cache'):
+                ga.clear_cache()
                 
         # Final progress update
         log("Progress: [" + "=" * 50 + "] " + f"{num_generations}/{num_generations} generations - COMPLETE! ({time.time() - start_time:.1f}s)")
@@ -437,7 +442,7 @@ class MultiObjectiveMethod(AnalysisMethodBase):
         }
         
         # Prepare data summary - consistent with other methods, use RouteAnalysis data_range for per-route bounds
-        actual_data = data.route_data if hasattr(data, 'route_data') else data
+        actual_data = data.route_data
         
         # Use data_range from RouteAnalysis if available (ensures consistency with mandatory breakpoints)
         if hasattr(ga, 'route_analysis') and ga.route_analysis and hasattr(ga.route_analysis, 'data_range'):

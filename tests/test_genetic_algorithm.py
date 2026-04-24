@@ -343,10 +343,10 @@ class TestGeneticAlgorithm:
         """Test genetic algorithm with edge case data."""
         # Test with two points (minimal viable data)
         minimal_data = edge_case_datasets['two_points']
-        
-        # Should handle gracefully
-        try:
-            ga = HighwaySegmentGA(
+
+        # DataFrame fallback is no longer supported: RouteAnalysis is required.
+        with pytest.raises(TypeError):
+            HighwaySegmentGA(
                 data=minimal_data,
                 x_column="milepoint",
                 y_column="structural_strength_ind",
@@ -357,11 +357,6 @@ class TestGeneticAlgorithm:
                 crossover_rate=0.8,
                 gap_threshold=0.05
             )
-            chromosome = ga.generate_chromosome()
-            assert isinstance(chromosome, list)
-        except Exception as e:
-            # If it raises an exception, should be a meaningful one
-            assert isinstance(e, (ValueError, RuntimeError))
 
     @pytest.mark.unit
     def test_genetic_algorithm_parameters(self, sample_route_analysis):

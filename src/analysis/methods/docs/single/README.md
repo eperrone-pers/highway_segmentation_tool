@@ -19,7 +19,7 @@ The GA optimizes **only data fit** (no explicit objective/penalty for segment co
 The method consumes either:
 
 - a `RouteAnalysis` object (preferred), which contains precomputed mandatory breakpoints from gap detection, or
-- a raw DataFrame (fallback/testing path), in which case gap analysis is computed internally.
+
 
 Key fields:
 

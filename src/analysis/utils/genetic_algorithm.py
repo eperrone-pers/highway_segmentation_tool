@@ -25,7 +25,6 @@ from config import AlgorithmConstants
 
 # Create algorithm constants instance
 optimization_config = AlgorithmConstants()
-from data_loader import analyze_route_gaps
 
 class HighwaySegmentGA:
     """
@@ -54,7 +53,7 @@ class HighwaySegmentGA:
         - Diverse population initialization strategies
     
     Attributes:
-        data (DataFrame): Highway measurement data (milepoint, values)
+        data (DataFrame): Highway measurement data (milepoint, values) from RouteAnalysis.route_data
         x_column (str): Column name for position data (e.g., 'milepoint')
         y_column (str): Column name for measurement values (e.g., 'strength')
         min_length (float): Engineering minimum segment length constraint
@@ -72,12 +71,13 @@ class HighwaySegmentGA:
     
     Usage:
         # Basic single-objective optimization
-        ga = HighwaySegmentGA(route_data, 'milepoint', 'strength', 0.5, 5.0)
+        # (Create RouteAnalysis upstream, then pass it in)
+        ga = HighwaySegmentGA(route_analysis, 'milepoint', 'strength', 0.5, 5.0)
         population = ga.generate_initial_population()
         # Evolution handled by optimization runners
         
         # Multi-objective with custom parameters
-        ga = HighwaySegmentGA(route_data, 'milepoint', 'strength', 0.5, 5.0,
+        ga = HighwaySegmentGA(route_analysis, 'milepoint', 'strength', 0.5, 5.0,
                              population_size=200, mutation_rate=0.1)
     
     Performance Optimizations:
@@ -96,11 +96,10 @@ class HighwaySegmentGA:
         Initialize Highway Segmentation Genetic Algorithm with data and parameters.
         
         Sets up the genetic algorithm with highway data, constraints, and optimization
-        parameters. Handles both RouteAnalysis objects (recommended) and raw DataFrames
-        (for testing edge cases).
+        parameters.
         
         Args:
-            data: Highway data - RouteAnalysis object (preferred) or DataFrame
+            data: RouteAnalysis object produced by analyze_route_gaps
             x_column (str): Column name for position data (e.g., 'milepoint')
             y_column (str): Column name for measurement values (e.g., 'strength') 
             min_length (float): Minimum allowed segment length (engineering constraint)
@@ -119,9 +118,7 @@ class HighwaySegmentGA:
             6. Statistics tracking: Set up performance and constraint monitoring
             
         Data Handling:
-            - RouteAnalysis (preferred): Uses pre-computed gap analysis
-            - DataFrame fallback: Creates minimal gap analysis for edge cases
-            - < 3 data points: Minimal structure with route boundaries only
+            - RouteAnalysis only: input must include pre-computed gap analysis
             
         Performance Features:
             - Precomputed sorted data arrays for O(log n) segment access
@@ -142,29 +139,22 @@ class HighwaySegmentGA:
         if float(gap_threshold) <= 0:
             raise ValueError(f"gap_threshold must be > 0 (got {gap_threshold})")
 
-        # Handle RouteAnalysis objects (primary) or DataFrame fallback (testing edge cases)
-        if hasattr(data, 'route_data'):
-            # Normal case: RouteAnalysis object
-            self.route_analysis = data  
-            self.data = data.route_data
-        else:
-            # Edge case fallback: Raw DataFrame (for testing minimal datasets)
-            self.data = data
-            # Create minimal RouteAnalysis for very small datasets or use simple gap detection
-            if len(data) < 3:
-                # Too small for gap analysis - create minimal structure
-                self.route_analysis = None
-                self.mandatory_breakpoints = {data[x_column].min(), data[x_column].max()}
-            else:
-                # Create RouteAnalysis on the fly
-                from data_loader import analyze_route_gaps
-                self.route_analysis = analyze_route_gaps(
-                    data,
-                    x_column,
-                    y_column,
-                    route_id="EDGE_CASE_TEST",
-                    gap_threshold=float(gap_threshold),
-                )
+        # RouteAnalysis-only contract (no raw DataFrame fallback)
+        if not hasattr(data, 'route_data'):
+            raise TypeError(
+                "HighwaySegmentGA expects a RouteAnalysis object (with .route_data). "
+                "Call analyze_route_gaps(df, x_column, y_column, route_id, gap_threshold) first."
+            )
+
+        self.route_analysis = data
+        self.data = data.route_data
+
+        if self.data is None:
+            raise ValueError("RouteAnalysis.route_data is None")
+        if len(self.data) < 3:
+            raise ValueError(
+                f"RouteAnalysis must contain at least 3 data points for optimization (got {len(self.data)})"
+            )
         # Store column names for data access
         self.x_column = x_column
         self.y_column = y_column        
@@ -189,10 +179,8 @@ class HighwaySegmentGA:
         # Performance optimization: precompute data for faster access
         self._precompute_data()
         
-        # Use gap analysis (either pre-computed RouteAnalysis or fallback)
-        if self.route_analysis is not None:
-            self._use_existing_gap_analysis()
-        # else: mandatory_breakpoints already set above for edge cases
+        # Use gap analysis from RouteAnalysis
+        self._use_existing_gap_analysis()
 
         # Cache mandatory breakpoint membership checks (hot path in validation/operators)
         self._mandatory_bp_set = set(self.mandatory_breakpoints) if self.mandatory_breakpoints is not None else set()
@@ -254,46 +242,15 @@ class HighwaySegmentGA:
     
     def _integrate_gap_analysis(self):
         """
-        Integrate comprehensive gap analysis system to replace simple gap detection.
-        
-        Uses the standardized RouteAnalysis system for:
-        - Better gap detection with merging
-        - Boundary validation (fatal error detection) 
-        - Standard data structures across codebase
-        - Prepared for future fitness function enhancements
+        Legacy hook for performing gap analysis inside the GA.
+
+        The current architecture requires gap analysis to be performed upstream
+        (via `analyze_route_gaps`) and passed in as a `RouteAnalysis` object.
         """
-        try:
-            # Perform comprehensive gap analysis using our standardized system
-            self.route_analysis = analyze_route_gaps(
-                self.data,
-                self.x_column,
-                self.y_column,
-                route_id="GA_OPTIMIZATION",
-                gap_threshold=self.gap_threshold,
-            )
-            
-            # Extract mandatory breakpoints from gap analysis
-            # RouteAnalysis.mandatory_breakpoints already includes route start/end + gap boundaries
-            self.mandatory_breakpoints = self.route_analysis.mandatory_breakpoints.copy()
-            
-            # Log comprehensive gap analysis results
-            print(f"[INFO] Comprehensive gap analysis complete:")
-            print(f"  - Route: {self.route_analysis.route_stats['route_start']:.3f} to {self.route_analysis.route_stats['route_end']:.3f} miles")
-            print(f"  - Total gaps detected: {len(self.route_analysis.gap_segments)}")
-            print(f"  - Gap coverage: {self.route_analysis.route_stats['gap_total_length']:.3f} miles ({self.route_analysis.route_stats['gap_total_length']/self.route_analysis.route_stats['total_length']*100:.1f}%)")
-            print(f"  - Valid data points: {self.route_analysis.route_stats['valid_points']}/{self.route_analysis.route_stats['total_points']}")
-            print(f"  - Final mandatory breakpoints: {len(self.mandatory_breakpoints)}")
-            
-            if self.route_analysis.gap_segments:
-                for i, (start, end) in enumerate(self.route_analysis.gap_segments, 1):
-                    print(f"    Gap {i}: {start:.3f} to {end:.3f} miles (length: {end-start:.3f})")
-            
-            # Store gap threshold used for reference
-            self._effective_gap_threshold = self.gap_threshold
-            
-        except Exception as e:
-            print(f"[ERROR] Gap analysis failed: {e}")
-            raise ValueError(f"RouteAnalysis gap analysis failed: {e}. Check data loading pipeline and ensure RouteAnalysis object is properly initialized.") from e
+        raise RuntimeError(
+            "Gap analysis must be performed before optimization. "
+            "Provide a RouteAnalysis object (use analyze_route_gaps)."
+        )
     
     def _use_existing_gap_analysis(self):
         """
