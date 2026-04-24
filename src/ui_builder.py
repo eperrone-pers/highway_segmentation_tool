@@ -103,8 +103,6 @@ class UIBuilder:
             if frame_width > 0:
                 left_canvas.configure(width=frame_width)
         
-        mac_scroll_accumulator = 0
-
         def _scroll_units(units: int):
             if not scrollbar_visible:
                 return
@@ -114,70 +112,80 @@ class UIBuilder:
             units = max(-10, min(10, units))
             left_canvas.yview_scroll(units, "units")
 
+        def _is_descendant(widget, ancestor) -> bool:
+            current = widget
+            while current is not None:
+                if current == ancestor:
+                    return True
+                current = getattr(current, "master", None)
+            return False
+
+        def _pointer_over_left_pane(event) -> bool:
+            """Return True if the pointer is currently over the left scrollable pane."""
+            try:
+                widget_under_pointer = self.app.root.winfo_containing(event.x_root, event.y_root)
+            except Exception:
+                return False
+            if widget_under_pointer is None:
+                return False
+            # Most child widgets are descendants of scrollable_frame.
+            return _is_descendant(widget_under_pointer, scrollable_frame) or widget_under_pointer == left_canvas
+
         def _on_mousewheel(event):
             """Cross-platform mousewheel/trackpad scroll handler."""
-            nonlocal mac_scroll_accumulator
-
+            if not _pointer_over_left_pane(event):
+                return
             if not scrollbar_visible:
                 return "break"
 
-            # Windows: event.delta is typically multiples of 120.
-            # macOS: event.delta is typically smaller (often ±1/±2/±3 for trackpad).
+            delta = int(getattr(event, "delta", 0) or 0)
+            if delta == 0:
+                return "break"
+
+            # Windows: delta is typically multiples of 120.
+            # macOS: delta is typically small (trackpad) OR 120-like depending on device.
             if sys.platform == "darwin":
-                # Accumulate small deltas so trackpads feel natural.
-                # Use 1 unit per accumulated delta to avoid hypersensitivity.
-                mac_scroll_accumulator += int(event.delta)
-                units = 0
-                while abs(mac_scroll_accumulator) >= 1:
-                    units += -1 if mac_scroll_accumulator > 0 else 1
-                    mac_scroll_accumulator += -1 if mac_scroll_accumulator > 0 else 1
+                if abs(delta) >= 120:
+                    units = int(-delta / 120)
+                else:
+                    units = -1 if delta > 0 else 1
                 _scroll_units(units)
             else:
-                # Default behavior works well for Windows; for some Linux Tk builds
-                # this handler may not fire (Button-4/5 used instead).
-                _scroll_units(int(-event.delta / 120))
+                _scroll_units(int(-delta / 120))
 
             return "break"
 
         def _on_button4(event):
             # Linux/X11 wheel up
+            if not _pointer_over_left_pane(event):
+                return
             _scroll_units(-1)
             return "break"
 
         def _on_button5(event):
             # Linux/X11 wheel down
+            if not _pointer_over_left_pane(event):
+                return
             _scroll_units(1)
             return "break"
-
-        def _bind_mousewheel(_event=None):
-            # Bind globally while pointer is over the left pane.
-            left_canvas.bind_all("<MouseWheel>", _on_mousewheel)
-            left_canvas.bind_all("<Button-4>", _on_button4)
-            left_canvas.bind_all("<Button-5>", _on_button5)
-
-        def _unbind_mousewheel(_event=None):
-            left_canvas.unbind_all("<MouseWheel>")
-            left_canvas.unbind_all("<Button-4>")
-            left_canvas.unbind_all("<Button-5>")
         
         # Bind events
         scrollable_frame.bind("<Configure>", configure_scroll_region)
         left_canvas.bind("<Configure>", configure_scroll_region)
 
-        # Activate scroll-wheel handling only when hovering over the left pane.
-        # Bind on both the canvas and the interior frame so widgets inside the frame
-        # still scroll naturally.
-        left_canvas.bind("<Enter>", _bind_mousewheel)
-        left_canvas.bind("<Leave>", _unbind_mousewheel)
-        scrollable_frame.bind("<Enter>", _bind_mousewheel)
-        scrollable_frame.bind("<Leave>", _unbind_mousewheel)
+        # Bind wheel events globally once, but only scroll when the pointer is over
+        # the left pane. This is the most reliable cross-platform approach,
+        # especially on macOS where pointer is often over child widgets.
+        self.app.root.bind_all("<MouseWheel>", _on_mousewheel)
+        self.app.root.bind_all("<Button-4>", _on_button4)
+        self.app.root.bind_all("<Button-5>", _on_button5)
         
         # Force initial layout update for macOS compatibility
         def setup_initial_layout():
             """Set up initial layout and mousewheel binding after widgets are created."""
             scrollable_frame.update_idletasks()  # Force geometry update
             configure_scroll_region()  # Update layout
-            # Mouse wheel is handled via <Enter>/<Leave> bind_all on the canvas.
+            # Mouse wheel is handled via global bindings + pointer location.
         
         # Schedule the setup after widget creation with multiple attempts for reliability
         scrollable_frame.after(50, setup_initial_layout)
