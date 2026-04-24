@@ -8,6 +8,7 @@ organization and maintainability.
 
 import tkinter as tk
 from tkinter import ttk
+import sys
 from config import UIConfig, get_optimization_method_names, get_method_key_from_display_name
 
 # Create UI config instance
@@ -102,28 +103,81 @@ class UIBuilder:
             if frame_width > 0:
                 left_canvas.configure(width=frame_width)
         
-        def on_mousewheel(event):
-            # Only scroll if scrollbar is visible (scrolling is needed)
-            if scrollbar_visible:
-                left_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-        
-        def bind_to_mousewheel(widget):
-            """Recursively bind mouse wheel to widget and all its children."""
-            widget.bind("<MouseWheel>", on_mousewheel)
-            for child in widget.winfo_children():
-                bind_to_mousewheel(child)
+        mac_scroll_accumulator = 0
+
+        def _scroll_units(units: int):
+            if not scrollbar_visible:
+                return
+            if units == 0:
+                return
+            # Clamp to prevent huge jumps if a device reports large deltas.
+            units = max(-10, min(10, units))
+            left_canvas.yview_scroll(units, "units")
+
+        def _on_mousewheel(event):
+            """Cross-platform mousewheel/trackpad scroll handler."""
+            nonlocal mac_scroll_accumulator
+
+            if not scrollbar_visible:
+                return "break"
+
+            # Windows: event.delta is typically multiples of 120.
+            # macOS: event.delta is typically smaller (often ±1/±2/±3 for trackpad).
+            if sys.platform == "darwin":
+                # Accumulate small deltas so trackpads feel natural.
+                # Use 1 unit per accumulated delta to avoid hypersensitivity.
+                mac_scroll_accumulator += int(event.delta)
+                units = 0
+                while abs(mac_scroll_accumulator) >= 1:
+                    units += -1 if mac_scroll_accumulator > 0 else 1
+                    mac_scroll_accumulator += -1 if mac_scroll_accumulator > 0 else 1
+                _scroll_units(units)
+            else:
+                # Default behavior works well for Windows; for some Linux Tk builds
+                # this handler may not fire (Button-4/5 used instead).
+                _scroll_units(int(-event.delta / 120))
+
+            return "break"
+
+        def _on_button4(event):
+            # Linux/X11 wheel up
+            _scroll_units(-1)
+            return "break"
+
+        def _on_button5(event):
+            # Linux/X11 wheel down
+            _scroll_units(1)
+            return "break"
+
+        def _bind_mousewheel(_event=None):
+            # Bind globally while pointer is over the left pane.
+            left_canvas.bind_all("<MouseWheel>", _on_mousewheel)
+            left_canvas.bind_all("<Button-4>", _on_button4)
+            left_canvas.bind_all("<Button-5>", _on_button5)
+
+        def _unbind_mousewheel(_event=None):
+            left_canvas.unbind_all("<MouseWheel>")
+            left_canvas.unbind_all("<Button-4>")
+            left_canvas.unbind_all("<Button-5>")
         
         # Bind events
         scrollable_frame.bind("<Configure>", configure_scroll_region)
         left_canvas.bind("<Configure>", configure_scroll_region)
-        left_canvas.bind("<MouseWheel>", on_mousewheel)
+
+        # Activate scroll-wheel handling only when hovering over the left pane.
+        # Bind on both the canvas and the interior frame so widgets inside the frame
+        # still scroll naturally.
+        left_canvas.bind("<Enter>", _bind_mousewheel)
+        left_canvas.bind("<Leave>", _unbind_mousewheel)
+        scrollable_frame.bind("<Enter>", _bind_mousewheel)
+        scrollable_frame.bind("<Leave>", _unbind_mousewheel)
         
         # Force initial layout update for macOS compatibility
         def setup_initial_layout():
             """Set up initial layout and mousewheel binding after widgets are created."""
             scrollable_frame.update_idletasks()  # Force geometry update
             configure_scroll_region()  # Update layout
-            bind_to_mousewheel(scrollable_frame)  # Setup mouse wheel
+            # Mouse wheel is handled via <Enter>/<Leave> bind_all on the canvas.
         
         # Schedule the setup after widget creation with multiple attempts for reliability
         scrollable_frame.after(50, setup_initial_layout)
