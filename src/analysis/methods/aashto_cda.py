@@ -493,7 +493,7 @@ class AashtoCdaMethod(AnalysisMethodBase):
                     uniform_sections, cda_nodes, section_start_indices, section_end_indices, mu = aashto_cda(
                         section_y,
                         alpha=alpha,
-                        num_sections=None,  # Use algorithm's default (data length)
+                        num_sections=max_segments,  # Optional cap on segments per section
                         min_segment_datapoints=min_segment_datapoints,
                         min_section_difference=min_section_difference,
                         method=method,
