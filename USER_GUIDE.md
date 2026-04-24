@@ -99,7 +99,7 @@ The interface is split into a left configuration pane and a right execution/resu
 - **🚀 Start Optimization**: Validates inputs, loads data if needed, then runs the selected method.
 - **⏹ Stop**: Requests a graceful stop (the run halts after the current step/generation).
 - **📊 Load & Plot Results**: Open an existing results JSON and launch the enhanced visualization window.
-- **❓ Help**: Opens this guide.
+- **❓ Help**: Opens a Documentation dialog with buttons to open the User Guide and any available method-specific docs in your browser.
 - **❌ Exit**: Exits the application (saving settings).
 
 #### 🗂️ **Results Tabs**

@@ -549,36 +549,205 @@ class HighwaySegmentationGUI:
         return self.optimization_controller.stop_optimization()
     
     def show_help(self):
-        """Display the USER_GUIDE.md content with HTML rendering and TOC if markdown library available."""
+        """Open documentation in the user's browser (preferred UX).
+
+        This dialog intentionally does not render markdown inline. It provides
+        config-driven shortcuts to open:
+        - USER_GUIDE.md
+        - Method-specific README.md files under src/analysis/methods/docs/{method_key}/README.md
+        """
         help_window = tk.Toplevel(self.root)
-        help_window.title("Highway Segmentation Tool - User Guide")
-        help_window.geometry("1000x750")
+        help_window.title("Documentation")
+        help_window.geometry("620x280")
+        help_window.resizable(False, False)
         help_window.grab_set()  # Make it modal
-        
-        # Create main frame with padding
-        main_frame = ttk.Frame(help_window, padding=10)
+
+        main_frame = ttk.Frame(help_window, padding=12)
         main_frame.pack(fill="both", expand=True)
-        
-        # Title
-        title_label = ttk.Label(main_frame, text="Highway Segmentation Tool - User Guide", 
-                               font=("Arial", 14, "bold"))
-        title_label.pack(pady=(0, 10))
-        
-        # Load the user guide content
-        try:
-            user_guide_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "USER_GUIDE.md")
-            with open(user_guide_path, 'r', encoding='utf-8') as file:
-                content = file.read()
-        except FileNotFoundError:
-            content = "USER_GUIDE.md file not found.\\n\\nPlease ensure the file is located in the project root directory."
-        except Exception as e:
-            content = f"Error loading user guide: {str(e)}"
-        
-        # Check if we can use HTML rendering
-        if MARKDOWN_AVAILABLE and content.startswith("# "):
-            self._create_html_help_view(main_frame, help_window, content)
+
+        ttk.Label(
+            main_frame,
+            text="Documentation",
+            font=("Arial", 14, "bold"),
+        ).pack(anchor="w")
+
+        ttk.Label(
+            main_frame,
+            text="Open the User Guide or method documentation in your browser.",
+        ).pack(anchor="w", pady=(4, 12))
+
+        project_root = os.path.dirname(os.path.dirname(__file__))
+        user_guide_path = os.path.join(project_root, "USER_GUIDE.md")
+
+        user_guide_frame = ttk.LabelFrame(main_frame, text="User Guide", padding=10)
+        user_guide_frame.pack(fill="x")
+
+        ttk.Button(
+            user_guide_frame,
+            text="🌐 Open User Guide in Browser",
+            command=lambda: self._open_markdown_path_in_browser(user_guide_path, title="User Guide"),
+        ).pack(anchor="w")
+
+        method_frame = ttk.LabelFrame(main_frame, text="Method Documentation", padding=10)
+        method_frame.pack(fill="x", pady=(12, 0))
+
+        available_docs = self._get_available_method_docs(project_root)
+        if not available_docs:
+            ttk.Label(
+                method_frame,
+                text="No method README files found under src/analysis/methods/docs/.",
+            ).pack(anchor="w")
         else:
-            self._create_text_help_view(main_frame, help_window, content)
+            ttk.Label(method_frame, text="Method:").pack(side="left")
+
+            method_display_names = [item[0] for item in available_docs]
+            selected_method = tk.StringVar(value=method_display_names[0])
+
+            method_combo = ttk.Combobox(
+                method_frame,
+                textvariable=selected_method,
+                values=method_display_names,
+                state="readonly",
+                width=36,
+            )
+            method_combo.pack(side="left", padx=(6, 10))
+
+            def open_selected_method_doc():
+                display_name = selected_method.get()
+                for name, _, readme_path in available_docs:
+                    if name == display_name:
+                        self._open_markdown_path_in_browser(readme_path, title=f"Method Doc - {name}")
+                        return
+                messagebox.showerror("Error", f"Could not resolve README for '{display_name}'")
+
+            ttk.Button(
+                method_frame,
+                text="🌐 Open in Browser",
+                command=open_selected_method_doc,
+            ).pack(side="left")
+
+        button_row = ttk.Frame(main_frame)
+        button_row.pack(fill="x", pady=(14, 0))
+
+        ttk.Button(button_row, text="Close", command=help_window.destroy).pack(side="right")
+
+        help_window.update_idletasks()
+        x = (help_window.winfo_screenwidth() // 2) - (help_window.winfo_width() // 2)
+        y = (help_window.winfo_screenheight() // 2) - (help_window.winfo_height() // 2)
+        help_window.geometry(f"+{x}+{y}")
+
+    def _get_available_method_docs(self, project_root: str):
+        """Return list of (display_name, method_key, readme_path) for methods with docs."""
+        try:
+            from config import OPTIMIZATION_METHODS
+        except Exception:
+            return []
+
+        docs_root = os.path.join(project_root, "src", "analysis", "methods", "docs")
+        available = []
+        for method in OPTIMIZATION_METHODS:
+            readme_path = os.path.join(docs_root, method.method_key, "README.md")
+            if os.path.exists(readme_path):
+                available.append((method.display_name, method.method_key, readme_path))
+        return available
+
+    def _open_markdown_path_in_browser(self, markdown_path: str, title: str):
+        """Render a markdown file to HTML and open it in the browser."""
+        if not os.path.exists(markdown_path):
+            messagebox.showerror("Not Found", f"File not found:\n{markdown_path}")
+            return
+
+        if not MARKDOWN_AVAILABLE or 'markdown' not in globals():
+            messagebox.showerror(
+                "Markdown Not Available",
+                "HTML documentation view requires the 'markdown' package. "
+                "Install it (pip install markdown) or use the packaged environment.",
+            )
+            return
+
+        try:
+            with open(markdown_path, 'r', encoding='utf-8') as f:
+                markdown_content = f.read()
+
+            html = self._render_markdown_to_html(markdown_content, title=title)
+
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False, encoding='utf-8') as tmp:
+                tmp.write(html)
+                temp_path = tmp.name
+
+            webbrowser.open('file://' + os.path.abspath(temp_path))
+
+            # Best-effort cleanup after a delay (keep file long enough for browser to load).
+            def cleanup():
+                try:
+                    os.unlink(temp_path)
+                except OSError:
+                    pass
+
+            self.root.after(5000, cleanup)
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Could not open browser: {e}")
+
+    def _render_markdown_to_html(self, markdown_content: str, title: str) -> str:
+        """Convert markdown to a styled HTML document with TOC."""
+        md = markdown.Markdown(extensions=[
+            'toc',
+            'extra',
+            'codehilite',
+            'nl2br',
+        ])
+
+        html_content = md.convert(markdown_content)
+        toc_html = getattr(md, 'toc', '')
+
+        return f'''<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>{title}</title>
+    <script>
+        // Render LaTeX math in docs using MathJax.
+        // Supports inline: $...$ or \\(...\\) and display: $$...$$ or \\[...\\].
+        window.MathJax = {{
+            tex: {{
+                inlineMath: [['$', '$'], ['\\\\(', '\\\\)']],
+                displayMath: [['$$', '$$'], ['\\\\[', '\\\\]']],
+            }},
+            options: {{
+                skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+            }},
+        }};
+    </script>
+    <script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+  <style>
+    body {{ font-family: 'Segoe UI', Arial, sans-serif; margin: 20px; line-height: 1.6; }}
+    .toc {{ background: #f5f5f5; padding: 15px; border-radius: 5px; margin-bottom: 20px; }}
+    .toc h2 {{ margin-top: 0; color: #333; }}
+    .toc ul {{ margin: 0; padding-left: 20px; }}
+    .toc a {{ color: #0066cc; text-decoration: none; }}
+    .toc a:hover {{ text-decoration: underline; }}
+    h1, h2, h3, h4 {{ color: #2c3e50; }}
+    h1 {{ border-bottom: 2px solid #3498db; padding-bottom: 10px; }}
+    h2 {{ border-bottom: 1px solid #bdc3c7; padding-bottom: 5px; }}
+    pre {{ background: #f8f8f8; padding: 10px; border-radius: 5px; overflow-x: auto; }}
+    code {{ background: #f0f0f0; padding: 2px 4px; border-radius: 3px; }}
+    blockquote {{ border-left: 4px solid #3498db; padding-left: 15px; margin: 15px 0; color: #555; }}
+    table {{ border-collapse: collapse; width: 100%; margin: 15px 0; }}
+    th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+    th {{ background-color: #f2f2f2; }}
+  </style>
+</head>
+<body>
+  <div class="toc">
+    <h2>📋 Table of Contents</h2>
+    {toc_html}
+  </div>
+  <hr>
+  {html_content}
+</body>
+</html>
+'''
     
     def _create_html_help_view(self, parent, help_window, markdown_content):
         """Create HTML help view with table of contents using standard markdown library."""

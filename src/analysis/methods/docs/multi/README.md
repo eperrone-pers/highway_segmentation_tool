@@ -122,9 +122,9 @@ This promotes solutions with fewer/larger user-controllable segments. Segments t
 
 The GA returns:
 
-$$\mathbf{f}(B) = (f_1(B), f_2(B)) = (-\mathrm{SSE}(B), \mathrm{avg\_nonmandatory\_length}(B))$$
+$$\mathbf{f}(B) = (f_1(B), f_2(B)) = (-\mathrm{SSE}(B), \mathrm{avgNonMandatoryLength}(B))$$
 
-These are stored as raw values in the output JSON for plotting/transforms.
+These are stored as raw values in the output JSON for plotting/transforms. In code/JSON this second objective corresponds to the field name `avg_nonmandatory_length`.
 
 ---
 

@@ -53,6 +53,12 @@ The application is split into:
    - Determines whether to show Pareto plots based on the configured `return_type`.
    - Lives in `src/enhanced_visualization.py`.
 
+6. **Method documentation (optional but recommended)**
+     - If you add a per-method README at `src/analysis/methods/docs/{method_key}/README.md`,
+         the application Help dialog will automatically offer an “Open in Browser” option for that method.
+     - The method list is configuration-driven from `OPTIMIZATION_METHODS` in `src/config.py` and filtered
+         to methods with an existing README at the path above.
+
 ### 1.1 Runtime flow
 
 ```mermaid
