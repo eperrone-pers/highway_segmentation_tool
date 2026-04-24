@@ -167,11 +167,13 @@ When you load results (or when a run completes), the enhanced visualization wind
 
 This section is a user-facing overview of each method. Method parameters are shown directly in the UI under **🔬 Optimization Method** and are saved into the results JSON as part of the run metadata.
 
-Planned documentation approach: method authors will be able to provide method-specific documentation (parameter definitions, algorithm description, and result interpretation) in a docs folder alongside each method. Once those docs exist, this guide will link to them and keep only high-level “which method should I use?” guidance.
+Method documentation: each method can provide a dedicated doc at `src/analysis/methods/docs/<method_key>/README.md`. This guide links to those docs and keeps only high-level “which method should I use?” guidance.
 
 ### Single-Objective Genetic Algorithm
 
 **🎯 Purpose**: Find the single best segmentation minimizing within-segment variation.
+
+Method docs: [src/analysis/methods/docs/single/README.md](src/analysis/methods/docs/single/README.md)
 
 **🔧 Best Used For**:
 
@@ -191,6 +193,8 @@ Planned documentation approach: method authors will be able to provide method-sp
 ### Multi-Objective NSGA-II Optimization
 
 **🎯 Purpose**: Discover the complete range of optimal tradeoffs between segment homogeneity and segment length.
+
+Method docs: [src/analysis/methods/docs/multi/README.md](src/analysis/methods/docs/multi/README.md)
 
 **🔧 Best Used For**:
 
@@ -225,6 +229,8 @@ Planned documentation approach: method authors will be able to provide method-sp
 
 **🎯 Purpose**: Find the best segmentation while targeting a specific average segment length.
 
+Method docs: [src/analysis/methods/docs/constrained/README.md](src/analysis/methods/docs/constrained/README.md)
+
 **🔧 Best Used For**:
 
 - Meeting regulatory requirements for segment lengths
@@ -256,6 +262,8 @@ Planned documentation approach: method authors will be able to provide method-sp
 ### AASHTO Enhanced CDA Statistical Analysis
 
 **🎯 Purpose**: Statistically-justified, deterministic segmentation using change point detection theory.
+
+Method docs: [src/analysis/methods/docs/aashto_cda/README.md](src/analysis/methods/docs/aashto_cda/README.md)
 
 **🔧 Best Used For**:
 

@@ -56,7 +56,7 @@ When using this software in academic research, please:
 For detailed technical information about the AASHTO CDA method:
 
 - See `docs/AASHTO_CDA_USER_GUIDE.md` for implementation details
-- See `docs/AashtoCDADocs/` for original MATLAB reference implementation
+- See `src/analysis/methods/docs/aashto_cda/` for the bundled reference implementation files
 
 ---
 
