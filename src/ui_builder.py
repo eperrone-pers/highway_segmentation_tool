@@ -123,7 +123,16 @@ class UIBuilder:
         def _pointer_over_left_pane(event) -> bool:
             """Return True if the pointer is currently over the left scrollable pane."""
             try:
-                widget_under_pointer = self.app.root.winfo_containing(event.x_root, event.y_root)
+                # Some Tk builds/devices (notably macOS trackpads) can provide inconsistent
+                # event.x_root/y_root values for wheel events. Use the current pointer
+                # location as the source of truth.
+                x_root = getattr(event, 'x_root', None)
+                y_root = getattr(event, 'y_root', None)
+                if x_root is None or y_root is None:
+                    x_root = self.app.root.winfo_pointerx()
+                    y_root = self.app.root.winfo_pointery()
+
+                widget_under_pointer = self.app.root.winfo_containing(x_root, y_root)
             except Exception:
                 return False
             if widget_under_pointer is None:
@@ -174,11 +183,17 @@ class UIBuilder:
         left_canvas.bind("<Configure>", configure_scroll_region)
 
         # Bind wheel events globally once, but only scroll when the pointer is over
-        # the left pane. This is the most reliable cross-platform approach,
-        # especially on macOS where pointer is often over child widgets.
-        self.app.root.bind_all("<MouseWheel>", _on_mousewheel)
-        self.app.root.bind_all("<Button-4>", _on_button4)
-        self.app.root.bind_all("<Button-5>", _on_button5)
+        # the left pane. Use add='+' so we don't clobber any existing bindings.
+        # Also bind directly on the canvas + frame for Tk builds where bind_all
+        # behavior differs (notably some macOS environments).
+        self.app.root.bind_all("<MouseWheel>", _on_mousewheel, add="+")
+        self.app.root.bind_all("<Button-4>", _on_button4, add="+")
+        self.app.root.bind_all("<Button-5>", _on_button5, add="+")
+
+        left_canvas.bind("<MouseWheel>", _on_mousewheel, add="+")
+        scrollable_frame.bind("<MouseWheel>", _on_mousewheel, add="+")
+        left_canvas.bind("<Button-4>", _on_button4, add="+")
+        left_canvas.bind("<Button-5>", _on_button5, add="+")
         
         # Force initial layout update for macOS compatibility
         def setup_initial_layout():
