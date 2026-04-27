@@ -9,6 +9,7 @@ organization and maintainability.
 import tkinter as tk
 from tkinter import ttk
 import sys
+from tkinter import messagebox
 from config import UIConfig, get_optimization_method_names, get_method_key_from_display_name
 
 # Create UI config instance
@@ -56,157 +57,32 @@ class UIBuilder:
         return main_frame
     
     def create_scrollable_left_pane(self, parent):
-        """Create the scrollable left pane for input controls."""
-        # Left canvas - let it expand naturally to fit contents
-        left_canvas = tk.Canvas(parent, highlightthickness=0)
-        left_scrollbar = ttk.Scrollbar(parent, orient="vertical", command=left_canvas.yview)
-        left_canvas.configure(yscrollcommand=left_scrollbar.set)
-        
-        # Grid placement - canvas expands, scrollbar only when needed
-        left_canvas.grid(row=1, column=0, sticky="nsew", padx=ui_config.standard_padding_x)
-        
-        # Scrollable frame inside canvas
-        scrollable_frame = ttk.Frame(left_canvas)
-        # Configure scrollable frame to expand properly
-        scrollable_frame.grid_columnconfigure(0, weight=1)
-        canvas_window = left_canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-        
-        # Track scrollbar state
-        scrollbar_visible = False
-        
-        # Configure scrolling with simplified logic for cross-platform compatibility
-        def configure_scroll_region(event=None):
-            # Update scroll region first
-            left_canvas.configure(scrollregion=left_canvas.bbox("all"))
-            
-            # Get current dimensions
-            canvas_height = left_canvas.winfo_height()
-            frame_height = scrollable_frame.winfo_reqheight()
-            frame_width = scrollable_frame.winfo_reqwidth()
-            
-            nonlocal scrollbar_visible
-            
-            # Handle vertical scrollbar visibility
-            needs_scrolling = frame_height > canvas_height and canvas_height > 1
-            
-            if needs_scrolling and not scrollbar_visible:
-                # Show scrollbar
-                left_scrollbar.grid(row=1, column=1, sticky="ns")
-                scrollbar_visible = True
-            elif not needs_scrolling and scrollbar_visible:
-                # Hide scrollbar
-                left_scrollbar.grid_remove()
-                scrollbar_visible = False
-            
-            # Set canvas width to match frame's required width
-            # This ensures all content is visible without cutoff
-            if frame_width > 0:
-                left_canvas.configure(width=frame_width)
-        
-        def _scroll_units(units: int):
-            if not scrollbar_visible:
-                return
-            if units == 0:
-                return
-            # Clamp to prevent huge jumps if a device reports large deltas.
-            units = max(-10, min(10, units))
-            left_canvas.yview_scroll(units, "units")
+        """Create the left pane with fixed required controls and a dynamic parameter area.
 
-        def _is_descendant(widget, ancestor) -> bool:
-            current = widget
-            while current is not None:
-                if current == ancestor:
-                    return True
-                current = getattr(current, "master", None)
-            return False
+        The required controls stay visible. The dynamic parameters area below will
+        host a native-scrollable grid (Treeview) to avoid cross-platform mousewheel
+        quirks with scrollable frames on macOS.
+        """
 
-        def _pointer_over_left_pane(event) -> bool:
-            """Return True if the pointer is currently over the left scrollable pane."""
-            try:
-                # Some Tk builds/devices (notably macOS trackpads) can provide inconsistent
-                # event.x_root/y_root values for wheel events. Use the current pointer
-                # location as the source of truth.
-                x_root = getattr(event, 'x_root', None)
-                y_root = getattr(event, 'y_root', None)
-                if x_root is None or y_root is None:
-                    x_root = self.app.root.winfo_pointerx()
-                    y_root = self.app.root.winfo_pointery()
+        left_container = ttk.Frame(parent)
+        left_container.grid(row=1, column=0, sticky="nsew", padx=ui_config.standard_padding_x)
+        left_container.grid_rowconfigure(0, weight=0)
+        left_container.grid_rowconfigure(1, weight=1)
+        left_container.grid_columnconfigure(0, weight=1)
 
-                widget_under_pointer = self.app.root.winfo_containing(x_root, y_root)
-            except Exception:
-                return False
-            if widget_under_pointer is None:
-                return False
-            # Most child widgets are descendants of scrollable_frame.
-            return _is_descendant(widget_under_pointer, scrollable_frame) or widget_under_pointer == left_canvas
+        required_frame = ttk.Frame(left_container)
+        required_frame.grid(row=0, column=0, sticky="ew")
+        required_frame.grid_columnconfigure(0, weight=1)
 
-        def _on_mousewheel(event):
-            """Cross-platform mousewheel/trackpad scroll handler."""
-            if not _pointer_over_left_pane(event):
-                return
-            if not scrollbar_visible:
-                return "break"
+        dynamic_frame = ttk.LabelFrame(left_container, text="Method Parameters (double click on parameter value to edit)", padding="6")
+        dynamic_frame.grid(row=1, column=0, sticky="nsew", pady=(8, 0))
+        dynamic_frame.grid_rowconfigure(0, weight=1)
+        dynamic_frame.grid_columnconfigure(0, weight=1)
 
-            delta = int(getattr(event, "delta", 0) or 0)
-            if delta == 0:
-                return "break"
+        # Expose the dynamic params parent so gui_main can populate it.
+        self.app.dynamic_params_parent = dynamic_frame
 
-            # Windows: delta is typically multiples of 120.
-            # macOS: delta is typically small (trackpad) OR 120-like depending on device.
-            if sys.platform == "darwin":
-                if abs(delta) >= 120:
-                    units = int(-delta / 120)
-                else:
-                    units = -1 if delta > 0 else 1
-                _scroll_units(units)
-            else:
-                _scroll_units(int(-delta / 120))
-
-            return "break"
-
-        def _on_button4(event):
-            # Linux/X11 wheel up
-            if not _pointer_over_left_pane(event):
-                return
-            _scroll_units(-1)
-            return "break"
-
-        def _on_button5(event):
-            # Linux/X11 wheel down
-            if not _pointer_over_left_pane(event):
-                return
-            _scroll_units(1)
-            return "break"
-        
-        # Bind events
-        scrollable_frame.bind("<Configure>", configure_scroll_region)
-        left_canvas.bind("<Configure>", configure_scroll_region)
-
-        # Bind wheel events globally once, but only scroll when the pointer is over
-        # the left pane. Use add='+' so we don't clobber any existing bindings.
-        # Also bind directly on the canvas + frame for Tk builds where bind_all
-        # behavior differs (notably some macOS environments).
-        self.app.root.bind_all("<MouseWheel>", _on_mousewheel, add="+")
-        self.app.root.bind_all("<Button-4>", _on_button4, add="+")
-        self.app.root.bind_all("<Button-5>", _on_button5, add="+")
-
-        left_canvas.bind("<MouseWheel>", _on_mousewheel, add="+")
-        scrollable_frame.bind("<MouseWheel>", _on_mousewheel, add="+")
-        left_canvas.bind("<Button-4>", _on_button4, add="+")
-        left_canvas.bind("<Button-5>", _on_button5, add="+")
-        
-        # Force initial layout update for macOS compatibility
-        def setup_initial_layout():
-            """Set up initial layout and mousewheel binding after widgets are created."""
-            scrollable_frame.update_idletasks()  # Force geometry update
-            configure_scroll_region()  # Update layout
-            # Mouse wheel is handled via global bindings + pointer location.
-        
-        # Schedule the setup after widget creation with multiple attempts for reliability
-        scrollable_frame.after(50, setup_initial_layout)
-        scrollable_frame.after(200, setup_initial_layout)  # Backup call for slow systems
-        
-        return scrollable_frame
+        return required_frame
     
     def create_right_pane(self, parent):
         """Create the right pane for results and status."""
@@ -337,17 +213,385 @@ class UIBuilder:
         # Method description (dynamic based on selection)
         self.app.method_description = ttk.Label(method_frame, text="", foreground="gray", wraplength=500)
         self.app.method_description.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(5, 0))  # Reduced from (10, 0)
-        
-        # === DYNAMIC PARAMETER CONTAINER ===
-        # Container for dynamically generated parameter widgets
-        self.app.params_container = ttk.Frame(method_frame)
-        self.app.params_container.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(5, 0))  # Reduced from (10, 0)
-        self.app.params_container.columnconfigure(0, weight=1)
-        
-        # Initialize with first method's parameters
-        self._update_dynamic_parameters()
+
+        # Initialize description for the current selection
+        try:
+            method_key = get_method_key_from_display_name(self.app.method_dropdown.get())
+            from config import get_optimization_method
+            self.app.method_description.config(text=get_optimization_method(method_key).description)
+        except Exception:
+            # Non-fatal; description will be updated on method change.
+            pass
         
         return row + 1
+
+    # ===== DYNAMIC PARAMETER GRID (TREEVIEW) =====
+
+    def create_dynamic_params_section(self, parent):
+        """Create the dynamic parameter grid with inline editing.
+
+        Double-click a value cell to edit in-place. This avoids a separate editor
+        pane while keeping native scrolling behavior (especially important on macOS).
+        """
+        container = ttk.Frame(parent)
+        container.grid(row=0, column=0, sticky="nsew")
+        container.grid_rowconfigure(0, weight=1)
+        container.grid_rowconfigure(1, weight=0)
+        container.grid_columnconfigure(0, weight=1)
+        container.grid_columnconfigure(1, weight=0)
+
+        columns = ("parameter", "value")
+        tree = ttk.Treeview(container, columns=columns, show="headings", selectmode="browse", height=10)
+        tree.heading("parameter", text="Parameter")
+        tree.heading("value", text="Value")
+        tree.column("parameter", width=260, anchor="w")
+        tree.column("value", width=180, anchor="w")
+        tree.grid(row=0, column=0, sticky="nsew")
+
+        scrollbar = ttk.Scrollbar(container, orient="vertical", command=tree.yview)
+        tree.configure(yscrollcommand=scrollbar.set)
+        scrollbar.grid(row=0, column=1, sticky="ns")
+
+        button_row = ttk.Frame(container)
+        button_row.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+
+        # Store references on the app for access from event handlers
+        self.app.dynamic_params_tree = tree
+        self.app.dynamic_params_defs = {}       # param_name -> ParameterDefinition
+        self.app.dynamic_params_cell_editor = {
+            "widget": None,
+            "param_name": None,
+            "method_key": None,
+        }
+
+        reset_btn = ttk.Button(button_row, text="Reset Selected to Default", command=self._reset_selected_dynamic_param)
+        reset_btn.pack(side="left")
+
+        tree.bind("<Double-1>", self._on_dynamic_param_double_click)
+        tree.bind("<Button-1>", self._on_dynamic_param_single_click)
+
+        # Initial population based on the currently selected method (if available)
+        try:
+            method_key = self._get_selected_method_key_safe()
+            if method_key:
+                self.refresh_dynamic_params_grid(method_key)
+        except Exception:
+            pass
+
+        return container
+
+    def refresh_dynamic_params_grid(self, method_key: str) -> None:
+        """Rebuild the Treeview rows for the specified method."""
+        if not hasattr(self.app, "dynamic_params_tree"):
+            return
+
+        from config import get_optimization_method
+        method_config = get_optimization_method(method_key)
+
+        tree = self.app.dynamic_params_tree
+        self._cancel_dynamic_param_cell_edit()
+        tree.delete(*tree.get_children())
+        self.app.dynamic_params_defs = {param.name: param for param in method_config.parameters}
+
+        values = self._get_dynamic_params_for_method(method_key)
+
+        # Sort by group then order for stable presentation
+        params_sorted = sorted(method_config.parameters, key=lambda p: (p.group, p.order))
+        for param_def in params_sorted:
+            value = values.get(param_def.name, param_def.default_value)
+            # Use param name as the Treeview iid for stable lookup
+            tree.insert("", "end", iid=param_def.name, values=(param_def.display_name, self._format_param_value(param_def, value)))
+
+    def set_method_description(self, method_key: str) -> None:
+        """Update the method description label based on config."""
+        try:
+            from config import get_optimization_method
+            if hasattr(self.app, "method_description"):
+                self.app.method_description.config(text=get_optimization_method(method_key).description)
+        except Exception:
+            return
+
+    def get_parameter_values(self):
+        """Return current dynamic parameter values for the selected method.
+
+        This is used by controller/parameter save/load paths; it must remain stable.
+        """
+        method_key = self._get_selected_method_key_safe()
+        if not method_key:
+            return {}
+        return self._get_dynamic_params_for_method(method_key)
+
+    def _get_selected_method_key_safe(self):
+        try:
+            if hasattr(self.app, "method_dropdown"):
+                display_name = self.app.method_dropdown.get()
+                return get_method_key_from_display_name(display_name)
+        except Exception:
+            pass
+
+        try:
+            if hasattr(self.app, "optimization_method") and isinstance(self.app.optimization_method, str):
+                return self.app.optimization_method
+        except Exception:
+            pass
+        return None
+
+    def _get_dynamic_store(self) -> dict:
+        """Return settings-backed dynamic parameter store, creating it if needed."""
+        settings = getattr(self.app, "settings", None)
+        if not isinstance(settings, dict):
+            self.app.settings = {}
+            settings = self.app.settings
+        opt = settings.setdefault("optimization", {})
+        store = opt.setdefault("dynamic_parameters_by_method", {})
+        return store
+
+    def _get_dynamic_params_for_method(self, method_key: str) -> dict:
+        """Return merged dynamic params (stored overrides + defaults) for a method."""
+        from config import get_optimization_method
+
+        method_config = get_optimization_method(method_key)
+        store = self._get_dynamic_store()
+        overrides = store.get(method_key, {}) if isinstance(store.get(method_key, {}), dict) else {}
+
+        merged = {param.name: param.default_value for param in method_config.parameters}
+        merged.update(overrides)
+        return merged
+
+    def _set_dynamic_param_value(self, method_key: str, param_name: str, value):
+        store = self._get_dynamic_store()
+        per_method = store.setdefault(method_key, {})
+        per_method[param_name] = value
+
+    def _format_param_value(self, param_def, value) -> str:
+        from config import NumericParameter, OptionalNumericParameter, SelectParameter, BoolParameter
+
+        if isinstance(param_def, OptionalNumericParameter) and value is None:
+            return param_def.none_text
+        if isinstance(param_def, BoolParameter):
+            return "True" if bool(value) else "False"
+        if isinstance(param_def, SelectParameter):
+            for display, v in param_def.options:
+                if v == value:
+                    return str(display)
+            return str(value)
+        if isinstance(param_def, NumericParameter):
+            try:
+                if param_def.decimal_places == 0:
+                    return str(int(value))
+                return f"{float(value):.{param_def.decimal_places}f}"
+            except Exception:
+                return str(value)
+        return str(value)
+
+    def _reset_selected_dynamic_param(self) -> None:
+        tree = getattr(self.app, "dynamic_params_tree", None)
+        if tree is None:
+            return
+
+        method_key = self._get_selected_method_key_safe()
+        if not method_key:
+            return
+
+        selection = tree.selection()
+        if not selection:
+            return
+
+        param_name = selection[0]
+        param_def = self.app.dynamic_params_defs.get(param_name)
+        if not param_def:
+            return
+
+        self._set_dynamic_param_value(method_key, param_name, param_def.default_value)
+        tree.item(param_name, values=(param_def.display_name, self._format_param_value(param_def, param_def.default_value)))
+
+        try:
+            if hasattr(self.app, 'on_parameter_change'):
+                self.app.on_parameter_change()
+        except Exception:
+            pass
+
+    def _on_dynamic_param_single_click(self, event=None):
+        # Clicking elsewhere should commit/cancel the in-place editor.
+        self._commit_dynamic_param_cell_edit()
+
+    def _on_dynamic_param_double_click(self, event) -> None:
+        tree = getattr(self.app, "dynamic_params_tree", None)
+        if tree is None:
+            return
+
+        region = tree.identify("region", event.x, event.y)
+        if region != "cell":
+            return
+
+        col = tree.identify_column(event.x)
+        if col != "#2":
+            return
+
+        row_iid = tree.identify_row(event.y)
+        if not row_iid:
+            return
+
+        method_key = self._get_selected_method_key_safe()
+        if not method_key:
+            return
+
+        param_name = row_iid
+        param_def = self.app.dynamic_params_defs.get(param_name)
+        if not param_def:
+            return
+
+        # Bool: toggle immediately
+        from config import BoolParameter, SelectParameter, OptionalNumericParameter
+        current_value = self._get_dynamic_params_for_method(method_key).get(param_name, param_def.default_value)
+        if isinstance(param_def, BoolParameter):
+            new_value = not bool(current_value)
+            ok, msg = param_def.validate_value(new_value)
+            if not ok:
+                messagebox.showerror("Parameter Validation Error", msg or "Invalid value")
+                return
+            self._set_dynamic_param_value(method_key, param_name, new_value)
+            tree.item(param_name, values=(param_def.display_name, self._format_param_value(param_def, new_value)))
+            try:
+                if hasattr(self.app, 'on_parameter_change'):
+                    self.app.on_parameter_change()
+            except Exception:
+                pass
+            return
+
+        # Start an in-place editor
+        self._cancel_dynamic_param_cell_edit()
+        bbox = tree.bbox(row_iid, "value")
+        if not bbox:
+            return
+        x, y, width, height = bbox
+
+        if isinstance(param_def, SelectParameter):
+            display_values = [display for display, _ in param_def.options]
+            editor = ttk.Combobox(tree, values=display_values, state="readonly")
+            current_display = next((d for d, v in param_def.options if v == current_value), display_values[0] if display_values else "")
+            editor.set(str(current_display))
+            editor.place(x=x, y=y, width=width, height=height)
+            editor.focus_set()
+            editor.bind("<<ComboboxSelected>>", lambda _e: self._commit_dynamic_param_cell_edit())
+        else:
+            editor = ttk.Entry(tree)
+            if isinstance(param_def, OptionalNumericParameter) and current_value is None:
+                editor.insert(0, "")
+            else:
+                editor.insert(0, str(current_value))
+            editor.place(x=x, y=y, width=width, height=height)
+            editor.focus_set()
+            editor.selection_range(0, tk.END)
+            editor.bind("<Return>", lambda _e: self._commit_dynamic_param_cell_edit())
+
+        editor.bind("<Escape>", lambda _e: self._cancel_dynamic_param_cell_edit())
+        editor.bind("<FocusOut>", lambda _e: self._commit_dynamic_param_cell_edit())
+
+        self.app.dynamic_params_cell_editor = {
+            "widget": editor,
+            "param_name": param_name,
+            "method_key": method_key,
+        }
+
+    def _cancel_dynamic_param_cell_edit(self) -> None:
+        editor_state = getattr(self.app, "dynamic_params_cell_editor", None)
+        if not editor_state or not editor_state.get("widget"):
+            return
+        try:
+            editor_state["widget"].destroy()
+        except Exception:
+            pass
+        self.app.dynamic_params_cell_editor = {"widget": None, "param_name": None, "method_key": None}
+
+    def _commit_dynamic_param_cell_edit(self) -> None:
+        editor_state = getattr(self.app, "dynamic_params_cell_editor", None)
+        tree = getattr(self.app, "dynamic_params_tree", None)
+        if not editor_state or tree is None:
+            return
+        widget = editor_state.get("widget")
+        if widget is None:
+            return
+
+        method_key = editor_state.get("method_key")
+        param_name = editor_state.get("param_name")
+        if not method_key or not param_name:
+            self._cancel_dynamic_param_cell_edit()
+            return
+
+        param_def = self.app.dynamic_params_defs.get(param_name)
+        if not param_def:
+            self._cancel_dynamic_param_cell_edit()
+            return
+
+        try:
+            value = self._read_inline_editor_value(param_def, widget)
+        except Exception as e:
+            messagebox.showerror("Invalid Value", str(e))
+            try:
+                widget.focus_set()
+            except Exception:
+                pass
+            return
+
+        ok, msg = param_def.validate_value(value)
+        if not ok:
+            messagebox.showerror("Parameter Validation Error", msg or "Invalid value")
+            try:
+                widget.focus_set()
+            except Exception:
+                pass
+            return
+
+        self._set_dynamic_param_value(method_key, param_name, value)
+        tree.item(param_name, values=(param_def.display_name, self._format_param_value(param_def, value)))
+
+        self._cancel_dynamic_param_cell_edit()
+
+        try:
+            if hasattr(self.app, 'on_parameter_change'):
+                self.app.on_parameter_change()
+        except Exception:
+            pass
+
+    def _read_inline_editor_value(self, param_def, widget):
+        from config import NumericParameter, OptionalNumericParameter, SelectParameter
+
+        if isinstance(param_def, SelectParameter):
+            display = widget.get()
+            for d, v in param_def.options:
+                if str(d) == str(display):
+                    return v
+            raise ValueError(f"Invalid selection for {param_def.display_name}")
+
+        text = widget.get().strip()
+
+        if isinstance(param_def, OptionalNumericParameter):
+            if not text or text.lower() in ("none", "(none)", "null"):
+                return None
+            try:
+                num = float(text)
+            except Exception:
+                raise ValueError(f"{param_def.display_name} must be a valid number or None")
+            if param_def.decimal_places == 0:
+                if not float(num).is_integer():
+                    raise ValueError(f"{param_def.display_name} must be an integer or None")
+                return int(num)
+            return round(num, param_def.decimal_places)
+
+        if isinstance(param_def, NumericParameter):
+            try:
+                num = float(text)
+            except Exception:
+                raise ValueError(f"{param_def.display_name} must be a valid number")
+            if param_def.decimal_places == 0:
+                if not float(num).is_integer():
+                    raise ValueError(f"{param_def.display_name} must be an integer")
+                return int(num)
+            return round(num, param_def.decimal_places)
+
+        # TextParameter and other string-like values
+        return text
     
     def _create_basic_ga_section(self, parent, row):
         """Create basic genetic algorithm parameters section."""
@@ -813,22 +1057,16 @@ class UIBuilder:
         return icons.get(formatted, formatted)
     
     def get_parameter_values(self):
-        """Extract current values from all parameter widgets."""
-        if not hasattr(self.app, 'parameter_values'):
+        """Return current dynamic parameter values for the selected method.
+
+        NOTE: This method is used by controller/validation/save-load paths.
+        The source of truth is the settings-backed store populated by the
+        Treeview/editor UI.
+        """
+        method_key = self._get_selected_method_key_safe()
+        if not method_key:
             return {}
-            
-        values = {}
-        for param_name, widget_info in self.app.parameter_values.items():
-            widget = widget_info['widget']
-            param_def = widget_info['param_def']
-            
-            try:
-                values[param_name] = self._extract_widget_value(widget, param_def)
-            except Exception as e:
-                # Use default value if widget value extraction fails
-                values[param_name] = param_def.default_value
-                
-        return values
+        return self._get_dynamic_params_for_method(method_key)
     
     def _extract_widget_value(self, widget, param_def):
         """Extract value from widget based on parameter definition type."""

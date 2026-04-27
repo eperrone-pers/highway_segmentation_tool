@@ -809,7 +809,7 @@ class OptimizationController:
                     'optimization_metadata': {
                         'method': method_key,
                         'total_routes': len(all_route_results),
-                        'generations': self.app.num_generations.get(),
+                        'generations': params.get('num_generations'),
                         'timestamp': datetime.now().isoformat(),
                         'multi_route': True
                     },

@@ -43,32 +43,12 @@ class SettingsManager:
                 # Store optimization method selection under a dedicated key to avoid
                 # colliding with AASHTO CDA's parameter name 'method'.
                 'optimization_method': 'multi',  # Values: single, multi, constrained, aashto_cda
-                'population_size': 100,  # Match optimization_config.population_size_default
-                'num_generations': 100,  # Universal default - good for all methods
-                'min_length': 0.5,  # Match optimization_config.min_length_default
-                'max_length': 10.0,  # Match optimization_config.max_length_default  
-                'gap_threshold': 0.5,  # Match optimization_config.gap_threshold_default
-                'mutation_rate': 0.05,  # Match optimization_config.mutation_rate_default
-                'crossover_rate': 0.8,  # Match optimization_config.crossover_rate_default
-                'elite_ratio': 0.05,  # Match optimization_config.elite_ratio_default
-                'target_avg_length': 2.0,  # Match constrained_config.target_avg_length_default
-                'penalty_weight': 1000.0,  # Match constrained_config.penalty_weight_default
-                'length_tolerance': 0.2,  # Match constrained_config.length_tolerance_default
-                'cache_clear_interval': 50,  # Match optimization_config.cache_clear_interval
-                'enable_performance_stats': True,
-                # segment_cache always enabled for performance optimization  
+
+                # Only true global optimization setting we keep.
                 'custom_save_name': 'highway_segmentation',
-                
-                # AASHTO CDA Statistical Analysis Parameters
-                'alpha': 0.05,  # Significance level for change point detection
-                'method': 2,    # AASHTO CDA error estimation method (2 = Std Dev of Differences - Recommended)
-                'use_segment_length': True,  # Use segment-specific lengths (recommended)
-                'min_segment_datapoints': 3,  # Minimum datapoints per segment (sample-std safe)
-                'max_segments': None,  # Maximum segments allowed (None = no limit)
-                'min_section_difference': 0.0  # Minimum difference between adjacent segments
-                ,
-                # Per-method dynamic parameter persistence (so switching methods / reopening
-                # restores each method's own min/max/etc instead of a single shared set).
+
+                # Per-method dynamic parameter persistence. All GA/constrained/AASHTO
+                # knobs live here (scoped by method) rather than being top-level globals.
                 'dynamic_parameters_by_method': {}
             },
             'ui_state': {

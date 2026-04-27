@@ -6,6 +6,7 @@ related to optimization parameters, separating this logic from the main GUI clas
 """
 
 import os
+import tkinter as tk
 from tkinter import messagebox
 from config import AlgorithmConstants, ConstrainedOptimizationConfig, get_method_key_from_display_name, get_optimization_method
 
@@ -107,56 +108,47 @@ class ParameterManager:
             errors (list): List to append error messages to
         """
         try:
-            target_length = self.app.target_avg_length.get()
-            if target_length <= 0:
+            params = self.get_optimization_parameters()
+
+            target_length = params.get('target_avg_length')
+            if target_length is not None and float(target_length) <= 0:
                 errors.append("Target average length must be positive")
-            
-            tolerance = self.app.length_tolerance.get()
-            if not (0.01 <= tolerance <= 1.0):
-                errors.append("Length tolerance should be between 0.01 and 1.0")
-            
-            penalty_weight = self.app.penalty_weight.get()
-            if penalty_weight < 0:
-                errors.append("Penalty weight must be non-negative")
-            elif penalty_weight > 100000:
-                errors.append("Penalty weight should not exceed 100,000")
-                
+
+            tolerance = params.get('length_tolerance')
+            if tolerance is not None:
+                tolerance_val = float(tolerance)
+                if not (0.01 <= tolerance_val <= 1.0):
+                    errors.append("Length tolerance should be between 0.01 and 1.0")
+
+            penalty_weight = params.get('penalty_weight')
+            if penalty_weight is not None:
+                penalty_val = float(penalty_weight)
+                if penalty_val < 0:
+                    errors.append("Penalty weight must be non-negative")
+                elif penalty_val > 100000:
+                    errors.append("Penalty weight should not exceed 100,000")
         except ValueError as e:
             errors.append(f"Invalid constrained parameter: {str(e)}")
     
     def reset_parameters(self):
         """Reset all parameters to their default values."""
-        # GLOBAL PARAMETERS (shared across all optimization methods)
-        # Dynamic parameters (min_length, max_length, gap_threshold) are now method-specific
-        # and will be reset when method changes or by recreating the dynamic UI
-        
-        # Genetic algorithm parameters (shared across all methods)
-        self.app.population_size.set(optimization_config.population_size_default)
-        self.app.num_generations.set(optimization_config.multi_objective_generations)  # Use a reasonable default for all methods
-        self.app.mutation_rate.set(optimization_config.mutation_rate_default)
-        self.app.crossover_rate.set(optimization_config.crossover_rate_default)
-        
-        # Performance parameters (global)
-        self.app.cache_clear_interval.set(optimization_config.cache_clear_interval)
-        # enable_performance_stats is now handled by the dynamic parameter system.
-        if hasattr(self.app, 'enable_performance_stats'):
+        # Reset framework-level UI state
+        if hasattr(self.app, 'custom_save_name'):
+            self.app.custom_save_name.set("highway_segmentation")
+
+        if hasattr(self.app, 'gap_threshold'):
             try:
-                self.app.enable_performance_stats.set(True)
-            except (AttributeError, TypeError, tk.TclError):
+                self.app.gap_threshold.set(optimization_config.gap_threshold_default)
+            except Exception:
                 pass
-        # Segment caching always enabled for performance optimization
-        
-        # Save parameters (global)
-        self.app.custom_save_name.set("highway_segmentation")
-        
-        # METHOD-SPECIFIC PARAMETERS
-        # Single-objective only (used by single and constrained methods)
-        self.app.elite_ratio.set(optimization_config.elite_ratio_default)
-        
-        # Constrained optimization only
-        self.app.target_avg_length.set(constrained_config.target_avg_length_default)
-        self.app.penalty_weight.set(constrained_config.penalty_weight_default)
-        self.app.length_tolerance.set(constrained_config.length_tolerance_default)
+
+        # Clear per-method dynamic parameter overrides so defaults apply again
+        try:
+            if hasattr(self.app, 'settings') and isinstance(getattr(self.app, 'settings', None), dict):
+                opt = self.app.settings.setdefault('optimization', {})
+                opt['dynamic_parameters_by_method'] = {}
+        except Exception:
+            pass
         
         # Method settings - reset to default method
         from config import get_optimization_method_names
@@ -170,14 +162,24 @@ class ParameterManager:
     def on_method_change(self, event=None):
         """Handle optimization method selection changes using new dropdown architecture."""
         try:
+            # Commit any in-progress inline edit before switching.
+            try:
+                if hasattr(self.app, 'ui_builder') and hasattr(self.app.ui_builder, '_commit_dynamic_param_cell_edit'):
+                    self.app.ui_builder._commit_dynamic_param_cell_edit()
+            except Exception:
+                pass
+
             # Update the optimization_method attribute based on dropdown selection
             selected_method_key = self._get_selected_method_key()
             if selected_method_key:
                 self.app.optimization_method = selected_method_key
-                
-            # Update parameter section visibility using UIBuilder's method
-            if hasattr(self.app, 'ui_builder') and hasattr(self.app.ui_builder, '_update_dynamic_parameters'):
-                self.app.ui_builder._update_dynamic_parameters()
+
+            # Update method description + refresh dynamic parameter grid
+            if hasattr(self.app, 'ui_builder'):
+                if hasattr(self.app.ui_builder, 'set_method_description'):
+                    self.app.ui_builder.set_method_description(self.app.optimization_method)
+                if hasattr(self.app.ui_builder, 'refresh_dynamic_params_grid'):
+                    self.app.ui_builder.refresh_dynamic_params_grid(self.app.optimization_method)
         except Exception as e:
             print(f"Error updating method display: {e}")
     
@@ -219,7 +221,17 @@ class ParameterManager:
     def get_optimization_parameters(self):
         """
         Get all current optimization parameters as a dictionary.
-        Combines dynamic method-specific parameters with global parameters.
+        Combines method-specific dynamic parameters with the small set of
+        framework-level/global settings.
+
+        Global (framework) parameters are intentionally minimal:
+        - data file selection (managed by FileManager)
+        - route column / route filter selection (UI state)
+        - x/y column selection (UI state)
+        - gap_threshold (framework parameter)
+
+        All other optimization knobs (GA, constrained, AASHTO-specific, etc.)
+        are method-scoped and come from the dynamic parameter system.
         
         Returns:
             dict: Dictionary containing all optimization parameters
@@ -231,18 +243,9 @@ class ParameterManager:
             self.app.log_message(f"Could not get dynamic parameters: {e}")
             dynamic_params = {}
 
-        # Get global parameters
+        # Global parameters (keep minimal; do not include GA/constrained params here)
         values = {
-            'population_size': self.app.population_size.get(),
-            'num_generations': self.app.num_generations.get(),
-            'mutation_rate': self.app.mutation_rate.get(),
-            'crossover_rate': self.app.crossover_rate.get(),
-            'elite_ratio': self.app.elite_ratio.get(),
             'optimization_method': self.app.optimization_method,
-            'target_avg_length': self.app.target_avg_length.get(),
-            'penalty_weight': self.app.penalty_weight.get(),
-            'length_tolerance': self.app.length_tolerance.get(),
-            'cache_clear_interval': self.app.cache_clear_interval.get(),
             'custom_save_name': self.app.custom_save_name.get(),
         }
 
@@ -259,52 +262,46 @@ class ParameterManager:
             params (dict): Dictionary containing all saved parameters
         """
         try:
-            # Get current method to determine which parameters to load
             current_method = self.app.optimization_method if hasattr(self.app, 'optimization_method') else 'multi'
-            
-            # Check if dynamic parameter widgets are available
-            if not hasattr(self.app, 'parameter_values'):
-                self.app.log_message("Dynamic parameter widgets not yet initialized, skipping parameter loading")
-                return
-            
-            # Get method configuration and its parameters
             method_config = get_optimization_method(current_method)
-            loaded_count = 0
-            
-            # Load saved values for dynamic parameters
-            for param_def in method_config.parameters:
-                param_name = param_def.name
-                if param_name in params:
-                    try:
-                        # Get the parameter widget info from app.parameter_values
-                        widget_info = self.app.parameter_values.get(param_name)
-                        if widget_info:
-                            widget = widget_info['widget']
-                            value = params[param_name]
+            allowed_names = {p.name for p in method_config.parameters}
 
-                            # Normalize OptionalNumericParameter values coming from JSON/settings
-                            # (saved settings can legitimately contain '', 'None', '(None)', etc.)
-                            from config import OptionalNumericParameter
-                            if isinstance(param_def, OptionalNumericParameter):
-                                if value is None:
-                                    normalized_value = None
-                                elif isinstance(value, str) and value.strip().lower() in ("", "none", "(none)", "null"):
-                                    normalized_value = None
-                                else:
-                                    normalized_value = value
-                                value = normalized_value
-                            
-                            # Use the parameter definition's set_widget_value method
-                            param_def.set_widget_value(widget, value)
-                            loaded_count += 1
-                            
-                        else:
-                            self.app.log_message(f"Widget for {param_name} not found in parameter_values")
-                    except (ValueError, TypeError, AttributeError) as e:
-                        self.app.log_message(f"Warning: Could not load parameter {param_name}: {e}")
-                        
-            # Parameters loaded successfully
-            
+            if not hasattr(self.app, 'settings') or not isinstance(getattr(self.app, 'settings', None), dict):
+                return
+
+            store = self.app.settings.setdefault('optimization', {}).setdefault('dynamic_parameters_by_method', {})
+            if not isinstance(store, dict):
+                return
+
+            per_method = store.setdefault(current_method, {})
+            if not isinstance(per_method, dict):
+                per_method = {}
+                store[current_method] = per_method
+
+            from config import OptionalNumericParameter
+            for param_def in method_config.parameters:
+                name = param_def.name
+                if name not in params:
+                    continue
+
+                value = params.get(name)
+                if isinstance(param_def, OptionalNumericParameter):
+                    if value is None:
+                        value = None
+                    elif isinstance(value, str) and value.strip().lower() in ("", "none", "(none)", "null"):
+                        value = None
+
+                per_method[name] = value
+
+            # Drop any keys that are no longer valid for this method
+            for k in list(per_method.keys()):
+                if k not in allowed_names:
+                    per_method.pop(k, None)
+
+            # Refresh the Treeview grid if present
+            if hasattr(self.app.ui_builder, 'refresh_dynamic_params_grid'):
+                self.app.ui_builder.refresh_dynamic_params_grid(current_method)
+
         except Exception as e:
             if hasattr(self.app, 'handle_error'):
                 self.app.handle_error("Could not load dynamic parameters", e, severity="warning", show_messagebox=False)
@@ -335,37 +332,33 @@ class ParameterManager:
             str: Formatted parameter summary
         """
         params = self.get_optimization_parameters()
-        method = params['optimization_method']
-        
+        method = params.get('optimization_method', 'multi')
+
         summary = []
         summary.append("Current Parameter Settings:")
         summary.append("=" * 40)
-        summary.append(f"Method: {method.title()}")
+        summary.append(f"Method: {str(method).title()}")
         summary.append("")
-        summary.append("GLOBAL PARAMETERS (shared across all methods):")
-        summary.append(f"  Segment Length Range: {params['min_length']:.1f} - {params['max_length']:.1f} miles")
-        summary.append(f"  Gap Threshold: {params['gap_threshold']:.1f} miles")
-        summary.append(f"  Population Size: {params['population_size']}")
-        summary.append(f"  Generations: {params['num_generations']}")
-        summary.append(f"  Mutation Rate: {params['mutation_rate']:.3f}")
-        summary.append(f"  Crossover Rate: {params['crossover_rate']:.2f}")
-        summary.append(f"  Cache Clear Interval: {params['cache_clear_interval']} generations")
-        summary.append(f"  Performance Stats: {'Enabled' if params['enable_performance_stats'] else 'Disabled'}")
-        summary.append(f"  Segment Caching: Always Enabled (Performance Optimization)")
-        
-        # Method-specific parameters
-        if method in ["single", "constrained"]:
-            summary.append("")
-            summary.append("SINGLE-OBJECTIVE PARAMETERS:")
-            summary.append(f"  Elite Ratio: {params['elite_ratio']:.3f}")
-        
-        if method == "constrained":
-            summary.append("")
-            summary.append("CONSTRAINED OPTIMIZATION PARAMETERS:")
-            summary.append(f"  Target Avg Length: {params['target_avg_length']:.2f} miles")
-            summary.append(f"  Length Tolerance: ±{params['length_tolerance']:.2f}")
-            summary.append(f"  Penalty Weight: {params['penalty_weight']:.0f}")
-        
+        summary.append("FRAMEWORK PARAMETERS:")
+        try:
+            summary.append(f"  Gap Threshold: {float(self.app.gap_threshold.get()):.3f} miles")
+        except Exception:
+            summary.append("  Gap Threshold: (invalid)")
+        summary.append(f"  Custom Save Name: {params.get('custom_save_name', '')}")
+        summary.append("")
+        summary.append("METHOD-SPECIFIC PARAMETERS:")
+
+        # Prefer the UIBuilder dynamic parameter source (single source of truth)
+        try:
+            dyn = self.app.ui_builder.get_parameter_values()
+            for name, value in dyn.items():
+                summary.append(f"  {name}: {value}")
+        except Exception:
+            for name, value in params.items():
+                if name in ('optimization_method', 'custom_save_name'):
+                    continue
+                summary.append(f"  {name}: {value}")
+
         return "\n".join(summary)
     
     def get_current_parameters(self):
@@ -386,25 +379,7 @@ class ParameterManager:
             settings_dict (dict): Dictionary containing parameter settings
         """
         try:
-            # Set global parameters if they exist in settings
-            if 'population_size' in settings_dict:
-                self.app.population_size.set(settings_dict['population_size'])
-            if 'num_generations' in settings_dict:
-                self.app.num_generations.set(settings_dict['num_generations'])
-            if 'mutation_rate' in settings_dict:
-                self.app.mutation_rate.set(settings_dict['mutation_rate'])
-            if 'crossover_rate' in settings_dict:
-                self.app.crossover_rate.set(settings_dict['crossover_rate'])
-            if 'elite_ratio' in settings_dict:
-                self.app.elite_ratio.set(settings_dict['elite_ratio'])
-            if 'target_avg_length' in settings_dict:
-                self.app.target_avg_length.set(settings_dict['target_avg_length'])
-            if 'penalty_weight' in settings_dict:
-                self.app.penalty_weight.set(settings_dict['penalty_weight'])
-            if 'length_tolerance' in settings_dict:
-                self.app.length_tolerance.set(settings_dict['length_tolerance'])
-            if 'cache_clear_interval' in settings_dict:
-                self.app.cache_clear_interval.set(settings_dict['cache_clear_interval'])
+            # Keep non-method settings minimal; do not set GA/constrained knobs globally.
             if 'custom_save_name' in settings_dict:
                 self.app.custom_save_name.set(settings_dict['custom_save_name'])
             
