@@ -166,20 +166,24 @@ class HighwaySegmentationGUI:
         # Create main layout
         main_frame = self.ui_builder.create_main_layout()
         
-        # Create left scrollable pane for controls
-        scrollable_frame = self.ui_builder.create_scrollable_left_pane(main_frame)
+        # Create left pane: fixed required controls + dynamic parameters area
+        required_frame = self.ui_builder.create_scrollable_left_pane(main_frame)
         
         # Create right pane for results
         right_pane = self.ui_builder.create_right_pane(main_frame)
         
-        # Build all sections in the left pane
+        # Build required sections in the fixed (non-scrollable) left pane
         current_row = 0
-        current_row = self.ui_builder.create_file_operations_section(scrollable_frame, current_row)
+        current_row = self.ui_builder.create_file_operations_section(required_frame, current_row)
         # parameters_section removed - now using dynamic parameters in method_section
-        current_row = self.ui_builder.create_method_section(scrollable_frame, current_row)
+        current_row = self.ui_builder.create_method_section(required_frame, current_row)
         # performance_section removed - now handled by dynamic parameters
         # save_load_section removed - now integrated into file_operations_section
         # Note: start/stop buttons now moved to top of right pane
+
+        # Dynamic parameters UI: Treeview grid + editor panel
+        if hasattr(self, "dynamic_params_parent"):
+            self.ui_builder.create_dynamic_params_section(self.dynamic_params_parent)
         
         # Build right pane (now includes start/stop buttons at top)
         self.ui_builder.create_right_pane_actions(right_pane)
@@ -271,6 +275,14 @@ class HighwaySegmentationGUI:
         Persist the outgoing method's dynamic parameters, then switch UI and
         restore the incoming method's saved dynamic parameters (if any).
         """
+        # Commit any in-progress inline table edit before switching methods.
+        # Without this, the Treeview refresh can cancel the editor and lose the edit.
+        try:
+            if hasattr(self, 'ui_builder') and hasattr(self.ui_builder, '_commit_dynamic_param_cell_edit'):
+                self.ui_builder._commit_dynamic_param_cell_edit()
+        except Exception:
+            pass
+
         try:
             old_method_key = getattr(self, '_active_method_key', None) or getattr(self, 'optimization_method', None)
             if old_method_key:
@@ -326,28 +338,13 @@ class HighwaySegmentationGUI:
         """Snapshot current dynamic parameter widget values for a specific method."""
         if not hasattr(self, 'settings') or not self.settings:
             return
-        if not hasattr(self, 'ui_builder'):
-            return
-
-        try:
-            dynamic_values = self.ui_builder.get_parameter_values()
-        except Exception as e:
-            if hasattr(self, 'handle_error'):
-                self.handle_error(
-                    f"Could not read dynamic parameters for method '{method_key}'",
-                    e,
-                    severity="warning",
-                    show_messagebox=False,
-                )
-            elif hasattr(self, 'log_message'):
-                self.log_message(
-                    f"Warning: Could not read dynamic parameters for method '{method_key}': {e}"
-                )
-            return
-
+        # Dynamic parameter edits are persisted immediately into
+        # settings['optimization']['dynamic_parameters_by_method'][method_key]
+        # by the inline editor. Do not overwrite here (especially during method
+        # switching, when the dropdown selection may already reflect the new method).
         opt = self.settings.setdefault('optimization', {})
         store = opt.setdefault('dynamic_parameters_by_method', {})
-        store[method_key] = dynamic_values
+        store.setdefault(method_key, {})
 
     def _restore_dynamic_parameters_for_method(self, method_key: str) -> None:
         """Apply saved dynamic parameters for a method to the current widgets."""
@@ -1081,27 +1078,17 @@ class HighwaySegmentationGUI:
             self.log_message(f"  Error getting dynamic parameters: {e}")
             
         self.log_message("")
-        self.log_message("GLOBAL PARAMETERS (shared by all methods):")
-        self.log_message(f"  Population Size: {self.population_size.get()}")
-        self.log_message(f"  Generations: {self.num_generations.get()}")
-        self.log_message(f"  Mutation Rate: {self.mutation_rate.get()}")
-        self.log_message(f"  Crossover Rate: {self.crossover_rate.get()}")
-        self.log_message(f"  Cache Clear Interval: {self.cache_clear_interval.get()}")
-        self.log_message(f"  Performance Stats: {self.get_enable_performance_stats()}")
-        self.log_message(f"  Segment Caching: Always Enabled (Performance Optimization)")
-        self.log_message(f"  Custom Save Name: {self.custom_save_name.get()}")
-        
-        if method in ["single", "constrained"]:
-            self.log_message("")
-            self.log_message("SINGLE-OBJECTIVE PARAMETERS:")
-            self.log_message(f"  Elite Ratio: {self.elite_ratio.get()}")
-        
-        if method == "constrained":
-            self.log_message("")
-            self.log_message("CONSTRAINED OPTIMIZATION PARAMETERS:")
-            self.log_message(f"  Target Avg Length: {self.target_avg_length.get()}")
-            self.log_message(f"  Penalty Weight: {self.penalty_weight.get()}")
-            self.log_message(f"  Length Tolerance: {self.length_tolerance.get()}")
+        self.log_message("FRAMEWORK PARAMETERS:")
+        if hasattr(self, 'gap_threshold'):
+            self.log_message(f"  Gap Threshold: {self.gap_threshold.get()}")
+        if hasattr(self, 'x_column'):
+            self.log_message(f"  X Column: {self.x_column.get()}")
+        if hasattr(self, 'y_column'):
+            self.log_message(f"  Y Column: {self.y_column.get()}")
+        if hasattr(self, 'route_column'):
+            self.log_message(f"  Route Column: {self.route_column.get()}")
+        if hasattr(self, 'custom_save_name'):
+            self.log_message(f"  Custom Save Name: {self.custom_save_name.get()}")
         
         self.log_message("=================================")
     
@@ -1206,11 +1193,16 @@ class HighwaySegmentationGUI:
                     from config import get_optimization_method
                     method_config = get_optimization_method(method_key)
                     self.method_dropdown.set(method_config.display_name)
-                    
-                    # Create UI widgets for the selected method BEFORE loading parameters
-                    # This ensures parameter_values dict is populated for the correct method
-                    if hasattr(self, 'ui_builder') and hasattr(self.ui_builder, '_update_dynamic_parameters'):
-                        self.ui_builder._update_dynamic_parameters()
+
+                    # Refresh dynamic parameter UI for the selected method
+                    try:
+                        if hasattr(self, 'parameter_manager'):
+                            self.parameter_manager.on_method_change()
+                        elif hasattr(self, 'ui_builder'):
+                            self.ui_builder.set_method_description(method_key)
+                            self.ui_builder.refresh_dynamic_params_grid(method_key)
+                    except Exception as e:
+                        self.log_message(f"Warning: Could not refresh dynamic parameters for '{method_key}': {e}")
                         
                 except (ValueError, KeyError) as e:
                     # Fallback to default if method not found or invalid
@@ -1220,10 +1212,16 @@ class HighwaySegmentationGUI:
                     opt_settings['optimization_method'] = 'multi'  # Fix the bad optimization setting
                     self.method_dropdown.set("Multi-Objective NSGA-II")
                     self.optimization_method = 'multi'  # Ensure we have correct key even with fallback
-                    
-                    # Create UI widgets for the fallback method
-                    if hasattr(self, 'ui_builder') and hasattr(self.ui_builder, '_update_dynamic_parameters'):
-                        self.ui_builder._update_dynamic_parameters()
+
+                    # Refresh dynamic parameter UI for the fallback method
+                    try:
+                        if hasattr(self, 'parameter_manager'):
+                            self.parameter_manager.on_method_change()
+                        elif hasattr(self, 'ui_builder'):
+                            self.ui_builder.set_method_description('multi')
+                            self.ui_builder.refresh_dynamic_params_grid('multi')
+                    except Exception as e:
+                        self.log_message(f"Warning: Could not refresh dynamic parameters for fallback: {e}")
             
             # NOW apply parameters to the correct method's UI
             # If we have per-method saved dynamic parameters, merge those for the
@@ -1311,15 +1309,11 @@ class HighwaySegmentationGUI:
     
     def _setup_parameter_tracking(self):
         """Set up automatic saving when parameters change."""
-        # List of all parameter variables to track (excluding dropdown which has its own callback)
+        # Track only framework/global UI state here.
+        # Method-specific optimization parameters are persisted via the dynamic
+        # parameter store and the Apply/Reset buttons in the editor.
         tracked_vars = [
-            # min_length, max_length now handled by dynamic parameters
-            # gap_threshold is framework parameter (tracked separately below)
-            # enable_performance_stats handled by dynamic parameters, segment_cache always enabled
-            self.population_size, self.num_generations, self.mutation_rate,
-            self.crossover_rate, self.elite_ratio,
-            self.target_avg_length, self.penalty_weight, self.length_tolerance,
-            self.cache_clear_interval, self.custom_save_name
+            self.custom_save_name,
         ]
         
         # Add column selection variables if they exist
@@ -1354,9 +1348,27 @@ class HighwaySegmentationGUI:
             except (AttributeError, ValueError, KeyError, TypeError):
                 pass
 
-            # Update optimization parameters
-            current_params = self.parameter_manager.get_current_parameters()
-            self.settings['optimization'].update(current_params)
+            # Persist only minimal non-method optimization settings here.
+            # (All method parameters are stored per-method under dynamic_parameters_by_method.)
+            if 'optimization' not in self.settings or not isinstance(self.settings.get('optimization'), dict):
+                self.settings['optimization'] = {}
+            if hasattr(self, 'custom_save_name'):
+                self.settings['optimization']['custom_save_name'] = self.custom_save_name.get()
+
+            # Enforce minimal-globals contract: strip any legacy optimization
+            # keys that used to be stored as globals.
+            legacy_optimization_keys = [
+                'population_size', 'num_generations', 'mutation_rate', 'crossover_rate',
+                'elite_ratio', 'target_avg_length', 'penalty_weight', 'length_tolerance',
+                'cache_clear_interval', 'enable_performance_stats',
+                # Older builds stored segment constraints and framework values here
+                'min_length', 'max_length', 'gap_threshold',
+                # AASHTO CDA params were previously stored globally
+                'alpha', 'method', 'use_segment_length', 'min_segment_datapoints',
+                'max_segments', 'min_section_difference',
+            ]
+            for k in legacy_optimization_keys:
+                self.settings['optimization'].pop(k, None)
             
             # Update method selection from dropdown - convert display name to key for settings
             if hasattr(self.ui_builder, 'method_dropdown'):

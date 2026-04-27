@@ -76,7 +76,7 @@ The GUI provides an intuitive way to configure all parameters:
 
 - **File Operations:** Select CSV, optional route column, X/Y columns, gap threshold, and results save path
 - **Optimization Method:** Dropdown selection populated from the method registry (`OPTIMIZATION_METHODS`)
-- **Method Parameters:** Dynamically generated, method-specific parameter groups (defined in `src/config.py`)
+- **Method Parameters:** Dynamically generated, method-specific parameters (defined in `src/config.py`). Double-click a parameter value in the table to edit.
 - **Performance & Caching:** Caching and performance options (where applicable)
 - **Real-time Status:** Progress tracking and results logging
 
@@ -90,6 +90,10 @@ The GUI provides an intuitive way to configure all parameters:
 ## Configuration Parameters
 
 Defaults are defined in `src/config.py` and vary by selected method.
+
+Notes:
+- Only a small set of controls are truly global (file selection, route/x/y columns, and gap threshold).
+- All other optimization knobs (GA, constrained, AASHTO CDA, etc.) are configured per-method in the Method Parameters table.
 
 | Parameter | Default | Applies To | Description |
 | --- | --- | --- | --- |

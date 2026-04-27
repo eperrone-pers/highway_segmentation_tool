@@ -510,6 +510,15 @@ class FileManager:
                 for warning in validation_result['warnings']:
                     self.app.log_message(f"  - {warning}")
 
+            # Apply run parameters from the results JSON back into the GUI so the
+            # Method Parameters table reflects the loaded run.
+            try:
+                self._apply_results_json_to_ui(json_data)
+            except Exception as e:
+                # Non-fatal: visualization can still open
+                if hasattr(self.app, 'log_message'):
+                    self.app.log_message(f"Warning: Could not restore parameters from results JSON: {e}")
+
             # Launch enhanced visualization with JSON data
             try:
                 from enhanced_visualization import show_enhanced_visualization
@@ -538,6 +547,115 @@ class FileManager:
             messagebox.showerror("Load Error", error_msg)
             if hasattr(self.app, 'log_message'):
                 self.app.log_message(error_msg)
+
+    def _apply_results_json_to_ui(self, json_data: dict) -> None:
+        """Best-effort restoration of method + parameters from a results JSON.
+
+        This is intentionally UI-focused: it updates the method dropdown/description,
+        restores the method-scoped parameter store, and applies a few framework-level
+        globals (gap threshold, x/y/route selections) when present.
+        """
+
+        meta = json_data.get('analysis_metadata', {}) or {}
+        input_params = json_data.get('input_parameters', {}) or {}
+
+        method_cfg = input_params.get('optimization_method_config', {}) or {}
+        method_key = meta.get('analysis_method') or method_cfg.get('method_key')
+        display_name = method_cfg.get('display_name')
+
+        if method_key:
+            try:
+                if hasattr(self.app, '_migrate_method_key'):
+                    method_key = self.app._migrate_method_key(method_key)
+            except Exception:
+                pass
+
+        # Restore method selection
+        if display_name and hasattr(self.app, 'method_dropdown') and hasattr(self.app.method_dropdown, 'set'):
+            try:
+                self.app.method_dropdown.set(display_name)
+            except Exception:
+                pass
+
+        if method_key:
+            try:
+                self.app.optimization_method = method_key
+                setattr(self.app, '_active_method_key', method_key)
+            except Exception:
+                pass
+
+            # Ensure settings structure exists
+            try:
+                if not hasattr(self.app, 'settings') or not isinstance(self.app.settings, dict):
+                    self.app.settings = {}
+                opt = self.app.settings.setdefault('optimization', {})
+                opt['optimization_method'] = method_key
+                opt.setdefault('dynamic_parameters_by_method', {})
+            except Exception:
+                pass
+
+        # Restore framework/global UI state
+        route_processing = input_params.get('route_processing', {}) or {}
+        col_info = (meta.get('input_file_info', {}) or {}).get('column_info', {}) or {}
+
+        x_col = route_processing.get('x_column') or col_info.get('x_column')
+        y_col = route_processing.get('y_column') or col_info.get('y_column')
+        route_col = route_processing.get('route_column') or col_info.get('route_column')
+
+        if x_col and hasattr(self.app, 'x_column') and hasattr(self.app.x_column, 'set'):
+            self.app.x_column.set(x_col)
+        if y_col and hasattr(self.app, 'y_column') and hasattr(self.app.y_column, 'set'):
+            self.app.y_column.set(y_col)
+        if route_col and hasattr(self.app, 'route_column') and hasattr(self.app.route_column, 'set'):
+            self.app.route_column.set(route_col)
+
+        if 'selected_routes' in route_processing:
+            try:
+                self.app.selected_routes = list(route_processing.get('selected_routes') or [])
+            except Exception:
+                pass
+
+        if 'custom_save_name' in route_processing and hasattr(self.app, 'custom_save_name') and hasattr(self.app.custom_save_name, 'set'):
+            try:
+                self.app.custom_save_name.set(route_processing.get('custom_save_name') or '')
+            except Exception:
+                pass
+
+        method_params = input_params.get('method_parameters', {}) or {}
+        if hasattr(self.app, 'gap_threshold') and hasattr(self.app.gap_threshold, 'set'):
+            if 'gap_threshold' in method_params:
+                try:
+                    self.app.gap_threshold.set(method_params.get('gap_threshold'))
+                except Exception:
+                    pass
+
+        # Restore method-scoped parameters into the settings-backed store
+        if method_key and isinstance(method_params, dict) and method_params:
+            try:
+                if hasattr(self.app, 'parameter_manager'):
+                    self.app.parameter_manager.load_method_dynamic_parameters(method_params)
+                else:
+                    opt = self.app.settings.setdefault('optimization', {})
+                    store = opt.setdefault('dynamic_parameters_by_method', {})
+                    store[method_key] = dict(method_params)
+            except Exception:
+                # Fall back to raw store write
+                try:
+                    opt = self.app.settings.setdefault('optimization', {})
+                    store = opt.setdefault('dynamic_parameters_by_method', {})
+                    store[method_key] = dict(method_params)
+                except Exception:
+                    pass
+
+        # Refresh method description/grid (best-effort)
+        try:
+            if hasattr(self.app, 'ui_builder'):
+                if method_key and hasattr(self.app.ui_builder, 'set_method_description'):
+                    self.app.ui_builder.set_method_description(method_key)
+                if method_key and hasattr(self.app.ui_builder, 'refresh_dynamic_params_grid'):
+                    self.app.ui_builder.refresh_dynamic_params_grid(method_key)
+        except Exception:
+            pass
     
     def _validate_json_schema(self, json_data):
         """Validate JSON against schema with graceful error handling."""
@@ -774,56 +892,55 @@ class FileManager:
                 # Store selected directory for future use
                 self.app._last_file_directory = os.path.dirname(filename)
                 
-                # Collect all parameter values from both dynamic and global parameters
+                # Persist minimal framework UI state + per-method dynamic parameters.
+                # Avoid writing GA/constrained knobs as global parameters.
                 try:
-                    # Get dynamic parameters
-                    dynamic_params = self.app.ui_builder.get_parameter_values()
+                    from config import get_method_key_from_display_name
+
+                    method_key = None
+                    try:
+                        if hasattr(self.app, 'method_dropdown'):
+                            method_key = get_method_key_from_display_name(self.app.method_dropdown.get())
+                    except Exception:
+                        method_key = getattr(self.app, 'optimization_method', None)
+
+                    # Persist active method's latest params into the store
+                    try:
+                        if hasattr(self.app, '_persist_dynamic_parameters_for_method') and method_key:
+                            self.app._persist_dynamic_parameters_for_method(method_key)
+                    except Exception:
+                        pass
+
+                    dynamic_store = {}
+                    try:
+                        opt = getattr(self.app, 'settings', {}).get('optimization', {})
+                        if isinstance(opt, dict):
+                            dynamic_store = opt.get('dynamic_parameters_by_method', {}) or {}
+                    except Exception:
+                        dynamic_store = {}
+
                     config = {
-                        'min_length': dynamic_params.get('min_length', 0.5),
-                        'max_length': dynamic_params.get('max_length', 10.0),
-                        'gap_threshold': dynamic_params.get('gap_threshold', 0.5),
-                        'population_size': self.app.population_size.get(),
-                        'num_generations': self.app.num_generations.get(),
-                        'mutation_rate': self.app.mutation_rate.get(),
-                        'crossover_rate': self.app.crossover_rate.get(),
-                        'elite_ratio': self.app.elite_ratio.get(),
-                        'optimization_method': self.app.method_dropdown.get(),  # Updated to use dropdown
-                        'target_avg_length': self.app.target_avg_length.get(),
-                        'penalty_weight': self.app.penalty_weight.get(),
-                        'length_tolerance': self.app.length_tolerance.get(),
-                        'cache_clear_interval': self.app.cache_clear_interval.get(),
-                        'enable_performance_stats': self.app.get_enable_performance_stats(),
-                        'custom_save_name': self.app.custom_save_name.get(),
-                        'x_column': self.app.x_column.get(),
-                        'y_column': self.app.y_column.get(),
-                        'window_geometry': self.app.root.geometry(),
-                        'data_file_path': self.get_data_file_path(),
-                        'save_file_path': self.get_save_file_path()
+                        'files': {
+                            'data_file_path': self.get_data_file_path(),
+                            'save_file_path': self.get_save_file_path(),
+                        },
+                        'ui_state': {
+                            'x_column': self.app.x_column.get() if hasattr(self.app, 'x_column') else '',
+                            'y_column': self.app.y_column.get() if hasattr(self.app, 'y_column') else '',
+                            'gap_threshold': self.app.gap_threshold.get() if hasattr(self.app, 'gap_threshold') else 0.5,
+                            'route_column': self.app.route_column.get() if hasattr(self.app, 'route_column') else '',
+                            'selected_routes': getattr(self.app, 'selected_routes', None),
+                            'window_geometry': self.app.root.geometry(),
+                        },
+                        'optimization': {
+                            'optimization_method': method_key or getattr(self.app, 'optimization_method', 'multi'),
+                            'custom_save_name': self.app.custom_save_name.get() if hasattr(self.app, 'custom_save_name') else 'highway_segmentation',
+                            'dynamic_parameters_by_method': dynamic_store,
+                        }
                     }
                 except Exception as e:
-                    print(f"Warning: Could not get dynamic parameters, using defaults: {e}")
-                    config = {
-                        'min_length': 0.5,
-                        'max_length': 10.0,
-                        'gap_threshold': 0.5,
-                        'population_size': self.app.population_size.get(),
-                        'num_generations': self.app.num_generations.get(),
-                        'mutation_rate': self.app.mutation_rate.get(),
-                        'crossover_rate': self.app.crossover_rate.get(),
-                        'elite_ratio': self.app.elite_ratio.get(),
-                        'optimization_method': self.app.method_dropdown.get(),
-                        'target_avg_length': self.app.target_avg_length.get(),
-                        'penalty_weight': self.app.penalty_weight.get(),
-                        'length_tolerance': self.app.length_tolerance.get(),
-                        'cache_clear_interval': self.app.cache_clear_interval.get(),
-                        'enable_performance_stats': self.app.get_enable_performance_stats(),
-                        'custom_save_name': self.app.custom_save_name.get(),
-                        'x_column': self.app.x_column.get(),
-                        'y_column': self.app.y_column.get(),
-                        'window_geometry': self.app.root.geometry(),
-                        'data_file_path': self.get_data_file_path(),
-                        'save_file_path': self.get_save_file_path()
-                    }
+                    messagebox.showerror("Save Error", f"Error collecting parameters: {str(e)}")
+                    return
                 
                 # Save to JSON file
                 with open(filename, 'w') as f:
@@ -845,59 +962,108 @@ class FileManager:
             if filename:
                 with open(filename, 'r') as f:
                     config = json.load(f)
-                
-                # Load parameter values
-                # Note: min_length, max_length, gap_threshold are now dynamic parameters
-                # They will be set when the method is selected and UI is regenerated
-                
-                # Load global parameters
-                if 'population_size' in config:
-                    self.app.population_size.set(config['population_size'])
-                if 'num_generations' in config:
-                    self.app.num_generations.set(config['num_generations'])
-                if 'mutation_rate' in config:
-                    self.app.mutation_rate.set(config['mutation_rate'])
-                if 'crossover_rate' in config:
-                    self.app.crossover_rate.set(config['crossover_rate'])
-                if 'elite_ratio' in config:
-                    self.app.elite_ratio.set(config['elite_ratio'])
-                if 'optimization_method' in config:
-                    self.app.optimization_method.set(config['optimization_method'])
-                if 'target_avg_length' in config:
-                    self.app.target_avg_length.set(config['target_avg_length'])
-                if 'penalty_weight' in config:
-                    self.app.penalty_weight.set(config['penalty_weight'])
-                if 'length_tolerance' in config:
-                    self.app.length_tolerance.set(config['length_tolerance'])
-                if 'cache_clear_interval' in config:
-                    self.app.cache_clear_interval.set(config['cache_clear_interval'])
-                # enable_performance_stats handled by dynamic parameter system, segment_cache always enabled
-                # Save location is always required now
-                if 'custom_save_name' in config:
-                    self.app.custom_save_name.set(config['custom_save_name'])
-                if 'x_column' in config:
-                    self.app.x_column.set(config['x_column'])
-                if 'y_column' in config:
-                    self.app.y_column.set(config['y_column'])
-                
-                # Restore file paths
-                if 'data_file_path' in config and config['data_file_path']:
-                    self.set_data_file_path(config['data_file_path'])
-                    self.load_csv_columns()
-                if 'save_file_path' in config and config['save_file_path']:
-                    self.set_save_file_path(config['save_file_path'])
-                
-                # Restore window geometry
-                if 'window_geometry' in config:
+
+                # Support both new structured format and legacy flat format.
+                if isinstance(config, dict) and 'optimization' in config and isinstance(config.get('optimization'), dict):
+                    opt = config.get('optimization', {})
+                    files = config.get('files', {}) if isinstance(config.get('files'), dict) else {}
+                    ui_state = config.get('ui_state', {}) if isinstance(config.get('ui_state'), dict) else {}
+
+                    method_key = opt.get('optimization_method') or getattr(self.app, 'optimization_method', 'multi')
                     try:
-                        self.app.root.geometry(config['window_geometry'])
-                    except tk.TclError:
-                        pass  # Ignore invalid geometry
-                
-                # Update method-dependent UI states
-                self.app.on_method_change()
-                # Save name entry is always enabled now
-                
+                        if hasattr(self.app, '_migrate_method_key'):
+                            method_key = self.app._migrate_method_key(method_key)
+                    except Exception:
+                        pass
+
+                    # Restore file paths
+                    data_file_path = files.get('data_file_path')
+                    if data_file_path:
+                        self.set_data_file_path(data_file_path)
+                        self.load_csv_columns()
+                    save_file_path = files.get('save_file_path')
+                    if save_file_path:
+                        self.set_save_file_path(save_file_path)
+
+                    # Restore UI globals
+                    if 'x_column' in ui_state and hasattr(self.app, 'x_column'):
+                        self.app.x_column.set(ui_state.get('x_column') or '')
+                    if 'y_column' in ui_state and hasattr(self.app, 'y_column'):
+                        self.app.y_column.set(ui_state.get('y_column') or '')
+                    if 'gap_threshold' in ui_state and hasattr(self.app, 'gap_threshold'):
+                        self.app.gap_threshold.set(ui_state.get('gap_threshold'))
+                    if 'route_column' in ui_state and hasattr(self.app, 'route_column'):
+                        self.app.route_column.set(ui_state.get('route_column') or '')
+                    if 'selected_routes' in ui_state:
+                        self.app.selected_routes = ui_state.get('selected_routes') or []
+                    if 'window_geometry' in ui_state and ui_state.get('window_geometry'):
+                        try:
+                            self.app.root.geometry(ui_state.get('window_geometry'))
+                        except tk.TclError:
+                            pass
+
+                    # Restore optimization method + dynamic store
+                    self.app.optimization_method = method_key
+                    if hasattr(self.app, 'custom_save_name') and 'custom_save_name' in opt:
+                        self.app.custom_save_name.set(opt.get('custom_save_name') or '')
+
+                    try:
+                        if not hasattr(self.app, 'settings') or not isinstance(self.app.settings, dict):
+                            self.app.settings = {}
+                        app_opt = self.app.settings.setdefault('optimization', {})
+                        app_opt['optimization_method'] = method_key
+                        store = opt.get('dynamic_parameters_by_method', {})
+                        if isinstance(store, dict):
+                            app_opt['dynamic_parameters_by_method'] = store
+                    except Exception:
+                        pass
+
+                    # Update UI based on method
+                    try:
+                        if hasattr(self.app, 'on_method_change'):
+                            self.app.on_method_change()
+                    except Exception:
+                        pass
+
+                else:
+                    # Legacy flat config (best-effort): apply minimal fields and
+                    # delegate dynamic keys through ParameterManager.
+                    if 'custom_save_name' in config and hasattr(self.app, 'custom_save_name'):
+                        self.app.custom_save_name.set(config['custom_save_name'])
+                    if 'x_column' in config and hasattr(self.app, 'x_column'):
+                        self.app.x_column.set(config['x_column'])
+                    if 'y_column' in config and hasattr(self.app, 'y_column'):
+                        self.app.y_column.set(config['y_column'])
+                    if 'gap_threshold' in config and hasattr(self.app, 'gap_threshold'):
+                        self.app.gap_threshold.set(config['gap_threshold'])
+                    if 'data_file_path' in config and config['data_file_path']:
+                        self.set_data_file_path(config['data_file_path'])
+                        self.load_csv_columns()
+                    if 'save_file_path' in config and config['save_file_path']:
+                        self.set_save_file_path(config['save_file_path'])
+
+                    # Determine method
+                    method_key = config.get('optimization_method') or getattr(self.app, 'optimization_method', 'multi')
+                    try:
+                        if hasattr(self.app, '_migrate_method_key'):
+                            method_key = self.app._migrate_method_key(method_key)
+                    except Exception:
+                        pass
+                    self.app.optimization_method = method_key
+
+                    try:
+                        if hasattr(self.app, 'on_method_change'):
+                            self.app.on_method_change()
+                    except Exception:
+                        pass
+
+                    # Load dynamic params through the manager (it filters by method config)
+                    try:
+                        if hasattr(self.app, 'parameter_manager'):
+                            self.app.parameter_manager.load_method_dynamic_parameters(config)
+                    except Exception:
+                        pass
+
                 messagebox.showinfo("Parameters Loaded", f"Parameters loaded from {os.path.basename(filename)}")
                 
         except Exception as e:

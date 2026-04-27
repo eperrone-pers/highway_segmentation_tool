@@ -104,8 +104,17 @@ def complex_mock_app():
     app.ui_builder.get_parameter_values.return_value = {
         'min_length': 1.0,
         'max_length': 5.0,
+        # NOTE: Gap threshold is framework-level (app.gap_threshold), but leaving
+        # it here is harmless for tests.
         'gap_threshold': 0.1,
-        'enable_performance_stats': True
+
+        # Method-scoped dynamic parameters required by the multi-objective method
+        'population_size': 100,
+        'num_generations': 100,
+        'crossover_rate': 0.8,
+        'mutation_rate': 0.05,
+        'cache_clear_interval': 50,
+        'enable_performance_stats': True,
     }
     
     # UI components
