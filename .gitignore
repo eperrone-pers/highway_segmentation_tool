@@ -93,3 +93,4 @@ dmypy.json
 *.prof
 *.pstats
 *.cprof
+src/analysis/methods/docs/aashto_cda/AASHTO Segmentation_TRR.docx
