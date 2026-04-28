@@ -586,7 +586,7 @@ class OptimizationController:
             # Get ACTUAL column names from GUI (not hardcoded defaults)
             actual_x_column = self.app.x_column.get()
             actual_y_column = self.app.y_column.get()
-            actual_route_column = self.app.route_column.get()
+            actual_route_column = self.app.route_column.get() if hasattr(self.app, 'route_column') else None
             actual_data_file = self.app.file_manager.get_data_file_path()
             
             self.app.log_message(f"📊 Actual columns: X='{actual_x_column}', Y='{actual_y_column}', Route='{actual_route_column}'")
@@ -655,17 +655,51 @@ class OptimizationController:
             from pathlib import Path
             data_file_path = Path(actual_data_file) if actual_data_file else None
             
+            # Determine a route column that actually exists in the in-memory data.
+            # The UI selection can change after load; keep saving resilient.
+            in_memory_columns = []
+            if hasattr(self.app, 'data') and hasattr(self.app.data, 'route_data'):
+                try:
+                    in_memory_columns = list(self.app.data.route_data.columns)
+                except Exception:
+                    in_memory_columns = []
+
+            route_col_requested = actual_route_column
+            if route_col_requested == "None - treat as single route":
+                route_col_requested = None
+
+            if route_col_requested and route_col_requested in in_memory_columns:
+                route_col_used = route_col_requested
+            elif 'route' in in_memory_columns:
+                # Synthetic single-route column created at load time
+                route_col_used = 'route'
+            else:
+                route_col_used = None
+                if hasattr(self.app, 'log_message'):
+                    self.app.log_message(
+                        f"Warning: Selected route column '{actual_route_column}' not present in loaded data; "
+                        f"saving will omit route_column metadata"
+                    )
+
             input_file_info = {
                 'data_file_path': str(data_file_path) if data_file_path else 'unknown.csv',
                 'data_file_name': data_file_path.name if data_file_path else 'unknown.csv',
                 'data_file_size_bytes': data_file_path.stat().st_size if data_file_path and data_file_path.exists() else None,
                 'total_data_rows': len(self.app.data.route_data) if hasattr(self.app.data, 'route_data') else None,
-                'total_routes_available': len(self.app.data.route_data[actual_route_column if actual_route_column != "None - treat as single route" else 'route'].unique()) if hasattr(self.app.data, 'route_data') else 1,
+                'total_routes_available': (
+                    len(self.app.data.route_data[route_col_used].unique())
+                    if (hasattr(self.app.data, 'route_data') and route_col_used)
+                    else 1
+                ),
                 'column_info': {
                     'total_columns': len(self.app.data.route_data.columns) if hasattr(self.app.data, 'route_data') else None,
                     'x_column': actual_x_column,
                     'y_column': actual_y_column,
-                    'route_column': actual_route_column if actual_route_column != "None - treat as single route" else None
+                    'route_column': (
+                        route_col_requested
+                        if (route_col_requested and route_col_requested in in_memory_columns and route_col_requested != 'route')
+                        else None
+                    )
                 }
             }
             
@@ -675,7 +709,11 @@ class OptimizationController:
                 'selected_routes': [result.get('route_id') for result in all_route_results],
                 'x_column': actual_x_column,  # ACTUAL column name from GUI
                 'y_column': actual_y_column,  # ACTUAL column name from GUI 
-                'route_column': actual_route_column if actual_route_column != "None - treat as single route" else None,
+                'route_column': (
+                    route_col_requested
+                    if (route_col_requested and route_col_requested in in_memory_columns and route_col_requested != 'route')
+                    else None
+                ),
                 # Include only route processing relevant parameters
                 'route_filtering_applied': len(all_route_results) > 1,
                 'total_routes_in_source': len(all_route_results), # Will be updated by caller if needed
@@ -730,13 +768,13 @@ class OptimizationController:
             from data_loader import filter_data_by_route
             
             original_data_by_route = {}
-            route_column = self.app.route_column.get()
+            route_column = self.app.route_column.get() if hasattr(self.app, 'route_column') else None
             
             for result in analysis_results:
                 route_id = result.route_id
                 
                 try:
-                    if route_column and route_column != "None":
+                    if route_column and route_column != "None - treat as single route":
                         # Multi-route: filter by route ID
                         route_df = filter_data_by_route(self.app.data.route_data, route_column, route_id)
                     else:

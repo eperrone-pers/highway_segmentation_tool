@@ -303,9 +303,11 @@ class FileManager:
                 data[actual_route_column] = filename
                 self.app.log_message(f"Created route column from filename: '{filename}'")
             
-            # Always include route column - unified architecture
-            selected_columns = [x_col, y_col, actual_route_column]
-            data = data[selected_columns]
+            # Keep the full dataset in memory.
+            # Rationale: users may change the selected route column after loading the file.
+            # If we trim to only [X, Y, route] here, later selecting a real route column
+            # (e.g., 'RDB') can cause KeyErrors during route processing / saving.
+            required_columns = [x_col, y_col, actual_route_column]
             
             # Validate that X and Y columns contain numeric data
             try:
@@ -335,9 +337,11 @@ class FileManager:
                 show_error_message("Data Validation Error", f"Error validating numeric columns: {str(e)}", self.app.log_message)
                 return
             
-            # Clean the data - remove rows with missing values
+            # Clean the data - remove rows with missing values in required columns only.
+            # (If we keep all columns, a full dropna() could remove many valid rows due
+            #  to unrelated columns containing NaNs.)
             initial_count = len(data)
-            data = data.dropna()
+            data = data.dropna(subset=required_columns)
             final_count = len(data)
             
             if final_count < initial_count:

@@ -44,7 +44,12 @@ class ParameterManager:
         
         try:
             # Determine selected method key
-            method_key = self._get_selected_method_key()
+            try:
+                method_key = self._get_selected_method_key(strict=True)
+            except (AttributeError, ValueError, tk.TclError):
+                errors.append("Optimization method selection is missing or invalid")
+                return False, errors
+
             method_config = get_optimization_method(method_key)
 
             # Use the same merged parameter source as the controller/methods (method-specific + globals)
@@ -138,7 +143,8 @@ class ParameterManager:
 
         if hasattr(self.app, 'gap_threshold'):
             try:
-                self.app.gap_threshold.set(optimization_config.gap_threshold_default)
+                # Framework-level default (keep consistent with GUI initialization)
+                self.app.gap_threshold.set(0.5)
             except Exception:
                 pass
 
@@ -183,12 +189,22 @@ class ParameterManager:
         except Exception as e:
             print(f"Error updating method display: {e}")
     
-    def _get_selected_method_key(self):
-        """Get the currently selected method key from the dropdown."""
+    def _get_selected_method_key(self, strict: bool = False):
+        """Get the currently selected method key from the dropdown.
+
+        Args:
+            strict: If True, raise when the dropdown is missing/invalid instead of
+                returning a default method.
+        """
         try:
             selected_display_name = self.app.method_dropdown.get()
-            return get_method_key_from_display_name(selected_display_name)
-        except (ValueError, AttributeError):
+            method_key = get_method_key_from_display_name(selected_display_name)
+            if not method_key:
+                raise ValueError(f"Unrecognized optimization method: {selected_display_name}")
+            return method_key
+        except (ValueError, AttributeError, tk.TclError):
+            if strict:
+                raise
             # Fallback to default if dropdown not ready
             from config import get_default_method_key
             return get_default_method_key()
@@ -236,22 +252,53 @@ class ParameterManager:
         Returns:
             dict: Dictionary containing all optimization parameters
         """
+        # Determine selected method key from the dropdown (single source of truth).
+        # Fall back to app.optimization_method only if the dropdown isn't ready.
         try:
-            # Get dynamic parameters from UI
+            method_key = self._get_selected_method_key(strict=True)
+        except (AttributeError, ValueError, tk.TclError):
+            method_key = getattr(self.app, 'optimization_method', None)
+            if not method_key:
+                raise RuntimeError(
+                    "Optimization method is not initialized (method dropdown unavailable and app.optimization_method is unset)"
+                )
+            if hasattr(self.app, 'log_message'):
+                self.app.log_message(
+                    "Warning: method dropdown unavailable; using app.optimization_method for parameter retrieval"
+                )
+
+        # Start from config defaults for this method so required parameters are always present.
+        method_config = get_optimization_method(method_key)
+        method_defaults = {}
+        if method_config and getattr(method_config, 'parameters', None):
+            method_defaults = {param.name: param.default_value for param in method_config.parameters}
+
+        # Get dynamic overrides from UI (may be partial)
+        try:
             dynamic_params = self.app.ui_builder.get_parameter_values()
+            if dynamic_params is None:
+                dynamic_params = {}
         except Exception as e:
-            self.app.log_message(f"Could not get dynamic parameters: {e}")
+            # Keep this non-fatal; callers (including validation) can still proceed using defaults.
+            if hasattr(self.app, 'log_message'):
+                self.app.log_message(f"Could not get dynamic parameters: {e}")
             dynamic_params = {}
 
-        # Global parameters (keep minimal; do not include GA/constrained params here)
+        # Framework/global parameters (keep minimal)
+        try:
+            custom_save_name = self.app.custom_save_name.get()
+        except Exception:
+            custom_save_name = "highway_segmentation"
+
         values = {
-            'optimization_method': self.app.optimization_method,
-            'custom_save_name': self.app.custom_save_name.get(),
+            'optimization_method': method_key,
+            'custom_save_name': custom_save_name,
         }
 
-        # Merge dynamic parameters
+        # Merge order: defaults -> dynamic overrides
+        values.update(method_defaults)
         values.update(dynamic_params)
-        
+
         return values
     
     def load_method_dynamic_parameters(self, params):
