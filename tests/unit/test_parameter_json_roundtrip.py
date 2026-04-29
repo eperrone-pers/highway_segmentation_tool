@@ -170,7 +170,7 @@ def test_load_parameters_structured_restores_state(tmp_path, monkeypatch):
 
 
 @pytest.mark.unit
-def test_load_parameters_legacy_flat_maps_into_dynamic_store(tmp_path, monkeypatch):
+def test_load_parameters_legacy_flat_is_rejected(tmp_path, monkeypatch):
     app = _make_minimal_app_for_params()
 
     # Provide a UIBuilder stub so ParameterManager can refresh without error
@@ -205,12 +205,6 @@ def test_load_parameters_legacy_flat_maps_into_dynamic_store(tmp_path, monkeypat
 
     fm.load_parameters()
 
-    assert showerror.call_count == 0
-    assert app.custom_save_name.get() == "legacy_run"
-
-    store = app.settings["optimization"].setdefault("dynamic_parameters_by_method", {})
-    assert store["multi"]["population_size"] == 123
-    assert store["multi"]["num_generations"] == 77
-    assert store["multi"]["crossover_rate"] == 0.8
-    assert store["multi"]["mutation_rate"] == 0.05
-    assert store["multi"]["cache_clear_interval"] == 50
+    # Legacy flat parameter files are no longer supported.
+    assert showerror.call_count == 1
+    assert showinfo.call_count == 0

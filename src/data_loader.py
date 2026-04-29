@@ -1,6 +1,9 @@
 import pandas as pd
 from dataclasses import dataclass
+import logging
 from typing import List, Set, Dict, Tuple, Optional
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -58,15 +61,15 @@ def analyze_route_gaps(
     show_output = not route_id.startswith("_") and route_id != "default"
     
     if show_output:
-        print(f"\n=== Analyzing Route: {route_id} ===")
-        print(f"Total data points (raw): {len(df)}")
+        logger.info("=== Analyzing Route: %s ===", route_id)
+        logger.info("Total data points (raw): %s", len(df))
     
     # Sort by X column to ensure proper gap detection
     df_sorted = df.sort_values(x_column).copy()
     x_values = df_sorted[x_column].tolist()
     
     if show_output:
-        print(f"Route range: {x_values[0]:.3f} to {x_values[-1]:.3f} units")
+        logger.info("Route range: %.3f to %.3f units", x_values[0], x_values[-1])
     
     if gap_threshold is None:
         raise ValueError("gap_threshold must be provided (got None)")
@@ -82,10 +85,15 @@ def analyze_route_gaps(
         if gap_size > gap_threshold:
             gaps.append((current_x, next_x))
             if show_output:
-                print(f"Detected gap: {current_x:.3f} to {next_x:.3f} units (size: {gap_size:.3f})")
+                logger.info(
+                    "Detected gap: %.3f to %.3f units (size: %.3f)",
+                    current_x,
+                    next_x,
+                    gap_size,
+                )
     
     if show_output:
-        print(f"Total gaps detected: {len(gaps)}")
+        logger.info("Total gaps detected: %s", len(gaps))
     
     # Merge only truly consecutive gaps (touching/overlapping boundaries).
     # This groups runs of consecutive long-spacing into a single long gap,
@@ -113,10 +121,10 @@ def analyze_route_gaps(
     points_excluded = int(in_merged_gap_mask.sum())
 
     if show_output and points_excluded:
-        print(f"Excluded {points_excluded} interior points inside merged gaps")
+        logger.info("Excluded %s interior points inside merged gaps", points_excluded)
     if show_output:
-        print(f"Valid X values (excluding merged gap interiors): {len(valid_x_values)}") 
-        print(f"Mandatory breakpoints: {len(mandatory_breakpoints)}")
+        logger.info("Valid X values (excluding merged gap interiors): %s", len(valid_x_values))
+        logger.info("Mandatory breakpoints: %s", len(mandatory_breakpoints))
     
     # Calculate data range bounds for visualization and schema compliance
     y_values = df_valid[y_column].tolist()
@@ -141,12 +149,18 @@ def analyze_route_gaps(
     }
     
     if show_output:
-        print(f"Route statistics:")
-        print(f"  Total length: {route_stats['total_length']:.3f} units")
-        print(f"  Gap total length: {route_stats['gap_total_length']:.3f} units") 
-        print(f"  Valid length: {route_stats['valid_length']:.3f} units")
-        print(f"  Data range: X[{data_range['x_min']:.3f} to {data_range['x_max']:.3f}], Y[{data_range['y_min']:.1f} to {data_range['y_max']:.1f}]")
-        print(f"  Points excluded by merged gaps: {points_excluded}")
+        logger.info("Route statistics:")
+        logger.info("  Total length: %.3f units", route_stats["total_length"])
+        logger.info("  Gap total length: %.3f units", route_stats["gap_total_length"])
+        logger.info("  Valid length: %.3f units", route_stats["valid_length"])
+        logger.info(
+            "  Data range: X[%.3f to %.3f], Y[%.1f to %.1f]",
+            data_range["x_min"],
+            data_range["x_max"],
+            data_range["y_min"],
+            data_range["y_max"],
+        )
+        logger.info("  Points excluded by merged gaps: %s", points_excluded)
     
     return RouteAnalysis(
         route_id=route_id,
@@ -192,7 +206,11 @@ def _merge_adjacent_gaps(gaps: List[Tuple[float, float]], merge_epsilon: float =
     merged.append((current_start, current_end))
     
     if len(merged) < len(sorted_gaps):
-        print(f"Gap merging: {len(sorted_gaps)} raw gaps -> {len(merged)} merged gaps")
+        logger.debug(
+            "Gap merging: %s raw gaps -> %s merged gaps",
+            len(sorted_gaps),
+            len(merged),
+        )
     
     return merged
 
@@ -285,6 +303,6 @@ def load_highway_data(file_path: str) -> Optional[pd.DataFrame]:
     try:
         return pd.read_csv(file_path)
     except Exception as exc:
-        print(f"Error loading data from '{file_path}': {exc}")
+        logger.exception("Error loading data from %r", file_path)
         return None
 

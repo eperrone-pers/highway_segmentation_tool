@@ -10,7 +10,7 @@ import random
 from analysis.utils.genetic_algorithm import HighwaySegmentGA
 from data_loader import analyze_route_gaps
 
-def test_high_segment_generation():
+def _run_high_segment_generation_diagnostic():
     """Test if we can generate and preserve high-segment chromosomes"""
     
     # Load data
@@ -81,8 +81,14 @@ def test_high_segment_generation():
     
     return max(segment_counts)
 
+
+def test_high_segment_generation():
+    """Pytest entrypoint for the high-segment diagnostic."""
+    max_achieved = _run_high_segment_generation_diagnostic()
+    assert isinstance(max_achieved, int)
+
 if __name__ == "__main__":
-    max_achieved = test_high_segment_generation()
+    max_achieved = _run_high_segment_generation_diagnostic()
     print(f"\n=== SUMMARY ===")
     print(f"Maximum segments achieved: {max_achieved}")
     print(f"Target (theoretical max): 126")

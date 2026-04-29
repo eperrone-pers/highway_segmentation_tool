@@ -240,18 +240,6 @@ class HighwaySegmentGA:
         if self.enable_segment_caching:
             self._build_x_value_index_map()
     
-    def _integrate_gap_analysis(self):
-        """
-        Legacy hook for performing gap analysis inside the GA.
-
-        The current architecture requires gap analysis to be performed upstream
-        (via `analyze_route_gaps`) and passed in as a `RouteAnalysis` object.
-        """
-        raise RuntimeError(
-            "Gap analysis must be performed before optimization. "
-            "Provide a RouteAnalysis object (use analyze_route_gaps)."
-        )
-    
     def _use_existing_gap_analysis(self):
         """
         Use pre-computed gap analysis from RouteAnalysis object.
@@ -755,31 +743,6 @@ class HighwaySegmentGA:
         """Generate initial population with improved diversity"""
         return self.generate_diverse_initial_population()
 
-    def _segment_data_fast(self, breakpoints):
-        """Optimized version using precomputed sorted data"""
-        segments = []
-        for start_mp, end_mp in zip(breakpoints, breakpoints[1:]):
-            
-            # Binary search for faster segment finding
-            start_idx = np.searchsorted(self.sorted_x_data, start_mp, side='left')
-            end_idx = np.searchsorted(self.sorted_x_data, end_mp, side='left')
-            
-            if start_idx < end_idx:
-                segment_strength = self.sorted_y_data[start_idx:end_idx]
-                segments.append(segment_strength)
-            else:
-                segments.append(np.array([]))
-        return segments
-
-    def segment_data(self, breakpoints):
-        """Original method for compatibility"""
-        for start_bp, end_bp in zip(breakpoints, breakpoints[1:]):
-            seg = self.data[
-                (self.data[self.x_column] >= start_bp) &
-                (self.data[self.x_column] < end_bp)
-            ]
-            yield seg
-
     def _total_squared_deviation_fast(self, chromosome):
         """Compute total sum of squared deviations using prefix sums.
 
@@ -847,7 +810,6 @@ class HighwaySegmentGA:
             
         See Also:
             multi_objective_fitness(): Extension for bi-objective optimization
-            _segment_data_fast(): Optimized data partitioning method
         """
         # Level 1: Check chromosome cache first (fastest possible - O(1))
         chrom_key = tuple(chromosome)
@@ -1108,21 +1070,11 @@ class HighwaySegmentGA:
         self._segment_cache[cache_key] = stats
         return stats
     
-    def fitness_with_segment_cache(self, chromosome):
-        """LEGACY: Fitness calculation using segment-level caching (for backward compatibility)"""
-        # This method is kept for backward compatibility but now uses hybrid approach
-        return self.fitness(chromosome)
-    
     def _fitness_with_segment_cache_internal(self, chromosome):
         """INTERNAL: Segment-cached fitness calculation (used by hybrid method)"""
         # Segment-level caching adds overhead from Python loops and dict lookups.
         # Use vectorized prefix-sum SSE computation instead (mathematically identical).
         return -self._total_squared_deviation_fast(chromosome)
-    
-    def multi_objective_fitness_with_segment_cache(self, chromosome):
-        """LEGACY: Multi-objective fitness using segment-level caching (for backward compatibility)"""
-        # This method is kept for backward compatibility but now uses hybrid approach
-        return self.multi_objective_fitness(chromosome)
     
     def _multi_objective_fitness_with_segment_cache_internal(self, chromosome):
         """INTERNAL: Segment-cached multi-objective fitness calculation (used by hybrid method)"""
@@ -1458,14 +1410,26 @@ class HighwaySegmentGA:
             
         Returns:
             list: New population with elites preserved and best offspring
-            
-        # Use config default if elite_ratio not provided
-        if elite_ratio is None:
-            elite_ratio = optimization_config.elite_ratio_default
-            
+
+        Notes:
+            If elite_ratio is not provided, this function defaults to 0.05 (matching the
+            default value in the method parameter definitions).
+
         Example:
             >>> new_pop = ga.elitist_selection(pop, fits, offspring, off_fits, elite_ratio=0.10)
         """
+        # Use the same default as method parameter definitions in config.py.
+        # (Both single-objective and constrained single-objective default elite_ratio to 0.05.)
+        if elite_ratio is None:
+            elite_ratio = 0.05
+
+        if not isinstance(elite_ratio, (int, float)):
+            raise TypeError(f"elite_ratio must be a float in (0, 1], got: {elite_ratio!r}")
+
+        elite_ratio = float(elite_ratio)
+        if not (0.0 < elite_ratio <= 1.0):
+            raise ValueError(f"elite_ratio must be in (0, 1], got: {elite_ratio}")
+
         population_size = len(population)
         elite_count = max(1, int(population_size * elite_ratio))  # At least 1 elite
         

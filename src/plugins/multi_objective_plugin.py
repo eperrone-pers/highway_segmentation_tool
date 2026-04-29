@@ -31,27 +31,15 @@ Date: April 2026
 """
 
 from typing import Dict, List, Any
-import sys
-import os
 import math
-
-# Add src to path for imports
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 try:
     from extensible_results_manager import AnalysisMethodPlugin
-    BASE_PLUGIN_AVAILABLE = True
-except ImportError:
-    print("Warning: Base AnalysisMethodPlugin not available")
-    BASE_PLUGIN_AVAILABLE = False
-    # Define minimal interface for standalone usage
-    from abc import ABC, abstractmethod
-    
-    class AnalysisMethodPlugin(ABC):
-        @abstractmethod
-        def supports_method(self, method_key: str) -> bool: pass
-        @abstractmethod  
-        def extract_custom_statistics(self, analysis_result) -> Dict[str, Any]: pass
+except ImportError as e:
+    raise ImportError(
+        "Cannot import AnalysisMethodPlugin from 'extensible_results_manager'. "
+        "Ensure the project's 'src' directory is on PYTHONPATH/sys.path."
+    ) from e
 
 
 class MultiObjectivePlugin(AnalysisMethodPlugin):
@@ -104,15 +92,6 @@ class MultiObjectivePlugin(AnalysisMethodPlugin):
             bool: True if this plugin handles multi-objective return types
         """
         return return_type == self.SUPPORTED_RETURN_TYPE
-        
-    def get_supported_return_type(self) -> str:
-        """
-        Get the return type this plugin supports.
-        
-        Returns:
-            str: The return_type this plugin handles
-        """
-        return self.SUPPORTED_RETURN_TYPE
     
     def extract_custom_statistics(self, analysis_result) -> Dict[str, Any]:
         """
@@ -487,7 +466,6 @@ PLUGIN_METADATA = {
     'name': MultiObjectivePlugin.PLUGIN_NAME,
     'version': MultiObjectivePlugin.PLUGIN_VERSION,
     'supported_return_type': MultiObjectivePlugin.SUPPORTED_RETURN_TYPE,
-    'legacy_supported_methods': MultiObjectivePlugin.SUPPORTED_METHODS,  # Deprecated
     'plugin_class': MultiObjectivePlugin,
     'description': 'Comprehensive multi-objective optimization and Pareto analysis'
 }

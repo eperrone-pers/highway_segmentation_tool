@@ -194,6 +194,48 @@ class TestAashtoCdaMethod:
         # Verify input parameters were stored
         assert 'alpha' in result.input_parameters
         assert result.input_parameters['alpha'] == 0.05
+
+    def test_run_analysis_uses_named_columns_not_order(self, cda_method):
+        """Ensure run_analysis uses x_column/y_column names, not DataFrame column order."""
+        np.random.seed(123)
+        milepoints = np.linspace(0, 10, 100)
+        measurement = np.concatenate([
+            np.full(50, 1.0) + np.random.normal(0, 0.05, 50),
+            np.full(50, 4.0) + np.random.normal(0, 0.05, 50),
+        ])
+        df = pd.DataFrame({
+            'FY': [2025] * len(milepoints),
+            'RDB': ['TestRoute'] * len(milepoints),
+            'measurement': measurement,
+            'milepoint': milepoints,
+        })
+
+        route_analysis = analyze_route_gaps(
+            df,
+            x_column='milepoint',
+            y_column='measurement',
+            route_id='test_cda_named_cols',
+            gap_threshold=0.5,
+        )
+
+        result = cda_method.run_analysis(
+            data=route_analysis,
+            route_id='test_cda_named_cols',
+            x_column='milepoint',
+            y_column='measurement',
+            gap_threshold=0.5,
+            alpha=0.05,
+            method=2,
+            min_segment_datapoints=5,
+            enable_diagnostic_output=False,
+        )
+
+        assert len(result.all_solutions) == 1
+        chromosome = result.all_solutions[0].get('chromosome', [])
+        assert chromosome, "Expected non-empty chromosome list"
+        # At minimum, start/end breakpoints should match the x range.
+        assert abs(chromosome[0] - float(milepoints.min())) < 1e-9
+        assert abs(chromosome[-1] - float(milepoints.max())) < 1e-9
     
     def test_run_analysis_with_dataframe_fallback(self, cda_method, sample_route_data):
         """DataFrame inputs are no longer supported (RouteAnalysis required)."""

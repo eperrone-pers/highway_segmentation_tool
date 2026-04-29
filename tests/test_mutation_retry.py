@@ -176,13 +176,17 @@ def test_mutation_retry_logic():
         print(f"   No successful mutations to validate")
     
     print(f"\n✅ Mutation retry test completed!")
-    
+
     # Test passes if we had some successful mutations and all were valid
-    return success_count > 0 and (total_mutations == 0 or validity_rate == 100.0)
+    assert (success_count > 0) and (total_mutations == 0 or validity_rate == 100.0), (
+        "Expected some successful mutations and all sampled mutations to be valid"
+    )
 
 if __name__ == "__main__":
-    success = test_mutation_retry_logic()
-    if success:
-        print("\n🎉 All tests passed!")
-    else:
+    try:
+        test_mutation_retry_logic()
+    except AssertionError:
         print("\n❌ Tests failed!")
+        raise
+    else:
+        print("\n🎉 All tests passed!")

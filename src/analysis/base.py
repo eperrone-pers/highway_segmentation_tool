@@ -97,10 +97,6 @@ class AnalysisResult:
             # Fallback for legacy or invalid method_key values
             return len(self.all_solutions) > 1
     
-    def is_constrained(self) -> bool:
-        """Check if this result represents a constrained optimization"""
-        return self.method_key == "constrained"
-    
     def get_best_chromosome(self) -> List[float]:
         """Get the chromosome (breakpoints) of the primary solution"""
         return self.best_solution.get('chromosome', [])

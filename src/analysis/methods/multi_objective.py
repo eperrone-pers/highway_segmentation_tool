@@ -29,10 +29,7 @@ from ..utils.ga_utilities import (
 from ..utils.segment_metrics import average_length_excluding_gap_segments
 
 # Import GA class and configuration
-import sys
-import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
-from analysis.utils.genetic_algorithm import HighwaySegmentGA
+from ..utils.genetic_algorithm import HighwaySegmentGA
 from config import get_optimization_method
 from logger import create_logger
 

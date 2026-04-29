@@ -141,10 +141,11 @@ In this repo, the Deb-feasibility constrained GA is implemented as:
 - Implementation: `src/analysis/methods/deb_feasibility_constrained.py`
 - Method key: `constrained_deb`
 - Config registration:
-    - Parameter list: `DEB_FEASIBILITY_CONSTRAINED_PARAMETERS` in `src/config.py`
-    - Registry entry: `OptimizationMethodConfig(method_key="constrained_deb", ... method_class_path="analysis.methods.deb_feasibility_constrained.DebFeasibilityConstrainedMethod")`
+  - Parameter list: `DEB_FEASIBILITY_CONSTRAINED_PARAMETERS` in `src/config.py`
+  - Registry entry: `OptimizationMethodConfig(method_key="constrained_deb", ... method_class_path="analysis.methods.deb_feasibility_constrained.DebFeasibilityConstrainedMethod")`
 
 Design goals for this example:
+
 - Additive-only (no behavior changes to existing methods)
 - Reuse `analysis/utils` GA utilities
 - Avoid penalty-weight tuning by using explicit feasibility comparisons

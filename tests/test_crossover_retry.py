@@ -149,12 +149,14 @@ def test_crossover_retry_logic():
     print(f"   Children validity rate: {valid_children/max(1,total_children)*100:.1f}%")
     
     print(f"\n✅ Crossover retry test completed!")
-    
-    return success_count > 0  # Test passes if at least one crossover succeeded
+
+    assert success_count > 0, "Expected at least one crossover to succeed"
 
 if __name__ == "__main__":
-    success = test_crossover_retry_logic()
-    if success:
-        print("\n🎉 All tests passed!")
-    else:
+    try:
+        test_crossover_retry_logic()
+    except AssertionError:
         print("\n❌ Tests failed!")
+        raise
+    else:
+        print("\n🎉 All tests passed!")

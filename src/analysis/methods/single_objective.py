@@ -28,7 +28,7 @@ from typing import Dict, Any, List, Optional, Callable
 
 # Import base interface and utilities
 from ..base import AnalysisMethodBase, AnalysisResult
-from ..utils import (
+from ..utils.ga_utilities import (
     tournament_selection,
     crossover_with_retries,
     mutation_with_retries,
@@ -38,10 +38,7 @@ from ..utils import (
 from ..utils.segment_metrics import average_length_excluding_gap_segments
 
 # Import GA class and configuration
-import sys
-import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
-from analysis.utils.genetic_algorithm import HighwaySegmentGA
+from ..utils.genetic_algorithm import HighwaySegmentGA
 from config import get_optimization_method
 
 

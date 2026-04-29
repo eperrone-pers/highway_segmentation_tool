@@ -12,10 +12,10 @@ REFACTORING DEMONSTRATION:
 """
 
 import tkinter as tk
-from tkinter import ttk, messagebox, scrolledtext
+from tkinter import ttk, messagebox
 import os
+import logging
 from datetime import datetime
-import re
 import webbrowser
 import tempfile
 try:
@@ -746,246 +746,6 @@ class HighwaySegmentationGUI:
 </html>
 '''
     
-    def _create_html_help_view(self, parent, help_window, markdown_content):
-        """Create HTML help view with table of contents using standard markdown library."""
-        # Safety check - ensure markdown is available
-        if not MARKDOWN_AVAILABLE:
-            self._create_text_help_view(parent, help_window, markdown_content)
-            return
-            
-        try:
-            # Ensure markdown module is available before using it
-            if 'markdown' not in globals():
-                self._create_text_help_view(parent, help_window, markdown_content)
-                return
-                
-            # Use standard markdown library with TOC extension
-            md = markdown.Markdown(extensions=[
-                'toc',           # Table of contents
-                'extra',         # Extra features (tables, fenced code, etc.)
-                'codehilite',    # Code syntax highlighting
-                'nl2br'          # Newline to break
-            ])
-            
-            # Convert markdown to HTML
-            html_content = md.convert(markdown_content)
-            
-            # Get TOC if available (only exists if toc extension is loaded)
-            toc_html = getattr(md, 'toc', '')  # Auto-generated table of contents
-            
-            # Create complete HTML document with styling
-            full_html = f'''
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <meta charset="UTF-8">
-                <title>User Guide</title>
-                <style>
-                    body {{ font-family: 'Segoe UI', Arial, sans-serif; margin: 20px; line-height: 1.6; }}
-                    .toc {{ background: #f5f5f5; padding: 15px; border-radius: 5px; margin-bottom: 20px; }}
-                    .toc h2 {{ margin-top: 0; color: #333; }}
-                    .toc ul {{ margin: 0; padding-left: 20px; }}
-                    .toc a {{ color: #0066cc; text-decoration: none; }}
-                    .toc a:hover {{ text-decoration: underline; }}
-                    h1, h2, h3, h4 {{ color: #2c3e50; }}
-                    h1 {{ border-bottom: 2px solid #3498db; padding-bottom: 10px; }}
-                    h2 {{ border-bottom: 1px solid #bdc3c7; padding-bottom: 5px; }}
-                    pre {{ background: #f8f8f8; padding: 10px; border-radius: 5px; overflow-x: auto; }}
-                    code {{ background: #f0f0f0; padding: 2px 4px; border-radius: 3px; }}
-                    blockquote {{ border-left: 4px solid #3498db; padding-left: 15px; margin: 15px 0; color: #555; }}
-                    table {{ border-collapse: collapse; width: 100%; margin: 15px 0; }}
-                    th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
-                    th {{ background-color: #f2f2f2; }}
-                </style>
-            </head>
-            <body>
-                <div class="toc">
-                    <h2>📋 Table of Contents</h2>
-                    {toc_html}
-                </div>
-                <hr>
-                {html_content}
-            </body>
-            </html>
-            '''
-            
-            # Create temporary HTML file and open in browser
-            button_frame = ttk.Frame(parent)
-            button_frame.pack(pady=(10, 0))
-            
-            def open_in_browser():
-                try:
-                    with tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False, encoding='utf-8') as f:
-                        f.write(full_html)
-                        temp_path = f.name
-                    
-                    webbrowser.open('file://' + os.path.abspath(temp_path))
-                    help_window.destroy()
-                    
-                    # Clean up temp file after a delay
-                    def cleanup():
-                        try:
-                            os.unlink(temp_path)
-                        except OSError:
-                            pass
-                    help_window.after(5000, cleanup)
-                except Exception as e:
-                    messagebox.showerror("Error", f"Could not open browser: {e}")
-            
-            # Information and buttons
-            info_label = ttk.Label(parent, 
-                                  text="✨ Enhanced view available with Table of Contents and formatting!")
-            info_label.pack(pady=(0, 10))
-            
-            ttk.Button(button_frame, text="🌐 Open in Browser (Recommended)", 
-                      command=open_in_browser).pack(side="left", padx=(0, 10))
-            
-            # Fallback to text view
-            ttk.Button(button_frame, text="📄 View as Text", 
-                      command=lambda: self._create_text_help_view(parent, help_window, markdown_content, replace=True)).pack(side="left", padx=(0, 10))
-            
-            ttk.Button(button_frame, text="❌ Close", 
-                      command=help_window.destroy).pack(side="right")
-            
-            # Show preview of TOC
-            toc_frame = ttk.LabelFrame(parent, text="📋 Table of Contents Preview", padding=10)
-            toc_frame.pack(fill="x", pady=(20, 0))
-            
-            toc_text = tk.Text(toc_frame, height=8, wrap="word", font=("Consolas", 9))
-            toc_text.pack(fill="x")
-            
-            # Extract and display TOC from HTML
-            import re
-            toc_links = re.findall(r'<a href="#([^"]+)">([^<]+)</a>', toc_html)
-            toc_preview = "\\n".join([f"• {title}" for _, title in toc_links[:15]])  # First 15 items
-            if len(toc_links) > 15:
-                toc_preview += f"\\n... and {len(toc_links) - 15} more sections"
-            
-            toc_text.insert("1.0", toc_preview)
-            toc_text.config(state="disabled")
-            
-        except Exception as e:
-            messagebox.showerror("Error", f"Could not create HTML view: {e}")
-            self._create_text_help_view(parent, help_window, markdown_content)
-        x = (help_window.winfo_screenwidth() // 2) - (help_window.winfo_width() // 2)
-        y = (help_window.winfo_screenheight() // 2) - (help_window.winfo_height() // 2)
-        help_window.geometry(f"+{x}+{y}")
-    
-    def _create_text_help_view(self, parent, help_window, content, replace=False):
-        """Create fallback text view for help content."""
-        if replace:
-            # Clear existing widgets
-            for widget in parent.winfo_children():
-                if not isinstance(widget, ttk.Label) or "User Guide" not in widget.cget("text"):
-                    widget.destroy()
-        
-        # Create scrolled text widget for content
-        text_frame = ttk.Frame(parent)
-        text_frame.pack(fill="both", expand=True)
-        
-        text_widget = scrolledtext.ScrolledText(text_frame, 
-                                               wrap="word", 
-                                               font=("Consolas", 10),
-                                               padx=10, pady=10)
-        text_widget.pack(fill="both", expand=True)
-        
-        # Simple markdown formatting for better readability
-        formatted_content = self._format_markdown_for_display(content)
-        text_widget.insert("1.0", formatted_content)
-        text_widget.config(state="disabled")  # Make read-only
-        
-        # Add navigation buttons
-        button_frame = ttk.Frame(parent)
-        button_frame.pack(pady=(10, 0))
-        
-        # Close button
-        close_button = ttk.Button(button_frame, text="Close", 
-                                 command=help_window.destroy)
-        close_button.pack(side="right", padx=(10, 0))
-        
-        # Search functionality
-        search_frame = ttk.Frame(button_frame)
-        search_frame.pack(side="left")
-        
-        ttk.Label(search_frame, text="Search:").pack(side="left")
-        search_var = tk.StringVar()
-        search_entry = ttk.Entry(search_frame, textvariable=search_var, width=20)
-        search_entry.pack(side="left", padx=(5, 5))
-        
-        def search_text():
-            query = search_var.get()
-            if query:
-                text_widget.config(state="normal")
-                text_widget.tag_remove("highlight", "1.0", "end")
-                
-                start = "1.0"
-                while True:
-                    pos = text_widget.search(query, start, stopindex="end", nocase=True)
-                    if not pos:
-                        break
-                    end = f"{pos}+{len(query)}c"
-                    text_widget.tag_add("highlight", pos, end)
-                    start = end
-                
-                text_widget.tag_config("highlight", background="yellow")
-                text_widget.config(state="disabled")
-                
-                # Focus on first occurrence
-                first_pos = text_widget.search(query, "1.0", stopindex="end", nocase=True)
-                if first_pos:
-                    text_widget.see(first_pos)
-        
-        search_button = ttk.Button(search_frame, text="Find", command=search_text)
-        search_button.pack(side="left")
-        
-        # Bind Enter key to search
-        search_entry.bind('<Return>', lambda e: search_text())
-        
-        # Center the help window if not already done
-        if not replace:
-            help_window.update_idletasks()
-            x = (help_window.winfo_screenwidth() // 2) - (help_window.winfo_width() // 2)
-            y = (help_window.winfo_screenheight() // 2) - (help_window.winfo_height() // 2)
-            help_window.geometry(f"+{x}+{y}")
-    
-    def _format_markdown_for_display(self, content):
-        """Apply basic markdown formatting for better text display."""
-        lines = content.split('\\n')
-        formatted_lines = []
-        
-        for line in lines:
-            # Headers
-            if line.startswith('# '):
-                formatted_lines.append('\\n' + '='*60)
-                formatted_lines.append(line[2:].upper())
-                formatted_lines.append('='*60 + '\\n')
-            elif line.startswith('## '):
-                formatted_lines.append('\\n' + '-'*50)
-                formatted_lines.append(line[3:])
-                formatted_lines.append('-'*50 + '\\n')
-            elif line.startswith('### '):
-                formatted_lines.append('\\n' + line[4:].upper())
-                formatted_lines.append('~'*len(line[4:]) + '\\n')
-            elif line.startswith('#### '):
-                formatted_lines.append('\\n' + line[5:])
-                formatted_lines.append('*'*len(line[5:]) + '\\n')
-            
-            # Bold text (basic replacement)
-            elif '**' in line:
-                line = re.sub(r'\\*\\*(.*?)\\*\\*', r'\\1', line)
-                formatted_lines.append(line)
-            
-            # Code blocks and bullets  
-            elif line.startswith('```'):
-                formatted_lines.append('\\n' + line)
-            elif line.startswith('- '):
-                formatted_lines.append('  • ' + line[2:])
-                
-            else:
-                formatted_lines.append(line)
-                
-        return '\\n'.join(formatted_lines)
-    
     # ===== REMAINING DIRECT METHODS =====
     # These methods remain in the main class as they coordinate between managers
     
@@ -1494,6 +1254,18 @@ class HighwaySegmentationGUI:
 
 def main():
     """Main entry point for the application."""
+    # Optional stdlib logging setup (opt-in).
+    # If you want module logs (e.g., from data_loader), set HIGHWAY_SEG_LOG_LEVEL
+    # to DEBUG/INFO/WARNING/ERROR before launching the GUI.
+    log_level_raw = os.environ.get("HIGHWAY_SEG_LOG_LEVEL")
+    if log_level_raw:
+        log_level_name = str(log_level_raw).upper()
+        log_level = getattr(logging, log_level_name, logging.INFO)
+        logging.basicConfig(
+            level=log_level,
+            format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        )
+
     root = tk.Tk()
     
     # Configure ttk style

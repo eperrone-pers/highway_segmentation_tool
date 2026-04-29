@@ -440,8 +440,17 @@ class AashtoCdaMethod(AnalysisMethodBase):
             # RouteAnalysis-only contract
             route_analysis = data
             route_data = route_analysis.route_data
-            x_values = route_data.iloc[:, 0].values  # First column = x/distance
-            y_values = route_data.iloc[:, 1].values  # Second column = y/measurements
+            if x_column not in route_data.columns:
+                raise ValueError(
+                    f"x_column={x_column!r} not found in RouteAnalysis.route_data columns: {list(route_data.columns)!r}"
+                )
+            if y_column not in route_data.columns:
+                raise ValueError(
+                    f"y_column={y_column!r} not found in RouteAnalysis.route_data columns: {list(route_data.columns)!r}"
+                )
+
+            x_values = route_data[x_column].values
+            y_values = route_data[y_column].values
             mandatory_breakpoints = sorted(route_analysis.mandatory_breakpoints)
             
             # Validate min_segment_datapoints parameter (sample-std safe)

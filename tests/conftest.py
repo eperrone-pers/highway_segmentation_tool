@@ -15,6 +15,13 @@ from unittest.mock import Mock, MagicMock
 from pathlib import Path
 
 
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers",
+        "excel_export: Tests for Excel export functionality",
+    )
+
+
 @pytest.fixture(autouse=True)
 def _disable_tk_messageboxes(monkeypatch):
     """Prevent real Tkinter dialogs during tests.

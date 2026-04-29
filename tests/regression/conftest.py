@@ -326,27 +326,29 @@ def validate_excel_vs_json(excel_file, json_data):
     """
     import openpyxl
     
-    # Load Excel workbook
-    wb = openpyxl.load_workbook(excel_file)
-    
-    # Basic validation - check for expected sheets
-    expected_sheets = ["Summary", "Analysis_Metadata", "Input_Parameters"]
-    for sheet in expected_sheets:
-        assert sheet in wb.sheetnames, f"Missing Excel sheet: {sheet}"
-    
-    # Validate summary data matches JSON
-    summary_sheet = wb["Summary"]
-    
-    # Check method matches
-    method_cell = None
-    for row in summary_sheet.iter_rows(values_only=True):
-        if row[0] and "Method" in str(row[0]):
-            method_cell = row[1]
-            break
-    
-    if method_cell:
-        json_method = json_data["analysis_metadata"]["analysis_method"]  
-        assert str(method_cell).lower() == json_method.lower(), f"Method mismatch: Excel={method_cell}, JSON={json_method}"
+    # Load Excel workbook (read-only) and always close it to avoid Windows file-handle locks.
+    wb = openpyxl.load_workbook(excel_file, read_only=True, data_only=True)
+    try:
+        # Basic validation - check for expected sheets
+        expected_sheets = ["Summary", "Analysis_Metadata", "Input_Parameters"]
+        for sheet in expected_sheets:
+            assert sheet in wb.sheetnames, f"Missing Excel sheet: {sheet}"
+        
+        # Validate summary data matches JSON
+        summary_sheet = wb["Summary"]
+        
+        # Check method matches
+        method_cell = None
+        for row in summary_sheet.iter_rows(values_only=True):
+            if row[0] and "Method" in str(row[0]):
+                method_cell = row[1]
+                break
+        
+        if method_cell:
+            json_method = json_data["analysis_metadata"]["analysis_method"]
+            assert str(method_cell).lower() == json_method.lower(), f"Method mismatch: Excel={method_cell}, JSON={json_method}"
+    finally:
+        wb.close()
     
     return True
 

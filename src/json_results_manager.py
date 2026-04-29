@@ -33,10 +33,10 @@ class SetEncoder(json.JSONEncoder):
 try:
     from analysis.base import AnalysisResult
 except ImportError:
-    # Fallback for different import paths
-    import sys
-    sys.path.append('.')
-    from analysis.base import AnalysisResult
+    raise ImportError(
+        "Cannot import AnalysisResult from 'analysis.base'. "
+        "Ensure the project's 'src' directory is on PYTHONPATH/sys.path."
+    )
 
 
 class JsonResultsManager:
@@ -101,8 +101,7 @@ class JsonResultsManager:
         
         with open(output_path, 'w', encoding='utf-8') as f:
             json.dump(json_data, f, indent=2, ensure_ascii=False, cls=SetEncoder)
-        
-        print(f"JSON results saved to: {output_path}")
+
         return str(output_path)
     
     def _build_json_structure(self, 
@@ -228,34 +227,41 @@ class JsonResultsManager:
         - Route processing configuration (essential for Phase 1)
         """
         first_result = results_list[0]
-        
-        # Build method configuration section
-        method_config = {
-            "method_key": first_result.method_key,
-            "display_name": first_result.method_name
-        }
-        
-        # Add description based on method type  
-        method_descriptions = {
-            # Method keys (preferred)
-            "single": "Standard genetic algorithm optimizing for minimum deviation from target segment lengths",
-            "multi": "NSGA-II multi-objective optimization balancing segment count vs. length uniformity",
-            "constrained": "Constrained genetic algorithm targeting specific average segment lengths",
-            "aashto_cda": "AASHTO enhanced cumulative difference approach (CDA) statistical change point segmentation",
 
-            # Legacy category strings (backward compatibility)
-            "single_objective": "Standard genetic algorithm optimizing for minimum deviation from target segment lengths",
-            "multi_objective": "NSGA-II multi-objective optimization balancing segment count vs. length uniformity",
+        # Build method configuration section (config-driven)
+        method_key = first_result.method_key
+        try:
+            # Import locally to avoid circular import issues
+            from config import get_optimization_method
+            cfg = get_optimization_method(method_key)
+        except Exception as e:
+            raise ValueError(
+                f"Unknown optimization method key {method_key!r}; cannot populate optimization_method_config"
+            ) from e
+
+        method_config = {
+            "method_key": method_key,
+            "display_name": getattr(cfg, 'display_name', first_result.method_name),
         }
-        if first_result.method_key in method_descriptions:
-            method_config["description"] = method_descriptions[first_result.method_key]
+        desc = getattr(cfg, 'description', None)
+        if desc:
+            method_config["description"] = desc
         
         # Build route processing configuration
         route_processing = self._build_route_processing_config(results_list, route_processing_info)
+
+        # Schema note: input_parameters.method_parameters is an extensible map of primitive/object types
+        # but does NOT permit null values. Use omission to represent "unset"/"unlimited".
+        raw_method_parameters = first_result.input_parameters or {}
+        method_parameters = {
+            key: value
+            for key, value in raw_method_parameters.items()
+            if value is not None
+        }
         
         return {
             "optimization_method_config": method_config,
-            "method_parameters": first_result.input_parameters or {},
+            "method_parameters": method_parameters,
             "route_processing": route_processing
         }
     

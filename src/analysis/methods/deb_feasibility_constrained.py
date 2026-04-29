@@ -16,26 +16,26 @@ Version: 1.96.0 (Experimental method extension)
 
 from __future__ import annotations
 
-import os
 import random
-import sys
 import time
+import logging
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 
 from ..base import AnalysisMethodBase, AnalysisResult
-from ..utils import (
+from ..utils.ga_utilities import (
     analyze_population_diversity,
     crossover_with_retries,
     mutation_with_retries,
 )
 from ..utils.segment_metrics import average_length_excluding_gap_segments
 
-# Import GA class and configuration (keep style consistent with other methods)
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
-from analysis.utils.genetic_algorithm import HighwaySegmentGA  # noqa: E402
-from config import get_optimization_method  # noqa: E402
+# Import GA class and configuration
+from ..utils.genetic_algorithm import HighwaySegmentGA
+from config import get_optimization_method
+
+logger = logging.getLogger(__name__)
 
 
 class DebFeasibilityConstrainedMethod(AnalysisMethodBase):
@@ -82,7 +82,7 @@ class DebFeasibilityConstrainedMethod(AnalysisMethodBase):
             if log_callback:
                 log_callback(message)
             else:
-                print(message)
+                logger.info(message)
 
         method_config = get_optimization_method(self.method_key)
         param_defaults = {param.name: param.default_value for param in method_config.parameters}

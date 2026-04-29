@@ -984,7 +984,7 @@ class FileManager:
                 with open(filename, 'r') as f:
                     config = json.load(f)
 
-                # Support both new structured format and legacy flat format.
+                # Require the structured parameters format.
                 if isinstance(config, dict) and 'optimization' in config and isinstance(config.get('optimization'), dict):
                     opt = config.get('optimization', {})
                     files = config.get('files', {}) if isinstance(config.get('files'), dict) else {}
@@ -1053,48 +1053,12 @@ class FileManager:
                         pass
 
                 else:
-                    # Legacy flat config (best-effort): apply minimal fields and
-                    # delegate dynamic keys through ParameterManager.
-                    if 'custom_save_name' in config and hasattr(self.app, 'custom_save_name'):
-                        self.app.custom_save_name.set(config['custom_save_name'])
-                    if 'x_column' in config and hasattr(self.app, 'x_column'):
-                        self.app.x_column.set(config['x_column'])
-                    if 'y_column' in config and hasattr(self.app, 'y_column'):
-                        self.app.y_column.set(config['y_column'])
-                    if 'gap_threshold' in config and hasattr(self.app, 'gap_threshold'):
-                        self.app.gap_threshold.set(config['gap_threshold'])
-                    if 'data_file_path' in config and config['data_file_path']:
-                        self.set_data_file_path(config['data_file_path'])
-                        self.load_csv_columns()
-                    if 'save_file_path' in config and config['save_file_path']:
-                        self.set_save_file_path(config['save_file_path'])
-
-                    # Determine method
-                    method_key = config.get('optimization_method') or getattr(self.app, 'optimization_method', 'multi')
-                    try:
-                        if hasattr(self.app, '_migrate_method_key'):
-                            method_key = self.app._migrate_method_key(method_key)
-                    except Exception as e:
-                        messagebox.showerror(
-                            "Incompatible Parameters File",
-                            "This parameters file refers to an unknown optimization method.\n\n"
-                            f"Details: {e}",
-                        )
-                        return
-                    self.app.optimization_method = method_key
-
-                    try:
-                        if hasattr(self.app, 'on_method_change'):
-                            self.app.on_method_change()
-                    except Exception:
-                        pass
-
-                    # Load dynamic params through the manager (it filters by method config)
-                    try:
-                        if hasattr(self.app, 'parameter_manager'):
-                            self.app.parameter_manager.load_method_dynamic_parameters(config)
-                    except Exception:
-                        pass
+                    messagebox.showerror(
+                        "Incompatible Parameters File",
+                        "This parameters file is not in the supported structured format.\n\n"
+                        "Please re-save parameters using this version of the application.",
+                    )
+                    return
 
                 messagebox.showinfo("Parameters Loaded", f"Parameters loaded from {os.path.basename(filename)}")
                 

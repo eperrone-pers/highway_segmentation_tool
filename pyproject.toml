@@ -12,6 +12,7 @@ markers = [
     "unit: Unit tests for individual components",
     "integration: Integration tests for component interactions", 
     "ui: UI and dialog tests",
+    "excel_export: Tests for Excel export functionality",
     "phase1: Phase 1 multi-route processing tests",
     "route: Route processing functionality tests",
     "data_dependent: Tests that require external data files",

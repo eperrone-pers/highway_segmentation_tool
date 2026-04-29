@@ -41,11 +41,14 @@ Date: April 2026
 """
 
 import json
+import logging
 from abc import ABC, abstractmethod
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Union
 from dataclasses import asdict
+
+logger = logging.getLogger(__name__)
 
 class SetEncoder(json.JSONEncoder):
     """Custom JSON encoder that converts sets to lists for serialization."""
@@ -57,17 +60,19 @@ class SetEncoder(json.JSONEncoder):
 # Import analysis framework and base JSON manager
 try:
     from analysis.base import AnalysisResult
-    ANALYSIS_FRAMEWORK_AVAILABLE = True
-except ImportError:
-    print("Warning: AnalysisResult not available - analysis framework not found")
-    ANALYSIS_FRAMEWORK_AVAILABLE = False
+except ImportError as e:
+    raise ImportError(
+        "Cannot import AnalysisResult from 'analysis.base'. "
+        "Ensure the project's 'src' directory is on PYTHONPATH/sys.path."
+    ) from e
 
 try:
     from json_results_manager import JsonResultsManager
-    BASE_JSON_AVAILABLE = True
-except ImportError:
-    print("Warning: Base JsonResultsManager not available")
-    BASE_JSON_AVAILABLE = False
+except ImportError as e:
+    raise ImportError(
+        "Cannot import JsonResultsManager from 'json_results_manager'. "
+        "Ensure the project's 'src' directory is on PYTHONPATH/sys.path."
+    ) from e
 
 
 # ===== METHOD PLUGIN SYSTEM =====
@@ -122,24 +127,9 @@ class AnalysisMethodPlugin(ABC):
         Returns:
             bool: True if this plugin should process this return type
         """
-        # Default implementation falls back to supports_method for backward compatibility
-        # Plugins should override this method instead of supports_method
+        # Default implementation: do not claim support for any return type.
+        # Plugins should override this method.
         return False
-        
-    def get_supported_return_type(self) -> str:
-        """
-        Get the return type this plugin supports.
-        
-        Returns:
-            str: The return_type this plugin handles (e.g., "single_objective")
-        
-        Args:
-            method_key: The method key from AnalysisResult (e.g., "single", "aashto_cda", "multi")
-            
-        Returns:
-            bool: True if this plugin can process results from this method type
-        """
-        pass
     
     @abstractmethod
     def extract_custom_statistics(self, analysis_result: 'AnalysisResult') -> Dict[str, Any]:
@@ -245,13 +235,12 @@ class JsonMethodRegistry:
             
             for plugin in discovered_plugins:
                 self.register_plugin(plugin)
-                
-            print(f"Initialized {len(discovered_plugins)} plugins via discovery")
+            logger.debug("Initialized %s plugins via discovery", len(discovered_plugins))
             
         except ImportError:
-            print("Plugin discovery system not available - no plugins loaded")
+            logger.debug("Plugin discovery system not available - no plugins loaded")
         except Exception as e:
-            print(f"Warning: Plugin discovery failed: {e}")
+            logger.warning("Plugin discovery failed: %s", e)
     
     def register_plugin(self, plugin: AnalysisMethodPlugin) -> None:
         """
@@ -267,7 +256,7 @@ class JsonMethodRegistry:
             raise TypeError("Plugin must inherit from AnalysisMethodPlugin")
         
         self.plugins.append(plugin)
-        print(f"Registered method plugin: {plugin.__class__.__name__}")
+        logger.debug("Registered method plugin: %s", plugin.__class__.__name__)
     
     def get_plugins_for_method(self, method_key: str) -> List[AnalysisMethodPlugin]:
         """
@@ -283,21 +272,26 @@ class JsonMethodRegistry:
         Returns:
             List of plugins that support this method type
         """
+        # Strict dispatch: method_key must exist in the config registry.
+        # Unknown method keys are treated as incompatible inputs and should error.
         try:
             # Import here to avoid circular imports
             from config import get_optimization_method
-            
-            # Convert method key to return_type via config lookup
+        except ImportError as e:
+            raise RuntimeError(
+                "Plugin dispatch requires config.get_optimization_method; "
+                "could not import optimization method registry."
+            ) from e
+
+        try:
             method_config = get_optimization_method(method_key)
-            return_type = method_config.return_type
-            
-            # Find plugins that support this return_type
-            return [plugin for plugin in self.plugins if plugin.supports_return_type(return_type)]
-            
-        except (ValueError, ImportError) as e:
-            # Fallback to old method for backward compatibility or if config lookup fails
-            print(f"Warning: Config lookup failed for method '{method_key}', falling back to legacy dispatch: {e}")
-            return [plugin for plugin in self.plugins if plugin.supports_method(method_key)]
+        except Exception as e:
+            raise ValueError(
+                f"Unknown optimization method key {method_key!r}; cannot dispatch method plugins"
+            ) from e
+
+        return_type = method_config.return_type
+        return [plugin for plugin in self.plugins if plugin.supports_return_type(return_type)]
     
     def get_all_plugins(self) -> List[AnalysisMethodPlugin]:
         """Get all registered plugins."""
@@ -340,13 +334,8 @@ class ExtensibleJsonResultsManager:
         """
         self.schema_version = schema_version
         self.plugin_registry = JsonMethodRegistry()
-        
-        # Initialize base JSON manager if available
-        if BASE_JSON_AVAILABLE:
-            self.base_json_manager = JsonResultsManager(schema_version)
-        else:
-            print("Warning: Base JsonResultsManager not available - using fallback")
-            self.base_json_manager = None
+
+        self.base_json_manager = JsonResultsManager(schema_version)
     
     def save_analysis_results(self, 
                             analysis_results: Union['AnalysisResult', List['AnalysisResult']], 
@@ -375,9 +364,6 @@ class ExtensibleJsonResultsManager:
             IOError: If file cannot be written
         """
         # Normalize input to list
-        if not ANALYSIS_FRAMEWORK_AVAILABLE:
-            raise RuntimeError("AnalysisResult framework not available")
-        
         if isinstance(analysis_results, list):
             results_list = analysis_results
         else:
@@ -395,8 +381,7 @@ class ExtensibleJsonResultsManager:
         
         with open(output_path, 'w', encoding='utf-8') as f:
             json.dump(json_data, f, indent=2, ensure_ascii=False, cls=SetEncoder)
-        
-        print(f"Enhanced JSON results saved to: {output_path}")
+
         return str(output_path)
     
     def _generate_enhanced_json(self, 
@@ -410,19 +395,9 @@ class ExtensibleJsonResultsManager:
         This is the core logic that combines base JSON generation with plugin extensions.
         """
         # Start with base JSON generation
-        if self.base_json_manager:
-            # Check if base manager supports Y-value statistics parameters (newer version)
-            if hasattr(self.base_json_manager, '_build_processing_results'):
-                # Use our enhanced method instead of delegating
-                json_data = self._build_complete_json_with_stats(
-                    results_list, input_file_info, route_processing_info, original_data_by_route)
-            else:
-                # Fallback to base manager (no Y-statistics)
-                json_data = self.base_json_manager._build_json_structure(
-                    results_list, input_file_info, route_processing_info)
-        else:
-            # Fallback basic structure
-            json_data = self._build_basic_json_structure(results_list, input_file_info, route_processing_info)
+        json_data = self._build_complete_json_with_stats(
+            results_list, input_file_info, route_processing_info, original_data_by_route
+        )
         
         # Enhance with method-specific plugins
         json_data = self._apply_method_plugins(json_data, results_list)
@@ -503,7 +478,12 @@ class ExtensibleJsonResultsManager:
                         try:
                             route_data = plugin.enhance_route_results(route_data, result)
                         except Exception as e:
-                            print(f"Warning: Plugin {plugin.__class__.__name__} failed for route {i}: {e}")
+                            logger.warning(
+                                "Plugin %s failed for route %s: %s",
+                                plugin.__class__.__name__,
+                                i,
+                                e,
+                            )
         
         # Enhance analysis summary with method contributions
         json_data = self._enhance_analysis_summary(json_data, results_list)
@@ -547,52 +527,17 @@ class ExtensibleJsonResultsManager:
                     if method_stats:
                         method_aggregated_stats.update(method_stats)
                 except Exception as e:
-                    print(f"Warning: Plugin {plugin.__class__.__name__} failed for analysis summary: {e}")
+                    logger.warning(
+                        "Plugin %s failed for analysis summary: %s",
+                        plugin.__class__.__name__,
+                        e,
+                    )
         
         # Add method contributions to analysis summary if any were generated
         if method_aggregated_stats:
             json_data["method_specific_analysis_stats"] = method_aggregated_stats
         
         return json_data
-    
-    def _build_basic_json_structure(self, 
-                                  results_list: List['AnalysisResult'],
-                                  input_file_info: Optional[Dict[str, Any]] = None,
-                                  route_processing_info: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """
-        Fallback basic JSON structure when base JsonResultsManager is not available.
-        """
-        return {
-            "$schema": "https://json-schema.org/draft/2020-12/schema",
-            "analysis_metadata": {
-                "timestamp": datetime.now().isoformat(),
-                "analysis_method": results_list[0].method_key,
-                "analysis_status": "completed",
-                "input_file_info": input_file_info or {},
-                "analysis_summary": {
-                    "total_processing_time": sum(r.processing_time for r in results_list),
-                    "total_routes_processed": len(results_list),
-                    "total_length_processed": 0.0
-                }
-            },
-            "input_parameters": {
-                "optimization_method_config": {
-                    "method_key": results_list[0].method_key,
-                    "display_name": results_list[0].method_name
-                },
-                "method_parameters": results_list[0].input_parameters or {},
-                "route_processing": route_processing_info or {}
-            },
-            "route_results": [
-                {
-                    "route_info": {
-                        "route_id": result.route_id
-                    },
-                    "processing_results": self._build_processing_results(result, original_data_by_route, route_processing_info)
-                }
-                for i, result in enumerate(results_list)
-            ]
-        }
     
     def _calculate_segment_details(self, breakpoints, route_data, x_column, y_column, gap_segments, mandatory_breakpoints):
         """Calculate Y-value statistics for segments using proven visualization pattern.

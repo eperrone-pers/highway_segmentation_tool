@@ -313,7 +313,16 @@ class TestGeneticAlgorithm:
     def test_segment_data(self, genetic_algorithm):
         """Test data segmentation."""
         chromosome = genetic_algorithm.generate_chromosome()
-        segments = list(genetic_algorithm.segment_data(chromosome))  # Convert generator to list
+
+        # segment_data() was removed from the GA engine (unused in-repo).
+        # Reproduce the same segmentation behavior inline for this test.
+        segments = []
+        for start_bp, end_bp in zip(chromosome, chromosome[1:]):
+            seg = genetic_algorithm.data[
+                (genetic_algorithm.data[genetic_algorithm.x_column] >= start_bp)
+                & (genetic_algorithm.data[genetic_algorithm.x_column] < end_bp)
+            ]
+            segments.append(seg)
         
         # Should return a list of segments
         assert isinstance(segments, list)
@@ -488,8 +497,10 @@ class TestGeneticAlgorithmIntegration:
         chromosome = ga.generate_chromosome()
         
         # Evaluate fitness twice to test caching
-        fitness1 = ga.fitness_with_segment_cache(chromosome)
-        fitness2 = ga.fitness_with_segment_cache(chromosome)  # Should use cache
+        # (fitness uses chromosome-level caching and, when enabled, the GA's internal
+        # segment-cache-mode evaluation path)
+        fitness1 = ga.fitness(chromosome)
+        fitness2 = ga.fitness(chromosome)  # Should use cache
         
         assert fitness1 == fitness2
         

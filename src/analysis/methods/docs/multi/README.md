@@ -18,7 +18,6 @@ The method consumes either:
 
 - a `RouteAnalysis` object (preferred), which contains precomputed mandatory breakpoints from gap detection, or
 
-
 Key fields:
 
 - `x_column`: distance/milepoint coordinate (units: miles)
