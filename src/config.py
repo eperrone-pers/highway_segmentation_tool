@@ -509,6 +509,81 @@ CONSTRAINED_SINGLE_OBJECTIVE_PARAMETERS = [
     )
 ]
 
+DEB_FEASIBILITY_CONSTRAINED_PARAMETERS = [
+    # Segment length constraints
+    NumericParameter(
+        name="min_length", display_name="Min Segment Length",
+        description="Minimum allowed segment length in miles",
+        group="segment_constraints", order=1, default_value=0.5,
+        min_value=0.01, max_value=100.0, decimal_places=2
+    ),
+    NumericParameter(
+        name="max_length", display_name="Max Segment Length",
+        description="Maximum allowed segment length in miles",
+        group="segment_constraints", order=2, default_value=10.0,
+        min_value=0.01, max_value=100.0, decimal_places=2
+    ),
+
+    # Genetic Algorithm parameters
+    NumericParameter(
+        name="population_size", display_name="Population Size",
+        description="Number of individuals in each generation",
+        group="genetic_algorithm", order=1, default_value=100,
+        min_value=10, max_value=1000, decimal_places=0
+    ),
+    NumericParameter(
+        name="num_generations", display_name="Generations",
+        description="Number of evolutionary generations to run",
+        group="genetic_algorithm", order=2, default_value=150,
+        min_value=1, max_value=10000, decimal_places=0
+    ),
+    NumericParameter(
+        name="crossover_rate", display_name="Crossover Rate",
+        description="Probability of crossover operations (0.0-1.0)",
+        group="genetic_algorithm", order=3, default_value=0.8,
+        min_value=0.1, max_value=1.0, decimal_places=3
+    ),
+    NumericParameter(
+        name="mutation_rate", display_name="Mutation Rate",
+        description="Probability of mutation operations (0.0-1.0)",
+        group="genetic_algorithm", order=4, default_value=0.05,
+        min_value=0.001, max_value=0.5, decimal_places=3
+    ),
+    NumericParameter(
+        name="elite_ratio", display_name="Elite Ratio",
+        description="Proportion of best individuals preserved each generation",
+        group="genetic_algorithm", order=5, default_value=0.05,
+        min_value=0.01, max_value=0.20, decimal_places=3
+    ),
+
+    # Constraint parameters (no penalty weight)
+    NumericParameter(
+        name="target_avg_length", display_name="Target Avg Length",
+        description="Target average segment length in miles",
+        group="constraints", order=1, default_value=2.0,
+        min_value=0.01, max_value=50.0, decimal_places=2
+    ),
+    NumericParameter(
+        name="length_tolerance", display_name="Length Tolerance",
+        description="Acceptable tolerance around target length (Deb feasibility band)",
+        group="constraints", order=2, default_value=0.2,
+        min_value=0.01, max_value=1.0, decimal_places=3
+    ),
+
+    # Performance settings
+    NumericParameter(
+        name="cache_clear_interval", display_name="Cache Clear Interval",
+        description="Number of generations between cache clears",
+        group="performance", order=1, default_value=50,
+        min_value=1, max_value=1000, decimal_places=0
+    ),
+    BoolParameter(
+        name="enable_performance_stats", display_name="Performance Statistics",
+        description="Enable detailed performance tracking and reporting",
+        group="performance", order=2, default_value=True
+    )
+]
+
 AASHTO_CDA_PARAMETERS = [
     # Statistical Analysis Parameters
     NumericParameter(
@@ -821,6 +896,14 @@ OPTIMIZATION_METHODS = [
         parameters=CONSTRAINED_SINGLE_OBJECTIVE_PARAMETERS,
         return_type="single_objective",  # Shows segmentation graph only
         method_class_path="analysis.methods.constrained.ConstrainedMethod",
+    ),
+    OptimizationMethodConfig(
+        method_key="constrained_deb",
+        display_name="Constrained GA (Deb Feasibility)",
+        description="Constrained single-objective GA using Deb feasibility rules (constraint domination) instead of penalty weights.",
+        parameters=DEB_FEASIBILITY_CONSTRAINED_PARAMETERS,
+        return_type="single_objective",
+        method_class_path="analysis.methods.deb_feasibility_constrained.DebFeasibilityConstrainedMethod",
     ),
     OptimizationMethodConfig(
         method_key="aashto_cda",

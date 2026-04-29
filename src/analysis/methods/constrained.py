@@ -42,6 +42,7 @@ from ..utils import (
     analyze_population_diversity,
     batch_fitness_evaluation
 )
+from ..utils.segment_metrics import average_length_excluding_gap_segments
 
 # Import GA class and configuration
 import sys
@@ -346,6 +347,20 @@ class ConstrainedMethod(AnalysisMethodBase):
             'length_deviation': final_length_deviations[best_idx],
             'segment_lengths': segments,
             'is_feasible': final_length_deviations[best_idx] <= length_tolerance
+        }
+
+        # Method-owned segmentation payload for export: average excludes gap-only segments.
+        avg_excluding_gaps = average_length_excluding_gap_segments(
+            best_chromosome,
+            getattr(data, 'gap_segments', []),
+        )
+        best_solution['segmentation'] = {
+            'breakpoints': best_chromosome,
+            'segment_count': len(segments),
+            'segment_lengths': segments,
+            'total_length': (best_chromosome[-1] - best_chromosome[0]) if len(best_chromosome) >= 2 else 0.0,
+            'average_segment_length': float(avg_excluding_gaps),
+            'segment_details': [],
         }
         
         # Optimization statistics

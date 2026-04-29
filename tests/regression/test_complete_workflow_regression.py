@@ -130,6 +130,44 @@ from extensible_results_manager import ExtensibleJsonResultsManager
 from excel_export import HighwaySegmentationExcelExporter
 from config import get_optimization_method
 
+
+def _load_regression_template() -> Dict[str, Any]:
+    """Load the regression parameters template (source of truth for methods + datasets)."""
+    template_path = Path(__file__).parent / "test_parameters_template.json"
+    with open(template_path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _get_methods_and_datasets_from_template() -> (List[str], List[str]):
+    """Derive the method list and dataset configurations from the template.
+
+    Convention:
+    - Always include GA baseline methods: single, multi
+    - Include any additional methods that have a section in method_specific
+      (e.g., constrained, constrained_deb, aashto_cda)
+    """
+    template = _load_regression_template()
+    method_specific = template.get("method_specific", {}) or {}
+    methods = ["single", "multi"] + sorted([m for m in method_specific.keys() if isinstance(m, str)])
+    # de-dupe but preserve order
+    seen = set()
+    methods = [m for m in methods if not (m in seen or seen.add(m))]
+
+    data_confs = template.get("data_configurations", {}) or {}
+    datasets = sorted([k for k in data_confs.keys() if isinstance(k, str)])
+    return methods, datasets
+
+
+METHODS_TO_TEST, DATASETS_TO_TEST = _get_methods_and_datasets_from_template()
+
+
+def _get_dataset_config(dataset_key: str) -> Dict[str, Any]:
+    template = _load_regression_template()
+    data_confs = template.get("data_configurations", {}) or {}
+    if dataset_key not in data_confs:
+        raise KeyError(f"Dataset key not found in regression template: {dataset_key}")
+    return data_confs[dataset_key]
+
 try:
     import jsonschema
     from jsonschema import validate, ValidationError, Draft202012Validator
@@ -298,76 +336,16 @@ class MockUIBuilder:
         self.method_key = method_key
     
     def get_parameter_values(self):
-        """Return method-specific test parameters - hardcoded for easy modification."""
-        
-        # AASHTO-CDA Statistical Analysis (deterministic method)
-        if self.method_key == 'aashto_cda':
-            return {
-                'optimization_method': 'aashto_cda',     # Required by optimization controller
-                'min_length': 0.5,
-                'max_length': 10.0,
-                'alpha': 0.05,                       # Statistical significance level
-                'method': 2,                         # Std dev of differences (recommended)
-                'use_segment_length': True,          # Use segment-specific length
-                'max_segments': 500,                 # Maximum segments allowed
-                'min_section_difference': 0.0,      # Minimum difference between segments
-                'enable_diagnostic_output': False,   # Disable for cleaner test output
-            }
-        
-        # Single-Objective Genetic Algorithm
-        elif self.method_key == 'single':
-            return {
-                'optimization_method': 'single',         # Required by optimization controller
-                'min_length': 0.5,
-                'max_length': 10.0,
-                'population_size': 20,              # Small for testing speed
-                'num_generations': 10,              # Few generations for testing
-                'mutation_rate': 0.05,
-                'crossover_rate': 0.8,
-                'elite_ratio': 0.1,
-                'cache_clear_interval': 10,
-                'enable_performance_stats': False,  # Disable for cleaner test output
-            }
-        
-        # Multi-Objective NSGA-II Genetic Algorithm
-        elif self.method_key == 'multi':
-            return {
-                'optimization_method': 'multi',          # Required by optimization controller
-                'min_length': 0.5,
-                'max_length': 10.0,
-                'population_size': 20,              # Small for testing speed
-                'num_generations': 10,              # Few generations for testing
-                'mutation_rate': 0.05,
-                'crossover_rate': 0.8,
-                'cache_clear_interval': 10,
-                'enable_performance_stats': False,  # Disable for cleaner test output
-            }
-        
-        # Constrained Single-Objective Genetic Algorithm
-        elif self.method_key == 'constrained':
-            return {
-                'optimization_method': 'constrained',    # Required by optimization controller
-                'min_length': 0.5,
-                'max_length': 10.0,
-                'population_size': 20,              # Small for testing speed
-                'num_generations': 10,              # Few generations for testing
-                'mutation_rate': 0.05,
-                'crossover_rate': 0.8,
-                'elite_ratio': 0.1,
-                'target_avg_length': 2.0,           # Target average segment length
-                'penalty_weight': 1000.0,           # Penalty for deviating from target
-                'length_tolerance': 0.2,            # Tolerance around target length
-                'cache_clear_interval': 10,
-                'enable_performance_stats': False,  # Disable for cleaner test output
-            }
-        
-        # Fallback for unknown methods
-        else:
-            return {
-                'optimization_method': self.method_key,  # Use the method key as fallback
-                'min_length': 0.5,
-                'max_length': 10.0,
-            }
+        """Return method-specific test parameters loaded from the JSON template."""
+        template = _load_regression_template()
+        common = template.get("common_parameters", {}) or {}
+        specific = (template.get("method_specific", {}) or {}).get(self.method_key, {}) or {}
+
+        params = dict(common)
+        params.update(specific)
+        # Required by optimization controller
+        params["optimization_method"] = self.method_key
+        return params
 
 
 class MockGUIApp:
@@ -832,8 +810,8 @@ class TestCompleteWorkflowRegression:
             - Automated cleanup and artifact management
     """
     
-    @pytest.mark.parametrize("method_key", ["single", "multi", "constrained", "aashto_cda"])
-    @pytest.mark.parametrize("dataset", ["single_route", "multi_route"])
+    @pytest.mark.parametrize("method_key", METHODS_TO_TEST)
+    @pytest.mark.parametrize("dataset", DATASETS_TO_TEST)
     def test_complete_workflow(self, method_key, dataset, tmp_path):
         """
         Execute complete optimization workflow using production code paths.
@@ -933,15 +911,14 @@ class TestCompleteWorkflowRegression:
         """
         print(f"\n🎯 Testing {method_key} method with {dataset} data using PRODUCTION code path...")
             
-        # Setup test data paths - use paths relative to project root
+        # Setup test data paths - driven by tests/regression/test_parameters_template.json
         project_root = Path(__file__).parent.parent.parent
         data_dir = project_root / "tests" / "test_data"
-        if dataset == "single_route":
-            data_file = data_dir / "test_data_single_route.csv"
-            x_col, y_col, route_col = "milepoint", "structural_strength_ind", None
-        else:
-            data_file = data_dir / "TestMultiRoute.csv"
-            x_col, y_col, route_col = "BDFO", "D60", "RDB"
+        ds_conf = _get_dataset_config(dataset)
+        data_file = data_dir / ds_conf["file"]
+        x_col = ds_conf["x_column"]
+        y_col = ds_conf["y_column"]
+        route_col = ds_conf.get("route_column")
             
         # Check data file exists
         if not data_file.exists():
@@ -1060,7 +1037,7 @@ class TestRegressionValidation:
     
     def test_method_configuration_loading(self):
         """Verify all expected optimization methods are configured."""
-        methods = ["single", "multi", "constrained", "aashto_cda"]
+        methods = METHODS_TO_TEST
         
         for method in methods:
             config = get_optimization_method(method)
@@ -1121,16 +1098,11 @@ class TestSchemaValidation:
     def test_all_json_outputs_exist(self):
         """Verify all expected JSON output files exist"""
         json_dir = Path("tests/regression/outputs/json")
-        
+
         expected_files = [
-            "regression_single_single_route.json",
-            "regression_single_multi_route.json", 
-            "regression_multi_single_route.json",
-            "regression_multi_multi_route.json",
-            "regression_constrained_single_route.json",
-            "regression_constrained_multi_route.json", 
-            "regression_aashto_cda_single_route.json",
-            "regression_aashto_cda_multi_route.json"
+            get_result_filename(method, dataset, "json")
+            for method in METHODS_TO_TEST
+            for dataset in DATASETS_TO_TEST
         ]
         
         for filename in expected_files:
@@ -1141,16 +1113,11 @@ class TestSchemaValidation:
     def test_all_excel_outputs_exist(self):
         """Verify all expected Excel output files exist"""  
         excel_dir = Path("tests/regression/outputs/excel")
-        
+
         expected_files = [
-            "regression_single_single_route.xlsx",
-            "regression_single_multi_route.xlsx",
-            "regression_multi_single_route.xlsx", 
-            "regression_multi_multi_route.xlsx",
-            "regression_constrained_single_route.xlsx",
-            "regression_constrained_multi_route.xlsx",
-            "regression_aashto_cda_single_route.xlsx",
-            "regression_aashto_cda_multi_route.xlsx"
+            get_result_filename(method, dataset, "xlsx")
+            for method in METHODS_TO_TEST
+            for dataset in DATASETS_TO_TEST
         ]
         
         for filename in expected_files:
@@ -1158,16 +1125,14 @@ class TestSchemaValidation:
             assert file_path.exists(), f"Missing Excel output: {filename}"
             assert file_path.stat().st_size > 10000, f"Excel file too small: {filename}"
     
-    @pytest.mark.parametrize("json_file", [
-        "regression_single_single_route.json",
-        "regression_single_multi_route.json", 
-        "regression_multi_single_route.json",
-        "regression_multi_multi_route.json",
-        "regression_constrained_single_route.json",
-        "regression_constrained_multi_route.json",
-        "regression_aashto_cda_single_route.json", 
-        "regression_aashto_cda_multi_route.json"
-    ])
+    @pytest.mark.parametrize(
+        "json_file",
+        [
+            get_result_filename(method, dataset, "json")
+            for method in METHODS_TO_TEST
+            for dataset in DATASETS_TO_TEST
+        ],
+    )
     def test_json_schema_validation(self, json_file):
         """Validate individual JSON files against schema"""
         json_path = Path("tests/regression/outputs/json") / json_file
@@ -1211,7 +1176,8 @@ class TestSchemaValidation:
         json_dir = Path("tests/regression/outputs/json") 
         json_files = list(json_dir.glob("*.json"))
         
-        assert len(json_files) >= 8, f"Expected at least 8 JSON files, found {len(json_files)}"
+        expected_min = len(METHODS_TO_TEST) * len(DATASETS_TO_TEST)
+        assert len(json_files) >= expected_min, f"Expected at least {expected_min} JSON files, found {len(json_files)}"
         
         for json_file in json_files:
             with open(json_file, 'r') as f:
@@ -1239,3 +1205,9 @@ class TestSchemaValidation:
                 
                 pareto_points = processing_results["pareto_points"]
                 assert len(pareto_points) > 0, f"No pareto points in route {i} of {json_file.name}"
+
+    def test_validate_regression_outputs_script(self):
+        """Run the standalone schema validator script as part of regression suite."""
+        from tests.regression import validate_regression_outputs
+
+        assert validate_regression_outputs.main(), "validate_regression_outputs.py reported schema validation failures"

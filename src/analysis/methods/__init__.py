@@ -23,11 +23,13 @@ __version__ = "1.95.0"
 from .single_objective import SingleObjectiveMethod
 from .multi_objective import MultiObjectiveMethod
 from .constrained import ConstrainedMethod
+from .deb_feasibility_constrained import DebFeasibilityConstrainedMethod
 
 __all__ = [
     'SingleObjectiveMethod',
     'MultiObjectiveMethod',
     'ConstrainedMethod',
+    'DebFeasibilityConstrainedMethod',
 ]
 
 # Available methods for easy access
@@ -35,4 +37,5 @@ AVAILABLE_METHODS = {
     'single': SingleObjectiveMethod,
     'multi': MultiObjectiveMethod,
     'constrained': ConstrainedMethod,
+    'constrained_deb': DebFeasibilityConstrainedMethod,
 }

@@ -1149,16 +1149,35 @@ class HighwaySegmentationGUI:
             # NOTE: We store the optimization method selection under 'optimization_method'
             # to avoid colliding with AASHTO CDA's parameter name 'method'.
             method_key = opt_settings.get('optimization_method', None)
+
+            # If older settings stored the optimization method under a generic 'method' key,
+            # accept it only if it is a valid registry method key.
             if method_key is None:
-                legacy_method = opt_settings.get('method', 'multi')
-                # Only treat legacy 'method' as optimization method if it looks like one.
-                if legacy_method in ['single', 'multi', 'constrained', 'aashto_cda', 0, 1, 2, 3, '0', '1', '2', '3']:
-                    method_key = legacy_method
-                else:
-                    method_key = 'multi'
-            
-            # BACKWARD COMPATIBILITY: Convert old numeric method IDs to new string keys
-            method_key = self._migrate_method_key(method_key)
+                legacy_candidate = opt_settings.get('method', None)
+                method_key = legacy_candidate
+
+            # Validate against registry (no numeric-ID migration; keep it simple).
+            # If invalid, treat as an incompatibility error and require user selection.
+            try:
+                method_key = self._migrate_method_key(method_key)
+            except Exception as e:
+                try:
+                    self.log_message(
+                        f"ERROR: Settings contain an unknown optimization method ({method_key}). "
+                        f"Please select a valid method from the dropdown. Details: {e}"
+                    )
+                except Exception:
+                    pass
+                try:
+                    messagebox.showerror(
+                        "Incompatible Settings",
+                        "Saved settings refer to an unknown optimization method.\n\n"
+                        "Please choose a valid method from the dropdown and re-save your settings.",
+                    )
+                except Exception:
+                    pass
+                # Keep the currently initialized GUI default method.
+                method_key = getattr(self, 'optimization_method', None) or 'multi'
             
             # Store the optimization method as an attribute
             self.optimization_method = method_key
@@ -1271,7 +1290,11 @@ class HighwaySegmentationGUI:
     
     def _migrate_method_key(self, method_key):
         """
-        Migrate old numeric method IDs to new string-based method keys for backward compatibility.
+        Normalize/validate method keys loaded from settings.
+
+        This project uses config-driven method registration. We accept a method key
+        only if it exists in the config registry; otherwise we fall back to the GUI
+        default.
         
         Args:
             method_key: The method key from settings (could be old numeric or new string format)
@@ -1279,33 +1302,15 @@ class HighwaySegmentationGUI:
         Returns:
             str: The standardized string-based method key
         """
-        # If already a valid string method key, return as-is
-        if method_key in ['single', 'multi', 'constrained', 'aashto_cda']:
-            return method_key
-            
-        # Legacy numeric method ID mapping (based on old dropdown order)
-        numeric_to_string = {
-            '0': 'single',           # Single-Objective GA
-            '1': 'multi',            # Multi-Objective NSGA-II  
-            '2': 'aashto_cda',       # AASHTO CDA Statistical Analysis
-            '3': 'constrained',      # Constrained Single-Objective
-            # Handle both string and integer numeric IDs
-            0: 'single',
-            1: 'multi', 
-            2: 'aashto_cda',
-            3: 'constrained'
-        }
-        
-        # Convert numeric ID to string key
-        migrated_key = numeric_to_string.get(method_key, None)
-        
-        if migrated_key:
-            self.log_message(f"Migrated old method ID '{method_key}' to '{migrated_key}'")
-            return migrated_key
-        else:
-            # Unknown method key, use default and log warning
-            self.log_message(f"Unknown method key '{method_key}', defaulting to 'multi'")
-            return 'multi'
+        if isinstance(method_key, str):
+            try:
+                from config import get_optimization_method
+                get_optimization_method(method_key)
+                return method_key
+            except Exception:
+                pass
+
+        raise ValueError(f"Unknown optimization method key in settings: {method_key!r}")
     
     def _setup_parameter_tracking(self):
         """Set up automatic saving when parameters change."""

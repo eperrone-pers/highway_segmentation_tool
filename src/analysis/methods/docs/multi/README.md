@@ -112,19 +112,19 @@ So solutions with lower SSE have higher (less negative) $f_1$.
 
 ### 6.2 Objective 2: simplicity via average segment length
 
-The second objective is the **average length of non-mandatory segments**, returned as a positive value:
+The second objective is the **average segment length excluding gap-only segments**, returned as a positive value.
 
-$$f_2(B) = \mathrm{mean\_length}(\text{non-mandatory segments})$$
+In this repository, a **gap-only segment** is a segment whose boundaries exactly match a detected gap interval (gap_start → gap_end). These segments contain no data and are excluded from this average.
 
-This promotes solutions with fewer/larger user-controllable segments. Segments that touch mandatory boundaries are excluded from this average (because they are forced by gaps/bounds).
+This objective promotes solutions with fewer/larger data-bearing segments while avoiding distortion from pure gaps.
 
 ### 6.3 Returned objective vector
 
 The GA returns:
 
-$$\mathbf{f}(B) = (f_1(B), f_2(B)) = (-\mathrm{SSE}(B), \mathrm{avgNonMandatoryLength}(B))$$
+$$\mathbf{f}(B) = (f_1(B), f_2(B)) = (-\mathrm{SSE}(B), \mathrm{avgLengthExcludingGaps}(B))$$
 
-These are stored as raw values in the output JSON for plotting/transforms. In code/JSON this second objective corresponds to the field name `avg_nonmandatory_length`.
+These are stored as raw values in the output JSON as `objective_values[0]` and `objective_values[1]` (plotting may apply display transforms configured in `src/config.py`).
 
 ---
 

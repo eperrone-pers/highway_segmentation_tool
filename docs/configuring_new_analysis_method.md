@@ -13,6 +13,8 @@ This document describes **how to connect a new analysis method to the system** s
 
 We use **AASHTO CDA** as the concrete example of a **single-objective (single-result) method**.
 
+We also include an example of a **constrained GA variant** implemented as a *new method* (Deb feasibility rules) to illustrate how to explore alternative algorithms without disrupting existing methods.
+
 Section 6 includes the **multi-objective** example (showing Pareto outputs and multi-file utilities).
 
 ---
@@ -44,6 +46,11 @@ The application is split into:
     - Chooses which method to instantiate and run based on the GUI-selected `method_key`.
     - Dispatch is **config-driven** via `OptimizationMethodConfig.method_class_path`.
     - Lives in `src/optimization_controller.py` (dispatch) and `src/config.py` (registry + class resolver).
+
+        Notes on extensibility:
+        - Method dispatch is already fully config-driven.
+        - Any new `method_key` should be considered valid as long as it exists in `OPTIMIZATION_METHODS`.
+            Avoid hard-coded method-key lists in UI logic.
 
 4. **Results export**
     - JSON schema output is written by `ExtensibleJsonResultsManager`.
@@ -117,6 +124,33 @@ The controller dispatches methods by importing the class specified by `Optimizat
 Method registry entries are validated at app startup via `validate_optimization_method_registry()` (called from `src/gui_main.py`).
 
 ---
+
+## 3.2 Example: adding a constrained GA variant (Deb feasibility rules)
+
+This repo already contains a penalty-based constrained method (`method_key="constrained"`).
+To explore alternative constraint-handling strategies without changing the existing method, add a second method with its own `method_key` and implementation file.
+
+Deb feasibility rules (constraint domination) compare two candidates as:
+
+1. Feasible dominates infeasible
+2. If both feasible: compare objective only (base fitness)
+3. If both infeasible: smaller constraint violation dominates (tie-break by objective)
+
+In this repo, the Deb-feasibility constrained GA is implemented as:
+
+- Implementation: `src/analysis/methods/deb_feasibility_constrained.py`
+- Method key: `constrained_deb`
+- Config registration:
+    - Parameter list: `DEB_FEASIBILITY_CONSTRAINED_PARAMETERS` in `src/config.py`
+    - Registry entry: `OptimizationMethodConfig(method_key="constrained_deb", ... method_class_path="analysis.methods.deb_feasibility_constrained.DebFeasibilityConstrainedMethod")`
+
+Design goals for this example:
+- Additive-only (no behavior changes to existing methods)
+- Reuse `analysis/utils` GA utilities
+- Avoid penalty-weight tuning by using explicit feasibility comparisons
+
+If you add additional method keys beyond the original set, ensure the GUI settings migration treats any registry method key as valid.
+See the method-key migration helper in `src/gui_main.py`.
 
 ### 3.1 Configuration reference (what you can configure)
 

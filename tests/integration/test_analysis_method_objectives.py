@@ -212,20 +212,29 @@ class TestMultiObjectiveMethodCorrectness(TestAnalysisMethodObjectiveUsage):
             assert avg_segment_length > 0, f"Solution {i} should have positive avg segment length"
 
             # The multi-objective length objective is computed in the GA as the
-            # average NON-mandatory internal segment length. The method-level
-            # `avg_segment_length` stored in each solution is the overall average
-            # across *all* segments, so they are not expected to match.
+            # average segment length excluding *gap-only* segments.
             chromosome = solution.get('chromosome')
             assert chromosome is not None, f"Solution {i} should include chromosome"
-            segment_lengths = np.diff(chromosome)
 
-            # GA definition: internal segments only (exclude first and last), and
-            # return 0.0 when there are no internal segments.
-            internal_lengths = segment_lengths[1:-1]
-            expected_non_mandatory_avg = float(np.mean(internal_lengths)) if internal_lengths.size else 0.0
-            assert np.isclose(length_obj, expected_non_mandatory_avg, atol=1e-9), (
+            route_analysis = sample_route_data.get('route_analysis', None)
+            gap_segments = getattr(route_analysis, 'gap_segments', [])
+            gap_set = set((float(g[0]), float(g[1])) for g in (gap_segments or []))
+
+            expected_lengths = []
+            for j in range(len(chromosome) - 1):
+                start_bp = float(chromosome[j])
+                end_bp = float(chromosome[j + 1])
+                seg_len = end_bp - start_bp
+                if seg_len <= 0:
+                    continue
+                if (start_bp, end_bp) in gap_set:
+                    continue
+                expected_lengths.append(seg_len)
+
+            expected_non_gap_avg = float(np.mean(expected_lengths)) if expected_lengths else 0.0
+            assert np.isclose(length_obj, expected_non_gap_avg, atol=1e-9), (
                 f"Solution {i}: Length objective ({length_obj}) should equal the GA-defined non-mandatory "
-                f"internal average ({expected_non_mandatory_avg})"
+                f"gap-excluding average ({expected_non_gap_avg})"
             )
     
     def test_multi_objective_pareto_front_mathematical_validity(self, sample_route_data, basic_params):
@@ -405,7 +414,8 @@ class TestConstrainedMethodCorrectness(TestAnalysisMethodObjectiveUsage):
         tolerance = strict_params['length_tolerance']
         if length_deviation > tolerance:
             # Should have penalty applied
-            expected_penalty = strict_params['penalty_weight'] * (length_deviation - tolerance)
+            excess = (length_deviation - tolerance)
+            expected_penalty = strict_params['penalty_weight'] * (excess ** 2)
             expected_constrained_fitness = base_deviation_fitness - expected_penalty
             
             # Allow some numerical tolerance in penalty calculation

@@ -199,18 +199,18 @@ class EnhancedVisualizationWindow:
         self.main_paned = main_paned
         
         # Determine analysis method for layout (configuration-driven)
-        analysis_method = self.json_results.get('analysis_metadata', {}).get('analysis_method', 'single')
+        analysis_method = self.json_results.get('analysis_metadata', {}).get('analysis_method')
+        if not analysis_method:
+            raise ValueError(
+                "Results JSON is missing required analysis_metadata.analysis_method; cannot determine layout"
+            )
         
         # LEFT PANE - Pareto Graph (only shown for multi-objective)  
         self.left_frame = ttk.LabelFrame(main_paned, text="🎯 Pareto Front Analysis", padding=5)
         
         # Configuration-driven multi-objective check
-        try:
-            from config import is_multi_objective_method
-            self.is_multi_objective = is_multi_objective_method(analysis_method)
-        except (ImportError, ValueError):
-            # Fallback for legacy cases
-            self.is_multi_objective = False
+        from config import is_multi_objective_method
+        self.is_multi_objective = is_multi_objective_method(analysis_method)
             
         if self.is_multi_objective:
             main_paned.add(self.left_frame, weight=1)

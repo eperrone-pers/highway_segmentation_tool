@@ -26,6 +26,7 @@ from ..utils.ga_utilities import (
     nsga2_tournament_selection, fast_non_dominated_sort, calculate_crowding_distance,
     crossover_with_retries, mutation_with_retries, analyze_population_diversity
 )
+from ..utils.segment_metrics import average_length_excluding_gap_segments
 
 # Import GA class and configuration
 import sys
@@ -325,7 +326,11 @@ class MultiObjectiveMethod(AnalysisMethodBase):
                 end_mile = chromosome[i + 1]
                 segments.append(end_mile - start_mile)
             
-            calculated_avg_length = sum(segments) / len(segments) if segments else 0.0
+            # Method-owned export convention: average segment length excluding gap-only segments.
+            calculated_avg_length = average_length_excluding_gap_segments(
+                chromosome,
+                getattr(data, 'gap_segments', []),
+            )
             segment_count = len(segments)
             
             # Store raw GA values - let config handle visualization transforms
@@ -337,7 +342,15 @@ class MultiObjectiveMethod(AnalysisMethodBase):
                 'segment_fitness': avg_segment_length,    # Positive segment length from GA
                 'num_segments': segment_count,
                 'avg_segment_length': calculated_avg_length,  # Calculated positive value for stats
-                'segment_lengths': segments
+                'segment_lengths': segments,
+                'segmentation': {
+                    'breakpoints': chromosome,
+                    'segment_count': segment_count,
+                    'segment_lengths': segments,
+                    'total_length': (chromosome[-1] - chromosome[0]) if len(chromosome) >= 2 else 0.0,
+                    'average_segment_length': float(calculated_avg_length),
+                    'segment_details': [],
+                },
             }
             
             all_solutions.append(solution_info)

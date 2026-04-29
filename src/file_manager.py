@@ -519,9 +519,16 @@ class FileManager:
             try:
                 self._apply_results_json_to_ui(json_data)
             except Exception as e:
-                # Non-fatal: visualization can still open
+                # Fatal: if we cannot determine/validate the method, this results file is incompatible.
+                error_msg = (
+                    "Results file is missing a valid optimization method key or references an unknown method. "
+                    "This results file may be incompatible with this version of the tool.\n\n"
+                    f"Details: {e}"
+                )
+                messagebox.showerror("Incompatible Results File", error_msg)
                 if hasattr(self.app, 'log_message'):
-                    self.app.log_message(f"Warning: Could not restore parameters from results JSON: {e}")
+                    self.app.log_message(f"❌ {error_msg}")
+                return
 
             # Launch enhanced visualization with JSON data
             try:
@@ -567,17 +574,27 @@ class FileManager:
         method_key = meta.get('analysis_method') or method_cfg.get('method_key')
         display_name = method_cfg.get('display_name')
 
-        if method_key:
-            try:
-                if hasattr(self.app, '_migrate_method_key'):
-                    method_key = self.app._migrate_method_key(method_key)
-            except Exception:
-                pass
+        # Method key is required for correct interpretation of the results.
+        if not method_key:
+            raise ValueError("Missing analysis_metadata.analysis_method in results JSON")
+
+        # Validate method key against registry.
+        from config import get_optimization_method
+        get_optimization_method(str(method_key))
+        method_key = str(method_key)
 
         # Restore method selection
         if display_name and hasattr(self.app, 'method_dropdown') and hasattr(self.app.method_dropdown, 'set'):
             try:
                 self.app.method_dropdown.set(display_name)
+            except Exception:
+                pass
+
+        # If display name not present, attempt to set from registry.
+        if (not display_name) and hasattr(self.app, 'method_dropdown') and hasattr(self.app.method_dropdown, 'set'):
+            try:
+                method_config = get_optimization_method(method_key)
+                self.app.method_dropdown.set(method_config.display_name)
             except Exception:
                 pass
 
@@ -974,11 +991,17 @@ class FileManager:
                     ui_state = config.get('ui_state', {}) if isinstance(config.get('ui_state'), dict) else {}
 
                     method_key = opt.get('optimization_method') or getattr(self.app, 'optimization_method', 'multi')
+                    # Require method key to be valid; do not guess defaults.
                     try:
                         if hasattr(self.app, '_migrate_method_key'):
                             method_key = self.app._migrate_method_key(method_key)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        messagebox.showerror(
+                            "Incompatible Parameters File",
+                            "This parameters file refers to an unknown optimization method.\n\n"
+                            f"Details: {e}",
+                        )
+                        return
 
                     # Restore file paths
                     data_file_path = files.get('data_file_path')
@@ -1051,8 +1074,13 @@ class FileManager:
                     try:
                         if hasattr(self.app, '_migrate_method_key'):
                             method_key = self.app._migrate_method_key(method_key)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        messagebox.showerror(
+                            "Incompatible Parameters File",
+                            "This parameters file refers to an unknown optimization method.\n\n"
+                            f"Details: {e}",
+                        )
+                        return
                     self.app.optimization_method = method_key
 
                     try:

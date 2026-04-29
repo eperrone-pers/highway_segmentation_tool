@@ -101,9 +101,14 @@ Higher $f_{\text{base}}$ means better fit (less deviation).
 
 The constrained fitness uses:
 
-$$L(B) = \mathrm{avg\_nonmandatory\_segment\_length}(B)$$
+$$L(B) = \mathrm{avgLengthExcludingGaps}(B)$$
 
-This is computed by `HighwaySegmentGA._calculate_non_mandatory_avg_length(...)` and intentionally excludes segments that touch mandatory boundaries.
+This is computed by `HighwaySegmentGA._calculate_non_mandatory_avg_length(...)`.
+Despite the legacy name, the current project convention is:
+
+- compute segment lengths for all consecutive breakpoint intervals
+- exclude **gap-only** segments (intervals whose boundaries exactly match a detected gap)
+- average the remaining (data-bearing) segment lengths
 
 Define absolute deviation from target:
 
@@ -187,7 +192,7 @@ The returned best solution includes (selected highlights):
 - `chromosome`: breakpoint list
 - `fitness`: constrained fitness $f_{\text{constrained}}(B)$
 - `unconstrained_fitness` / `deviation_fitness`: base fitness $f_{\text{base}}(B)$
-- `avg_segment_length`: the non-mandatory average length $L(B)$ used for the constraint
+- `avg_segment_length`: the gap-only-excluding average length $L(B)$ used for the constraint
 - `target_avg_length`, `length_deviation`, `is_feasible`
 
 ### 12.1 Final best-solution selection rule
@@ -212,7 +217,7 @@ The method uses Python’s `random` and NumPy’s random sampling. There is no b
 Key implementation locations:
 
 - Runner (constraint penalty loop, selection, result assembly): `src/analysis/methods/constrained.py`
-- GA engine (chromosome validation, base fitness, non-mandatory average length): `src/analysis/utils/genetic_algorithm.py`
+- GA engine (chromosome validation, base fitness, average length excluding gap-only segments): `src/analysis/utils/genetic_algorithm.py`
 - Operators and retry wrappers: `src/analysis/utils/ga_utilities.py`
 - Parameter definitions (`CONSTRAINED_SINGLE_OBJECTIVE_PARAMETERS`): `src/config.py`
 

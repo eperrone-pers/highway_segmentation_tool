@@ -869,32 +869,34 @@ class HighwaySegmentGA:
         return fitness_val
     
     def _calculate_non_mandatory_avg_length(self, chromosome):
-        """
-        Calculate average length for segments without mandatory breakpoints at boundaries.
+        """Calculate average segment length excluding data gaps.
+
+        IMPORTANT: Despite the legacy name, this function is the shared definition of
+        "average segment length" used across GA-based methods.
+
+        Requirement (project-wide): Any reported/exported average segment length should
+        exclude *gap-only* segments (intervals with no data). The overall average that
+        includes gaps is not meaningful for optimization assessment.
+
+        Definition:
+        - Compute lengths for all segments in the chromosome.
+        - Exclude segments that exactly match a detected gap interval.
+        - Average the remaining lengths (data-bearing / segmentable portions).
         
-        This method focuses on user-controllable segmentation complexity by excluding
-        segments that are forced by data gaps or route boundaries. It provides a measure
-        of segmentation efficiency for the portions of the route where the algorithm
-        has flexibility in breakpoint placement.
-        
-        Algorithm:
-            1. Validate input chromosome and convert to float values
-            2. Calculate all segment lengths using numpy differential
-            3. Identify segments with non-mandatory boundaries
-               - Skip first/last segments (always touch route boundaries)
-               - Check internal segments against mandatory breakpoint set
-            4. Use numpy boolean indexing for efficient filtering
-            5. Return mean of non-mandatory segment lengths
+          Notes:
+          - Route start/end segments are included (they are part of the road).
+          - Segments adjacent to gaps are included (they contain data).
+          - Pure gap segments (gap_start -> gap_end) are excluded.
         
         Args:
             chromosome (List[float]): Sorted breakpoint positions defining segments
         
         Returns:
-            float: Average length of non-mandatory segments, or 0.0 if none exist
+            float: Average length excluding gaps, or 0.0 if none exist
             
         Edge Cases Handled:
             - Empty or invalid chromosome: returns 0.0
-            - All segments mandatory (only gaps): returns 0.0
+            - No data-bearing segments (degenerate): returns 0.0
             - Numerical errors in chromosome values: converts to float with fallback
             - Missing mandatory_breakpoints: falls back to overall average
             
@@ -925,30 +927,44 @@ class HighwaySegmentGA:
             total_length = float(np.sum(np.diff(chromosome)))
             return total_length / (len(chromosome) - 1)
         
-        mandatory_set = set(self.mandatory_breakpoints)
-        
-        # Use numpy to calculate all segment lengths at once
+        # Build a fast lookup of gap segments (if available)
+        gap_segments = []
+        if hasattr(self, 'route_analysis') and self.route_analysis and hasattr(self.route_analysis, 'gap_segments'):
+            gap_segments = self.route_analysis.gap_segments or []
+
+        # Normalize gap segments to float tuples
+        gap_set = set()
+        for g in gap_segments:
+            try:
+                gap_set.add((float(g[0]), float(g[1])))
+            except Exception:
+                continue
+
+        def _is_gap_segment(a: float, b: float, eps: float = 1e-9) -> bool:
+            if not gap_set:
+                return False
+            # Exact match with tolerance (gap boundaries are mandatory breakpoints)
+            for gs, ge in gap_set:
+                if abs(a - gs) <= eps and abs(b - ge) <= eps:
+                    return True
+            return False
+
         segment_lengths = np.diff(chromosome)
-        
-        # Skip first and last segments (always touch mandatory boundaries)
-        # Check internal segments for non-mandatory boundaries
-        non_mandatory_mask = []
-        for i in range(1, len(chromosome) - 2):
-            start_bp = chromosome[i]
-            end_bp = chromosome[i + 1]
-            
-            # Segment is non-mandatory if neither boundary is mandatory
-            is_non_mandatory = (start_bp not in mandatory_set and 
-                              end_bp not in mandatory_set and 
-                              segment_lengths[i] > 0)
-            non_mandatory_mask.append(is_non_mandatory)
-        
-        # Use numpy boolean indexing for efficient filtering and averaging
-        if non_mandatory_mask and any(non_mandatory_mask):
-            non_mandatory_lengths = segment_lengths[1:-1][non_mandatory_mask]
-            return float(np.mean(non_mandatory_lengths))
-        else:
+        if len(segment_lengths) == 0:
             return 0.0
+
+        counted_lengths = []
+        for i in range(len(chromosome) - 1):
+            start_bp = float(chromosome[i])
+            end_bp = float(chromosome[i + 1])
+            length = float(segment_lengths[i])
+            if length <= 0:
+                continue
+            if _is_gap_segment(start_bp, end_bp):
+                continue
+            counted_lengths.append(length)
+
+        return float(np.mean(counted_lengths)) if counted_lengths else 0.0
     
     def multi_objective_fitness(self, chromosome):
         """

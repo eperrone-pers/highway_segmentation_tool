@@ -35,6 +35,7 @@ from ..utils import (
     analyze_population_diversity,
     batch_fitness_evaluation
 )
+from ..utils.segment_metrics import average_length_excluding_gap_segments
 
 # Import GA class and configuration
 import sys
@@ -196,11 +197,11 @@ class SingleObjectiveMethod(AnalysisMethodBase):
                 segment_count = len(best_chromosome) - 1
                 diversity_stats = ga.analyze_population_diversity(population)
                 
-                # Cheap average length for display (avoid expensive per-segment statistics)
-                try:
-                    avg_length = float(np.mean(np.diff(best_chromosome)))
-                except (TypeError, ValueError):
-                    avg_length = 0.0
+                # Average length excluding gap-only segments (method-owned export convention)
+                avg_length = average_length_excluding_gap_segments(
+                    best_chromosome,
+                    getattr(data, 'gap_segments', []),
+                )
                 
                 log(f"\\nGen {gen+1}: Best fitness = {fitnesses[best_idx]:.6f}")
                 log(f"  Segments: {segment_count}")
@@ -370,6 +371,23 @@ class SingleObjectiveMethod(AnalysisMethodBase):
         
         # Get route ID from data if available
         route_id = getattr(data, 'route_id', 'Unknown')
+
+        # Average length excluding gap-only segments (method-owned export convention)
+        avg_length = average_length_excluding_gap_segments(
+            best_chromosome,
+            getattr(data, 'gap_segments', []),
+        )
+
+        # Method-owned segmentation payload for export (prevents exporter from imposing overall-mean semantics)
+        segment_lengths = [best_chromosome[i + 1] - best_chromosome[i] for i in range(len(best_chromosome) - 1)]
+        segmentation = {
+            'breakpoints': best_chromosome,
+            'segment_count': len(segment_lengths),
+            'segment_lengths': segment_lengths,
+            'total_length': (best_chromosome[-1] - best_chromosome[0]) if len(best_chromosome) >= 2 else 0.0,
+            'average_segment_length': float(avg_length),
+            'segment_details': [],
+        }
         
         log("[OK] Single-objective optimization complete!")
         
@@ -386,6 +404,7 @@ class SingleObjectiveMethod(AnalysisMethodBase):
                 'num_segments': segment_count,  # Compatibility alias for controller
                 'avg_length': avg_length,
                 'avg_segment_length': avg_length,  # Compatibility alias for multi-objective consistency
+                'segmentation': segmentation,
                 'stats': stats
             }] + [{
                 'chromosome': population[i],

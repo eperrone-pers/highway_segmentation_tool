@@ -50,6 +50,7 @@ from typing import Tuple, List, Optional
 import math
 
 from ..base import AnalysisMethodBase, AnalysisResult
+from ..utils.segment_metrics import average_length_excluding_gap_segments
 from config import get_optimization_method
 
 
@@ -586,16 +587,30 @@ class AashtoCdaMethod(AnalysisMethodBase):
                 }
             
             # Return AnalysisResult
+            breakpoints_list = all_breakpoints.tolist()
+            segment_lengths = [breakpoints_list[i + 1] - breakpoints_list[i] for i in range(len(breakpoints_list) - 1)]
+            avg_excluding_gaps = average_length_excluding_gap_segments(
+                breakpoints_list,
+                getattr(route_analysis, 'gap_segments', []),
+            )
             return AnalysisResult(
                 method_name=self.method_name,
                 method_key=self.method_key,
                 route_id=route_id,
                 all_solutions=[{
-                    'chromosome': all_breakpoints.tolist(),  # Use interface-compliant key name
+                    'chromosome': breakpoints_list,  # Use interface-compliant key name
                     'fitness': 0.0,  # CDA is deterministic
                     'total_deviation': 0.0,  # Not applicable for CDA
-                    'avg_segment_length': np.mean([s['length'] for s in segment_stats]) if segment_stats else 0.0,
-                    'num_segments': len(segment_stats)
+                    'avg_segment_length': float(avg_excluding_gaps),
+                    'num_segments': len(segment_stats),
+                    'segmentation': {
+                        'breakpoints': breakpoints_list,
+                        'segment_count': len(segment_lengths),
+                        'segment_lengths': segment_lengths,
+                        'total_length': (breakpoints_list[-1] - breakpoints_list[0]) if len(breakpoints_list) >= 2 else 0.0,
+                        'average_segment_length': float(avg_excluding_gaps),
+                        'segment_details': [],
+                    },
                 }],
                 mandatory_breakpoints=list(mandatory_breakpoints),
                 optimization_stats=diagnostics,
