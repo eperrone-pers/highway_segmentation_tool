@@ -625,7 +625,7 @@ AASHTO_CDA_PARAMETERS = [
         name="min_section_difference", display_name="Min Section Difference",
         description="Minimum difference in average values between adjacent segments (0=disabled)",
         group="segment_constraints", order=3, default_value=0.0,
-        min_value=0.0, max_value=10.0, decimal_places=3
+        min_value=0.0, max_value=None, decimal_places=3
     ),
     
     # Processing Options
