@@ -48,6 +48,15 @@ try:
 except ImportError:
     from config import get_optimization_method
 
+
+def _safe_print(message: str) -> None:
+    """Print to console without crashing on Windows encoding limitations."""
+    try:
+        print(message)
+    except UnicodeEncodeError:
+        # Fall back to ASCII-safe representation
+        print(message.encode("ascii", errors="backslashreplace").decode("ascii"))
+
 # Pleasant color scheme - updated for better contrast
 COLORS = {
     'original_data': '#D3D3D3',      # Light gray (better contrast)
@@ -131,7 +140,7 @@ class EnhancedVisualizationWindow:
         if self.json_results and 'route_results' in self.json_results:
             for route_result in self.json_results['route_results']:
                 route_id = route_result.get('route_info', {}).get('route_id', 'Unknown')
-                self.routes.append(route_id)
+                self.routes.append(str(route_id).strip())
         
         # Extract routes from original data as backup
         if not self.routes and self.original_data is not None:
@@ -248,9 +257,14 @@ class EnhancedVisualizationWindow:
         # Status message frame for original data loading issues
         self.status_frame = ttk.Frame(self.window)
         self.status_frame.pack(fill='x', padx=10, pady=(0,5))
-        
+
+        # Copy-friendly original data path display
         self.data_status_label = ttk.Label(self.status_frame, text="", foreground='red')
-        self.data_status_label.pack(side='left')
+        self.data_status_label.pack(side='left', padx=(0, 8))
+
+        self.data_path_var = tk.StringVar(value="")
+        self.data_path_entry = ttk.Entry(self.status_frame, textvariable=self.data_path_var, state='readonly')
+        self.data_path_entry.pack(side='left', fill='x', expand=True)
         
         # Selection tracking
         self.analysis_method = analysis_method
@@ -280,6 +294,7 @@ class EnhancedVisualizationWindow:
     def load_original_data(self):
         """Load original data from input file info in JSON schema."""
         self.original_data_by_route = {}
+        self.loaded_original_data_path = None
         
         if not self.json_results:
             return
@@ -289,60 +304,72 @@ class EnhancedVisualizationWindow:
         data_file_path = input_file_info.get('data_file_path')
         data_file_name = input_file_info.get('data_file_name')
         
-        # Try to find the original data file with improved fallback logic
+        # Try to find the original data file.
+        # Preference: only use the exact stored full path. Do not search for other
+        # files with the same name in the project folders.
         file_to_load = None
         search_paths = []
         
-        # Add absolute path if provided
+        # Add absolute path if provided (only path we will attempt)
         if data_file_path:
             search_paths.append(data_file_path)
-        
-        # Add fallback paths if filename is available
-        if data_file_name:
-            # Try relative to current working directory
-            search_paths.extend([
-                str(Path('data') / data_file_name),           # ./data/filename
-                str(Path('Results') / data_file_name),        # ./Results/filename  
-                data_file_name,                               # ./filename
-                str(Path('..') / 'data' / data_file_name),    # ../data/filename
-            ])
         
         # Search through all paths until we find the file
         for path in search_paths:
             if Path(path).exists():
                 file_to_load = path
-                print(f"[SUCCESS] Found original data file: {file_to_load}")
+                _safe_print(f"[SUCCESS] Found original data file: {file_to_load}")
                 break
                 
         if file_to_load:
             try:
-                self.original_data = pd.read_csv(file_to_load)
-                
+                # Read as strings first to preserve leading zeros and keep route identifiers categorical.
+                # We'll convert X/Y columns to numeric later at plot time.
+                self.original_data = pd.read_csv(file_to_load, dtype=str)
+
                 # Get column names from JSON schema
                 route_processing = self.json_results.get('input_parameters', {}).get('route_processing', {})
                 route_column = route_processing.get('route_column')
-                
-                # Organize data by route
+
+                # Organize data by route (string-based match)
                 if route_column and route_column in self.original_data.columns:
+                    route_series = self.original_data[route_column].astype("string").str.strip()
                     for route_id in self.routes:
-                        route_data = self.original_data[self.original_data[route_column] == route_id].copy()
+                        route_id_str = str(route_id).strip()
+                        route_data = self.original_data.loc[route_series == route_id_str].copy()
                         if not route_data.empty:
-                            self.original_data_by_route[route_id] = route_data
+                            self.original_data_by_route[route_id_str] = route_data
                 else:
                     # Single route data
                     if self.routes:
-                        self.original_data_by_route[self.routes[0]] = self.original_data.copy()
+                        self.original_data_by_route[str(self.routes[0]).strip()] = self.original_data.copy()
                         
-                print(f"[SUCCESS] Loaded original data from {file_to_load}")
+                _safe_print(f"[SUCCESS] Loaded original data from {file_to_load}")
+                self.loaded_original_data_path = str(Path(file_to_load).resolve())
+                try:
+                    self.data_status_label.config(text="Loaded original data:", foreground='green')
+                    self.data_path_var.set(self.loaded_original_data_path)
+                except Exception:
+                    pass
                 return
                 
             except Exception as e:
-                print(f"[ERROR] Failed to load original data: {e}")
+                _safe_print(f"[ERROR] Failed to load original data: {e}")
                 
         # Show error message if data not found
-        error_msg = f"⚠️ Original data file not found: {data_file_name or 'Unknown file'}"
-        self.data_status_label.config(text=error_msg)
-        print(f"[WARNING] {error_msg}")
+        missing_path_display = str(data_file_path or data_file_name or "")
+        try:
+            self.data_status_label.config(text="Original data file not found:", foreground='red')
+            self.data_path_var.set(missing_path_display)
+        except Exception:
+            # Best-effort fallback
+            try:
+                self.data_status_label.config(text=f"Original data file not found: {data_file_name or 'Unknown file'}")
+            except Exception:
+                pass
+
+        # Console output must remain ASCII-safe on Windows.
+        _safe_print(f"[WARNING] Original data file not found: {missing_path_display or (data_file_name or 'Unknown file')}")
         
     def on_route_keyrelease(self, event=None):
         """Handle type-ahead functionality."""
@@ -362,59 +389,129 @@ class EnhancedVisualizationWindow:
         
     def update_visualizations(self):
         """Update both visualizations based on selected route and analysis method."""
-        route_id = self.route_var.get()
-        
-        # Get route results for this route
-        route_results = self.get_route_results(route_id)
-        if not route_results:
-            return
-            
-        # Get pareto points
-        pareto_points = route_results.get('processing_results', {}).get('pareto_points', [])
-        if not pareto_points:
-            return
-            
-        self.pareto_points_data = pareto_points
-        
-        # Auto-select point with highest X value BEFORE drawing graphs
-        if pareto_points:
-            best_point = max(pareto_points, key=lambda p: p.get('objective_values', [0])[0])
+        route_id = str(self.route_var.get()).strip()
+
+        try:
+            # Get route results for this route
+            route_results = self.get_route_results(route_id)
+            if not route_results:
+                # Avoid blank graphs: show explicit message
+                if self.is_multi_objective:
+                    self.ax_left.clear()
+                    self.ax_left.text(0.5, 0.5, f"No route results found for '{route_id}'",
+                                      transform=self.ax_left.transAxes, ha='center', va='center',
+                                      fontsize=12, color=COLORS['text_secondary'])
+                    self.ax_left.set_title("Pareto Front")
+
+                self.ax_right.clear()
+                self.ax_right.text(0.5, 0.5, f"No route results found for '{route_id}'",
+                                   transform=self.ax_right.transAxes, ha='center', va='center',
+                                   fontsize=12, color=COLORS['text_secondary'])
+                self.ax_right.set_title("Segmentation")
+
+                if self.is_multi_objective:
+                    self.canvas_left.draw()
+                self.canvas_right.draw()
+                return
+
+            # Get pareto points. Contract: properly saved results must include at least one.
+            processing_results = route_results.get('processing_results', {}) or {}
+            pareto_points = processing_results.get('pareto_points', [])
+            if not pareto_points:
+                error_msg = "Invalid/incompatible results JSON: missing processing_results.pareto_points"
+                try:
+                    self.status_label.config(text=f"❌ {error_msg}")
+                except Exception:
+                    pass
+
+                if self.is_multi_objective:
+                    self.ax_left.clear()
+                    self.ax_left.text(0.5, 0.5, error_msg,
+                                      transform=self.ax_left.transAxes, ha='center', va='center',
+                                      fontsize=12, color=COLORS['mandatory_bp'])
+                    self.ax_left.set_title(f"Pareto Analysis - {route_id}")
+
+                self.ax_right.clear()
+                self.ax_right.text(0.5, 0.5, error_msg,
+                                   transform=self.ax_right.transAxes, ha='center', va='center',
+                                   fontsize=12, color=COLORS['mandatory_bp'])
+                self.ax_right.set_title(f"Highway Segmentation - {route_id}")
+
+                if self.is_multi_objective:
+                    self.canvas_left.draw()
+                self.canvas_right.draw()
+                return
+
+            self.pareto_points_data = pareto_points
+
+            # Auto-select point with highest X value BEFORE drawing graphs
+            best_point = max(pareto_points, key=lambda p: (p.get('objective_values', [0]) or [0])[0])
             best_point_id = best_point.get('point_id', 0)
             self.select_pareto_point(best_point_id)
-        
-        # Update Pareto graph (LEFT pane) - only if multi-objective
-        if self.is_multi_objective:
-            self.update_pareto_graph(route_id, pareto_points)
-        else:
-            # Single-objective: Hide Pareto pane (degenerate - just 1 point)
-            if hasattr(self, 'main_paned') and hasattr(self, 'left_frame'):
+
+            # Update Pareto graph (LEFT pane) - only if multi-objective
+            if self.is_multi_objective:
+                self.update_pareto_graph(route_id, pareto_points)
+            else:
+                # Single-objective: Hide Pareto pane (degenerate - just 1 point)
+                if hasattr(self, 'main_paned') and hasattr(self, 'left_frame'):
+                    try:
+                        self.main_paned.remove(self.left_frame)
+                    except (tk.TclError, ValueError):
+                        pass
+                    print(f"[ROUTE {route_id}] Hidden Pareto pane for single-objective (degenerate case)")
+
+            # Update segmentation graph (RIGHT pane) with selected point
+            self.update_segmentation_graph(route_id)
+
+            # Redraw canvases
+            if self.is_multi_objective:
+                self.canvas_left.draw()
+            self.canvas_right.draw()
+
+        except Exception as e:
+            error_msg = f"Visualization error: {e}"
+            try:
+                self.status_label.config(text=f"❌ {error_msg}")
+            except Exception:
+                pass
+            if self.is_multi_objective:
+                self.ax_left.clear()
+                self.ax_left.text(0.5, 0.5, error_msg,
+                                  transform=self.ax_left.transAxes, ha='center', va='center',
+                                  fontsize=12, color=COLORS['mandatory_bp'])
+                self.ax_left.set_title("Pareto Front")
+            self.ax_right.clear()
+            self.ax_right.text(0.5, 0.5, error_msg,
+                               transform=self.ax_right.transAxes, ha='center', va='center',
+                               fontsize=12, color=COLORS['mandatory_bp'])
+            self.ax_right.set_title("Segmentation")
+            if self.is_multi_objective:
                 try:
-                    self.main_paned.remove(self.left_frame)
-                except (tk.TclError, ValueError):
-                    pass  # May already be removed
-                print(f"[ROUTE {route_id}] Hidden Pareto pane for single-objective (degenerate case)")
-            
-        # Update segmentation graph (RIGHT pane) with selected point
-        self.update_segmentation_graph(route_id)
-        
-        # Redraw canvases
-        if self.is_multi_objective:
-            self.canvas_left.draw()
-        self.canvas_right.draw()
+                    self.canvas_left.draw()
+                except Exception:
+                    pass
+            try:
+                self.canvas_right.draw()
+            except Exception:
+                pass
         
     def get_current_route_data(self, route_id):
         """Get original data for the specified route from loaded data."""
-        if hasattr(self, 'original_data_by_route') and route_id in self.original_data_by_route:
-            return self.original_data_by_route[route_id]
+        route_key = str(route_id).strip()
+        if hasattr(self, 'original_data_by_route') and route_key in self.original_data_by_route:
+            return self.original_data_by_route[route_key]
         return None
         
     def get_route_results(self, route_id):
         """Get optimization results for the specified route using actual schema structure."""
         if not self.json_results or 'route_results' not in self.json_results:
             return None
-            
+
+        route_key = str(route_id).strip()
         for route_result in self.json_results['route_results']:
-            if route_result.get('route_info', {}).get('route_id') == route_id:
+            candidate = route_result.get('route_info', {}).get('route_id')
+            if str(candidate).strip() == route_key:
                 return route_result
         return None
         
@@ -443,6 +540,21 @@ class EnhancedVisualizationWindow:
                 obj2_values.append(objectives[1])
                 point_ids.append(point.get('point_id', 0))
         
+        # If objective_values are not usable, show a clear message instead of a blank plot.
+        if not obj1_values or not obj2_values:
+            self.ax_left.text(
+                0.5,
+                0.5,
+                "No 2D objective_values available to plot\n(expected 2 objectives per pareto point)",
+                transform=self.ax_left.transAxes,
+                ha='center',
+                va='center',
+                fontsize=12,
+                color=COLORS['text_secondary'],
+            )
+            self.ax_left.set_title(f"Pareto Analysis - {route_id}")
+            return
+
         # Apply axis transforms based on method configuration
         if obj1_values and obj2_values:
             # Get analysis method from JSON (now contains method_key directly)  
@@ -478,7 +590,7 @@ class EnhancedVisualizationWindow:
                         y_label = y_config.name
                         
             except Exception as e:
-                print(f"[WARN] Could not apply axis transforms from CONFIG: {e}")
+                _safe_print(f"[WARN] Could not apply axis transforms from config: {e}")
                 
             # Clear previous scatter plot references
             self.pareto_scatter_plots = {}
@@ -674,6 +786,7 @@ class EnhancedVisualizationWindow:
         # Debug: Segmentation update (removed verbose logging)
         
         # Get original data and optimization results for this specific route
+        route_id = str(route_id).strip()
         route_data = self.get_current_route_data(route_id)
         route_results = self.get_route_results(route_id)
         
@@ -684,9 +797,15 @@ class EnhancedVisualizationWindow:
             self.ax_right.set_title(f"Segmentation - {route_id} (No Results)")
             return
             
+        processing_results = route_results.get('processing_results', {}) or {}
+
         # Get pareto points and find selected point
-        pareto_points = route_results.get('processing_results', {}).get('pareto_points', [])
+        pareto_points = processing_results.get('pareto_points', [])
         if not pareto_points:
+            self.ax_right.text(0.5, 0.5, 'Invalid/incompatible results JSON: missing pareto_points',
+                             transform=self.ax_right.transAxes, ha='center', va='center',
+                             fontsize=12, color=COLORS['mandatory_bp'])
+            self.ax_right.set_title(f"Highway Segmentation - {route_id} (Invalid Results)")
             return
             
         # Find selected point (or use first if none selected)
@@ -706,6 +825,13 @@ class EnhancedVisualizationWindow:
         # Get segmentation data
         segmentation = selected_point.get('segmentation', {})
         breakpoints = segmentation.get('breakpoints', [])
+
+        if not breakpoints:
+            self.ax_right.text(0.5, 0.5, 'No breakpoints available in results JSON',
+                             transform=self.ax_right.transAxes, ha='center', va='center',
+                             fontsize=12, color=COLORS['text_secondary'])
+            self.ax_right.set_title(f"Highway Segmentation - {route_id} (No Breakpoints)")
+            return
         
         # Get column names from JSON schema - these should always be present 
         route_processing = self.json_results.get('input_parameters', {}).get('route_processing', {})
@@ -738,6 +864,34 @@ class EnhancedVisualizationWindow:
         if 'input_data_analysis' in route_results:
             mandatory_segments = route_results['input_data_analysis'].get('mandatory_segments', {})
             mandatory_breakpoints = set(mandatory_segments.get('mandatory_breakpoints', []))
+
+        # Always draw breakpoint lines from JSON when available, even if original points are missing.
+        if breakpoints:
+            mandatory_plotted = False
+            analysis_plotted = False
+            for bp in breakpoints:
+                if bp in mandatory_breakpoints:
+                    self.ax_right.axvline(
+                        x=bp,
+                        color=COLORS['mandatory_bp'],
+                        linestyle='--',
+                        linewidth=1.2,
+                        alpha=0.9,
+                        zorder=3,
+                        label='Mandatory Breakpoints' if not mandatory_plotted else "",
+                    )
+                    mandatory_plotted = True
+                else:
+                    self.ax_right.axvline(
+                        x=bp,
+                        color=COLORS['analysis_bp'],
+                        linestyle='--',
+                        linewidth=0.8,
+                        alpha=0.8,
+                        zorder=3,
+                        label='Analysis Breakpoints' if not analysis_plotted else "",
+                    )
+                    analysis_plotted = True
         
         # Plot original input data points (Z-order: 2)
         if route_data is not None and not route_data.empty:
@@ -746,6 +900,19 @@ class EnhancedVisualizationWindow:
                 x_col = route_data.columns[0] if len(route_data.columns) > 0 else 'x'
             if y_col not in route_data.columns:
                 y_col = route_data.columns[1] if len(route_data.columns) > 1 else route_data.columns[0]
+
+            # Convert X/Y to numeric for plotting (original CSV was loaded as strings to preserve IDs)
+            try:
+                route_data[x_col] = pd.to_numeric(route_data[x_col], errors='coerce')
+                route_data[y_col] = pd.to_numeric(route_data[y_col], errors='coerce')
+                route_data = route_data.dropna(subset=[x_col, y_col])
+            except Exception:
+                pass
+
+            if route_data.empty:
+                route_data = None
+
+        if route_data is not None and not route_data.empty:
                 
             # Plot with improved contrast colors (light gray for original data)
             self.ax_right.scatter(route_data[x_col], route_data[y_col], 
@@ -784,36 +951,18 @@ class EnhancedVisualizationWindow:
                         print(f"[INFO] Route '{route_id}': {total_gaps} data gaps in original data")
                         self._gap_info_shown.add(route_id)
             
-            # Plot breakpoints as vertical dashed lines (Z-order: 3)
+            # Efficiently filter segments to exclude gaps (single-pass processing)
             if breakpoints:
-                mandatory_plotted = False
-                analysis_plotted = False
-                
-                for bp in breakpoints:
-                    if bp in mandatory_breakpoints:
-                        # Mandatory breakpoints - slightly thicker crimson lines
-                        self.ax_right.axvline(x=bp, color=COLORS['mandatory_bp'], linestyle='--', 
-                                            linewidth=1.2, alpha=0.9, zorder=3,
-                                            label='Mandatory Breakpoints' if not mandatory_plotted else "")
-                        mandatory_plotted = True
-                    else:
-                        # Analysis-selected breakpoints - thin forest green lines  
-                        self.ax_right.axvline(x=bp, color=COLORS['analysis_bp'], linestyle='--', 
-                                            linewidth=0.8, alpha=0.8, zorder=3,
-                                            label='Analysis Breakpoints' if not analysis_plotted else "")
-                        analysis_plotted = True
-                
-                # Efficiently filter segments to exclude gaps (single-pass processing)
                 sorted_breakpoints = sorted(breakpoints)
-                segments = [(sorted_breakpoints[i], sorted_breakpoints[i + 1]) 
+                segments = [(sorted_breakpoints[i], sorted_breakpoints[i + 1])
                            for i in range(len(sorted_breakpoints) - 1)]
-                
-                # Preprocess gap intervals once for efficient batch filtering  
+
+                # Preprocess gap intervals once for efficient batch filtering
                 gap_intervals = self._preprocess_gap_intervals(gap_segments)
                 valid_segments = self._segments_outside_gaps(segments, gap_intervals)
-                
+
                 segment_avg_plotted = False
-                
+
                 # Draw averages only for valid (non-gap) segments
                 for start_bp, end_bp in valid_segments:
                     # Get data for this segment and draw average if data exists
@@ -822,25 +971,39 @@ class EnhancedVisualizationWindow:
                         segment_y = y_data[segment_mask]
                         if len(segment_y) > 0:
                             avg_y = np.mean(segment_y)
-                            
+
                             # Draw horizontal segment average line with bolder blue
-                            self.ax_right.plot([start_bp, end_bp], [avg_y, avg_y], 
+                            self.ax_right.plot([start_bp, end_bp], [avg_y, avg_y],
                                              color=COLORS['segment_avg'], linewidth=3, alpha=0.9,
                                                  zorder=4, solid_capstyle='butt',
                                                  label='Segment Averages' if not segment_avg_plotted else "")
                             segment_avg_plotted = True
                                              
         else:
-            # Show error if no original data
-            if not hasattr(self, 'original_data_by_route') or route_id not in self.original_data_by_route:
-                self.ax_right.text(0.02, 0.98, '⚠️ Original data file not found', 
-                                 transform=self.ax_right.transAxes, fontsize=11, 
-                                 verticalalignment='top', color=COLORS['mandatory_bp'], weight='bold',
-                                 bbox=dict(boxstyle='round,pad=0.5', facecolor='#FFF8E1', alpha=0.9, edgecolor=COLORS['mandatory_bp']))
+            # No original points available for this route; still show breakpoints from JSON.
+            self.ax_right.text(
+                0.02,
+                0.98,
+                '⚠️ Original data points not available\nShowing breakpoints only',
+                transform=self.ax_right.transAxes,
+                fontsize=11,
+                verticalalignment='top',
+                color=COLORS['mandatory_bp'],
+                weight='bold',
+                bbox=dict(boxstyle='round,pad=0.5', facecolor='#FFF8E1', alpha=0.9, edgecolor=COLORS['mandatory_bp']),
+            )
+
+            # If we have breakpoints, set a reasonable x-range to keep the view usable.
+            if breakpoints and len(breakpoints) >= 2:
+                try:
+                    bp_sorted = sorted(breakpoints)
+                    self.ax_right.set_xlim(bp_sorted[0], bp_sorted[-1])
+                except Exception:
+                    pass
         
         # Set labels and title with pleasant styling
-        self.ax_right.set_xlabel(x_col.replace('_', ' ').title())
-        self.ax_right.set_ylabel(y_col.replace('_', ' ').title())  
+        self.ax_right.set_xlabel((x_col or 'x').replace('_', ' ').title())
+        self.ax_right.set_ylabel((y_col or 'y').replace('_', ' ').title())  
         self.ax_right.set_title(f"Highway Segmentation - {route_id}")
         self.ax_right.grid(True, alpha=0.2, color=COLORS['grid'], zorder=1)  # Grid at lowest Z-order
         
@@ -995,68 +1158,80 @@ def show_enhanced_visualization(parent_app, json_results_path=None, json_results
         # Get original data from parent app
         original_data = None
         
-        # Extracting original data from parent app...
+        # Extract original data from parent app if available, but do NOT require it.
+        # When opening a results JSON, the visualization can load original data
+        # from the stored file path in the JSON (or fall back to breakpoints-only).
         if hasattr(parent_app, 'data') and parent_app.data is not None:
             if hasattr(parent_app.data, 'route_data'):
-                # RouteAnalysis object
                 original_data = parent_app.data.route_data
-                # Found RouteAnalysis data
             else:
-                # Direct DataFrame
                 original_data = parent_app.data
-                # Found DataFrame data
-        else:
-            messagebox.showerror("Data Error", 
-                "No data loaded in application.\n"
-                "Please load a CSV file before opening visualization.")
-            return None
         
-        # VALIDATION LAYER 1: UI Controls Must Exist
-        if not hasattr(parent_app, 'x_column') or not hasattr(parent_app, 'y_column'):
-            missing = []
-            if not hasattr(parent_app, 'x_column'): missing.append('X-axis column selector')
-            if not hasattr(parent_app, 'y_column'): missing.append('Y-axis column selector')
-            messagebox.showerror("Configuration Error", 
-                f"Application missing required controls:\n{', '.join(missing)}\n\n"
-                "Please restart the application.")
-            return None
-        
-        # VALIDATION LAYER 2: Column Values Must Be Selected
-        x_col = parent_app.x_column.get()
-        y_col = parent_app.y_column.get()
-        
+        # Determine X/Y column mapping.
+        # Prefer parent app selection, but fall back to JSON metadata when no CSV is loaded.
+        x_col = None
+        y_col = None
+
+        if hasattr(parent_app, 'x_column') and hasattr(parent_app.x_column, 'get'):
+            try:
+                x_col = parent_app.x_column.get()
+            except Exception:
+                x_col = None
+        if hasattr(parent_app, 'y_column') and hasattr(parent_app.y_column, 'get'):
+            try:
+                y_col = parent_app.y_column.get()
+            except Exception:
+                y_col = None
+
+        if (not x_col or not y_col) and json_data:
+            route_processing = json_data.get('input_parameters', {}).get('route_processing', {})
+            x_col = x_col or route_processing.get('x_column')
+            y_col = y_col or route_processing.get('y_column')
+
+            if not x_col or not y_col:
+                column_info = json_data.get('analysis_metadata', {}).get('input_file_info', {}).get('column_info', {})
+                x_col = x_col or column_info.get('x_column')
+                y_col = y_col or column_info.get('y_column')
+
         if not x_col or not y_col:
-            messagebox.showerror("Column Selection Error",
-                "Please select both X and Y axis columns.\n\n"
-                f"Current selection:\n"
-                f"• X-axis: '{x_col}'\n"
-                f"• Y-axis: '{y_col}'")
+            messagebox.showerror(
+                "Column Selection Error",
+                "Could not determine X and Y axis columns.\n\n"
+                "Select X/Y in the app, or open a results file that contains column metadata.",
+            )
             return None
         
-        # VALIDATION LAYER 3: Columns Must Exist in Data  
-        missing_cols = []
-        if x_col not in original_data.columns: missing_cols.append(f"'{x_col}'")
-        if y_col not in original_data.columns: missing_cols.append(f"'{y_col}'") 
-        
-        if missing_cols:
-            available = "', '".join(original_data.columns[:8])  # Show first 8 columns
-            more_msg = f" (and {len(original_data.columns)-8} more)" if len(original_data.columns) > 8 else ""
-            messagebox.showerror("Column Not Found",
-                f"Selected columns not found in loaded data:\n{', '.join(missing_cols)}\n\n"
-                f"Available columns: '{available}'{more_msg}")
-            return None
-        
-        # VALIDATION LAYER 4: Columns Must Be Numeric
-        for col_name, col_purpose in [(x_col, 'X-axis'), (y_col, 'Y-axis')]:
-            col_data = original_data[col_name]
-            
-            if not pd.api.types.is_numeric_dtype(col_data):
-                sample_values = list(col_data.dropna().head(3))
-                messagebox.showerror("Data Type Error",
-                    f"{col_purpose} column '{col_name}' contains non-numeric data.\n"
-                    f"Visualization requires numeric columns for analysis.\n\n"
-                    f"Sample values: {sample_values}")
+        # If original data is already loaded in the app, validate that X/Y exist and are numeric.
+        # If not loaded, allow opening the visualization; it will try to load original data
+        # from the JSON's stored file path and will fall back to breakpoints-only.
+        if original_data is not None:
+            missing_cols = []
+            if x_col not in original_data.columns:
+                missing_cols.append(f"'{x_col}'")
+            if y_col not in original_data.columns:
+                missing_cols.append(f"'{y_col}'")
+
+            if missing_cols:
+                available = "', '".join(original_data.columns[:8])  # Show first 8 columns
+                more_msg = f" (and {len(original_data.columns)-8} more)" if len(original_data.columns) > 8 else ""
+                messagebox.showerror(
+                    "Column Not Found",
+                    f"Selected columns not found in loaded data:\n{', '.join(missing_cols)}\n\n"
+                    f"Available columns: '{available}'{more_msg}",
+                )
                 return None
+
+            for col_name, col_purpose in [(x_col, 'X-axis'), (y_col, 'Y-axis')]:
+                col_data = original_data[col_name]
+                if not pd.api.types.is_numeric_dtype(col_data):
+                    sample_values = list(col_data.dropna().head(3))
+                    messagebox.showerror(
+                        "Data Type Error",
+                        f"{col_purpose} column '{col_name}' contains non-numeric data.\n"
+                        f"Visualization requires numeric columns for analysis.\n\n"
+                        f"Sample values: {sample_values}",
+                    )
+                    return None
         
         # Create and show enhanced visualization
         # Creating enhanced visualization window...
@@ -1072,5 +1247,5 @@ def show_enhanced_visualization(parent_app, json_results_path=None, json_results
         return viz_window
         
     except Exception as e:
-        print(f"[ERROR] Error opening enhanced visualization: {e}")
+        _safe_print(f"[ERROR] Error opening enhanced visualization: {e}")
         return None

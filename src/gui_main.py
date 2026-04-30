@@ -417,6 +417,11 @@ class HighwaySegmentationGUI:
                     import pandas as pd
                     df_headers = pd.read_csv(data_path, nrows=0)
                     if route_col in df_headers.columns:
+                        # Treat route identifiers as categorical strings in-memory
+                        try:
+                            self.file_manager.ensure_route_column_is_string(route_col)
+                        except Exception as e:
+                            self.log_message(f"Warning: Could not normalize route column to string: {e}")
                         # Column exists - safe to detect routes
                         self.file_manager.detect_available_routes()
                         if hasattr(self, 'filter_routes_button'):

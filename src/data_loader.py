@@ -288,10 +288,17 @@ def filter_data_by_route(data, route_column, route_value):
     Returns: 
         DataFrame: Filtered data for the specific route
     """
-    if route_column in data.columns:
-        return data[data[route_column] == route_value].copy()
-    else:
+    if route_column not in data.columns:
         return data.copy()
+
+    # Treat route identifiers as categorical strings regardless of CSV inference.
+    # This avoids mismatches like int 268296608 (data) vs "268296608" (UI selection).
+    route_str = "" if route_value is None else str(route_value).strip()
+    if not route_str:
+        return data.iloc[0:0].copy()
+
+    route_series = data[route_column].astype("string").str.strip()
+    return data.loc[route_series == route_str].copy()
 
 
 def load_highway_data(file_path: str) -> Optional[pd.DataFrame]:

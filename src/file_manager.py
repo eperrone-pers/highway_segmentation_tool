@@ -274,8 +274,10 @@ class FileManager:
             return
         
         try:
-            # Load the data
-            data = pd.read_csv(data_path)
+            # Load the data.
+            # IMPORTANT: Read as strings first to preserve leading zeros (IDs/categorical fields).
+            # We then convert numeric columns (at minimum X/Y) after validation.
+            data = pd.read_csv(data_path, dtype=str)
             
             # Validate columns exist
             if x_col not in data.columns:
@@ -302,6 +304,44 @@ class FileManager:
                 filename = os.path.splitext(os.path.basename(data_path))[0]
                 data[actual_route_column] = filename
                 self.app.log_message(f"Created route column from filename: '{filename}'")
+
+            # Treat the route column as categorical (string) regardless of CSV type inference.
+            # This keeps route matching consistent across UI selection, optimization, export, etc.
+            try:
+                data[actual_route_column] = data[actual_route_column].astype("string").str.strip()
+            except Exception as e:
+                self.app.log_message(f"Warning: Could not normalize route column '{actual_route_column}' to string: {e}")
+
+            # Convert X/Y to numeric for downstream calculations.
+            # Also attempt to convert other columns to numeric when it is lossless,
+            # but NEVER convert the active route column.
+            def _has_leading_zero_integers(series: pd.Series) -> bool:
+                try:
+                    s = series.astype("string")
+                    s = s.dropna().str.strip()
+                    if s.empty:
+                        return False
+                    # Leading-zero integers like "00123" should remain strings.
+                    return bool(s.str.match(r"^0\d+$").any())
+                except Exception:
+                    return False
+
+            def _safe_to_numeric(series: pd.Series) -> pd.Series:
+                numeric = pd.to_numeric(series, errors="coerce")
+                invalid_mask = series.notna() & numeric.isna()
+                if invalid_mask.any():
+                    return series
+                return numeric
+
+            for col in list(data.columns):
+                if col == actual_route_column:
+                    continue
+                if col == x_col or col == y_col:
+                    data[col] = pd.to_numeric(data[col], errors="coerce")
+                    continue
+                if _has_leading_zero_integers(data[col]):
+                    continue
+                data[col] = _safe_to_numeric(data[col])
             
             # Keep the full dataset in memory.
             # Rationale: users may change the selected route column after loading the file.
@@ -312,7 +352,6 @@ class FileManager:
             # Validate that X and Y columns contain numeric data
             try:
                 # Check X column for numeric values
-                pd.to_numeric(data[x_col], errors='coerce')
                 non_numeric_x = data[x_col].isna() | (~pd.to_numeric(data[x_col], errors='coerce').notna())
                 if non_numeric_x.any():
                     sample_invalid = data.loc[non_numeric_x, x_col].iloc[0]
@@ -323,7 +362,6 @@ class FileManager:
                     return
                 
                 # Check Y column for numeric values  
-                pd.to_numeric(data[y_col], errors='coerce')
                 non_numeric_y = data[y_col].isna() | (~pd.to_numeric(data[y_col], errors='coerce').notna())
                 if non_numeric_y.any():
                     sample_invalid = data.loc[non_numeric_y, y_col].iloc[0]
@@ -436,11 +474,11 @@ class FileManager:
                 return
             
             # Load just the route column to get distinct values
-            df = pd.read_csv(data_path, usecols=[route_col])
+            df = pd.read_csv(data_path, usecols=[route_col], dtype={route_col: str})
             
             # Get distinct routes, handle missing values
-            distinct_routes = df[route_col].fillna('Default').unique()
-            distinct_routes = sorted([str(route) for route in distinct_routes])
+            distinct_routes = df[route_col].fillna('Default').astype("string").str.strip().unique()
+            distinct_routes = sorted([str(route) for route in distinct_routes if str(route).strip()])
             
             self.app.available_routes = distinct_routes
             
@@ -472,6 +510,28 @@ class FileManager:
             show_error_message("Route Detection Error", f"An unexpected error occurred while reading routes:\n\n{str(e)}", self.app.log_message)
             self.app.available_routes = []
             self.app.selected_routes = []
+
+    def ensure_route_column_is_string(self, route_col: str):
+        """Ensure the in-memory dataset treats the given route column as string.
+
+        This supports workflows where a user loads a file, then changes the selected
+        route column. Route identifiers are treated as categorical keys, not numeric.
+        """
+        if not route_col or route_col == "None - treat as single route":
+            return
+        if not hasattr(self.app, "data") or self.app.data is None:
+            return
+        if not hasattr(self.app.data, "route_data") or self.app.data.route_data is None:
+            return
+        df = self.app.data.route_data
+        if route_col not in df.columns:
+            return
+        try:
+            df[route_col] = df[route_col].astype("string").str.strip()
+        except Exception as e:
+            self.app.log_message(
+                f"Warning: Could not normalize route column '{route_col}' to string in-memory: {e}"
+            )
     
     def load_and_plot_results(self):
         """Load and plot results from a JSON file."""
