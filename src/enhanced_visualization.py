@@ -29,6 +29,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.figure import Figure
+from matplotlib.widgets import SpanSelector
 from logger import create_logger
 import json
 import os
@@ -116,6 +117,15 @@ class EnhancedVisualizationWindow:
         self.selected_pareto_point = None
         self.pareto_scatter_plots = {}  # Track scatter plot objects for highlighting
         self.point_id_map = {}  # Map from matplotlib artist to point_id for fast picker events
+
+        # Zoom state (reset on route change)
+        self._seg_x_zoom_enabled = False
+        self._seg_default_xlim = None
+        self._seg_default_ylim = None
+        self._pareto_default_xlim = None
+        self._pareto_default_ylim = None
+        self._current_seg_x = None
+        self._current_seg_y = None
         
         # Setup route data and selection
         self.setup_route_data()
@@ -230,10 +240,27 @@ class EnhancedVisualizationWindow:
         
         # Canvas and toolbar for left pane
         self.canvas_left = FigureCanvasTkAgg(self.fig_left, self.left_frame)
-        self.canvas_left.get_tk_widget().pack(fill='both', expand=True)
-        
-        toolbar_left = NavigationToolbar2Tk(self.canvas_left, self.left_frame)
-        toolbar_left.update()
+        if self.is_multi_objective:
+            left_bottom_bar = ttk.Frame(self.left_frame)
+            left_bottom_bar.pack(side='bottom', fill='x')
+
+            left_toolbar_container = ttk.Frame(left_bottom_bar)
+            left_toolbar_container.pack(side='left', fill='x', expand=True)
+            toolbar_left = NavigationToolbar2Tk(self.canvas_left, left_toolbar_container)
+            toolbar_left.update()
+
+            left_controls_container = ttk.Frame(left_bottom_bar)
+            left_controls_container.pack(side='right')
+            self.reset_pareto_zoom_button = ttk.Button(
+                left_controls_container,
+                text="Reset Pareto Zoom",
+                command=self.reset_pareto_zoom,
+            )
+            self.reset_pareto_zoom_button.pack(side='right', padx=(6, 0), pady=2)
+
+            self.canvas_left.get_tk_widget().pack(side='top', fill='both', expand=True)
+        else:
+            self.canvas_left.get_tk_widget().pack(fill='both', expand=True)
         
         # Connect click events for Pareto point selection
         self.canvas_left.mpl_connect('pick_event', self.on_pareto_pick)
@@ -249,10 +276,43 @@ class EnhancedVisualizationWindow:
         
         # Canvas and toolbar for right pane
         self.canvas_right = FigureCanvasTkAgg(self.fig_right, right_frame)
-        self.canvas_right.get_tk_widget().pack(fill='both', expand=True)
-        
-        toolbar_right = NavigationToolbar2Tk(self.canvas_right, right_frame)
+        right_bottom_bar = ttk.Frame(right_frame)
+        right_bottom_bar.pack(side='bottom', fill='x')
+
+        right_toolbar_container = ttk.Frame(right_bottom_bar)
+        right_toolbar_container.pack(side='left', fill='x', expand=True)
+        toolbar_right = NavigationToolbar2Tk(self.canvas_right, right_toolbar_container)
         toolbar_right.update()
+
+        right_controls_container = ttk.Frame(right_bottom_bar)
+        right_controls_container.pack(side='right')
+
+        self.seg_xzoom_button = ttk.Button(
+            right_controls_container,
+            text="X Zoom (Segmentation)",
+            command=self.toggle_segmentation_x_zoom,
+        )
+        self.seg_xzoom_button.pack(side='left', padx=(0, 6), pady=2)
+
+        self.reset_seg_zoom_button = ttk.Button(
+            right_controls_container,
+            text="Reset Seg Zoom",
+            command=self.reset_segmentation_zoom,
+        )
+        self.reset_seg_zoom_button.pack(side='left', padx=(0, 0), pady=2)
+
+        self.canvas_right.get_tk_widget().pack(side='top', fill='both', expand=True)
+
+        # X-only zoom selector for the segmentation axis (disabled by default)
+        self._seg_span_selector = SpanSelector(
+            self.ax_right,
+            self._on_segmentation_xspan_selected,
+            direction='horizontal',
+            useblit=True,
+            interactive=True,
+            props=dict(alpha=0.20, facecolor=COLORS['original_edge']),
+        )
+        self._seg_span_selector.set_active(False)
         
         # Status message frame for original data loading issues
         self.status_frame = ttk.Frame(self.window)
@@ -385,7 +445,95 @@ class EnhancedVisualizationWindow:
         """Handle route selection change."""
         selected_route = self.route_var.get()
         # Route changed
+        # Reset zoom state on route change (user preference)
+        self._seg_x_zoom_enabled = False
+        try:
+            if hasattr(self, '_seg_span_selector'):
+                self._seg_span_selector.set_active(False)
+            if hasattr(self, 'seg_xzoom_button'):
+                self.seg_xzoom_button.config(text="X Zoom (Segmentation)")
+        except Exception:
+            pass
         self.update_visualizations()
+
+    def toggle_segmentation_x_zoom(self):
+        """Toggle X-only zoom mode for the segmentation plot."""
+        self._seg_x_zoom_enabled = not self._seg_x_zoom_enabled
+        try:
+            if hasattr(self, '_seg_span_selector'):
+                self._seg_span_selector.set_active(self._seg_x_zoom_enabled)
+            if hasattr(self, 'seg_xzoom_button'):
+                self.seg_xzoom_button.config(
+                    text=("X Zoom: ON" if self._seg_x_zoom_enabled else "X Zoom (Segmentation)")
+                )
+        except Exception:
+            pass
+
+    def _on_segmentation_xspan_selected(self, xmin, xmax):
+        """Handle a user-dragged X span on the segmentation axis."""
+        try:
+            if xmin is None or xmax is None:
+                return
+            if xmax < xmin:
+                xmin, xmax = xmax, xmin
+            if abs(xmax - xmin) < 1e-12:
+                return
+
+            # Apply X zoom
+            self.ax_right.set_xlim(xmin, xmax)
+
+            # Autoscale Y to visible points if available; otherwise keep current Y
+            if self._current_seg_x is not None and self._current_seg_y is not None:
+                x = np.asarray(self._current_seg_x)
+                y = np.asarray(self._current_seg_y)
+                if x.size and y.size:
+                    mask = (x >= xmin) & (x <= xmax)
+                    if np.any(mask):
+                        y_vis = y[mask]
+                        y_min = float(np.nanmin(y_vis))
+                        y_max = float(np.nanmax(y_vis))
+                        if np.isfinite(y_min) and np.isfinite(y_max) and y_max >= y_min:
+                            pad = (y_max - y_min) * 0.05
+                            if pad == 0:
+                                pad = 1.0
+                            self.ax_right.set_ylim(y_min - pad, y_max + pad)
+
+            self.canvas_right.draw_idle()
+        except Exception as e:
+            try:
+                self.status_label.config(text=f"❌ X Zoom failed: {e}")
+            except Exception:
+                pass
+
+    def reset_segmentation_zoom(self):
+        """Reset segmentation plot limits to the defaults for the current route."""
+        try:
+            if self._seg_default_xlim is not None:
+                self.ax_right.set_xlim(*self._seg_default_xlim)
+            if self._seg_default_ylim is not None:
+                self.ax_right.set_ylim(*self._seg_default_ylim)
+            self.canvas_right.draw_idle()
+        except Exception as e:
+            try:
+                self.status_label.config(text=f"❌ Reset seg zoom failed: {e}")
+            except Exception:
+                pass
+
+    def reset_pareto_zoom(self):
+        """Reset Pareto plot limits to the defaults for the current route."""
+        if not getattr(self, 'is_multi_objective', False):
+            return
+        try:
+            if self._pareto_default_xlim is not None:
+                self.ax_left.set_xlim(*self._pareto_default_xlim)
+            if self._pareto_default_ylim is not None:
+                self.ax_left.set_ylim(*self._pareto_default_ylim)
+            self.canvas_left.draw_idle()
+        except Exception as e:
+            try:
+                self.status_label.config(text=f"❌ Reset pareto zoom failed: {e}")
+            except Exception:
+                pass
         
     def update_visualizations(self):
         """Update both visualizations based on selected route and analysis method."""
@@ -635,6 +783,13 @@ class EnhancedVisualizationWindow:
             self.ax_left.grid(True, which='minor', alpha=0.1, color=COLORS['grid'], linestyle='-', linewidth=0.3)
             
             # Debug: Pareto points plotted (removed verbose logging)
+
+            # Cache default limits (used by Reset Pareto Zoom); overwrite each redraw.
+            try:
+                self._pareto_default_xlim = self.ax_left.get_xlim()
+                self._pareto_default_ylim = self.ax_left.get_ylim()
+            except Exception:
+                pass
 
             
     def on_pareto_pick(self, event):
@@ -922,6 +1077,10 @@ class EnhancedVisualizationWindow:
             
             x_data = route_data[x_col].values
             y_data = route_data[y_col].values
+
+            # Cache current series for X-zoom autoscaling
+            self._current_seg_x = x_data
+            self._current_seg_y = y_data
             
             # Ensure route endpoints are included in mandatory breakpoints
             route_start = np.min(x_data)
@@ -1000,6 +1159,10 @@ class EnhancedVisualizationWindow:
                     self.ax_right.set_xlim(bp_sorted[0], bp_sorted[-1])
                 except Exception:
                     pass
+
+            # No points available; disable autoscale input but keep current Y as requested.
+            self._current_seg_x = None
+            self._current_seg_y = None
         
         # Set labels and title with pleasant styling
         self.ax_right.set_xlabel((x_col or 'x').replace('_', ' ').title())
@@ -1020,6 +1183,15 @@ class EnhancedVisualizationWindow:
         by_label = dict(zip(labels, handles))
         if by_label:
             self.ax_right.legend(by_label.values(), by_label.keys(), loc='best', framealpha=0.9)
+
+        # Cache default segmentation limits for reset.
+        # Only update defaults when X-zoom is currently OFF (so reset returns to full view).
+        if not self._seg_x_zoom_enabled:
+            try:
+                self._seg_default_xlim = self.ax_right.get_xlim()
+                self._seg_default_ylim = self.ax_right.get_ylim()
+            except Exception:
+                pass
 
     def _export_to_excel(self):
         """Export comprehensive optimization results using dedicated excel_export module."""
