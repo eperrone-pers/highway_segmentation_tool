@@ -16,6 +16,19 @@ import traceback
 from config import get_optimization_method, resolve_method_class
 
 
+def _normalize_route_value(route_value):
+    """Normalize route identifiers to a stable string form for comparisons."""
+    if route_value is None:
+        return None
+    route_str = str(route_value).strip()
+    if not route_str:
+        return None
+    # Handle common missing-value string forms (e.g., from pandas/numpy)
+    if route_str.lower() in {"nan", "none", "null"}:
+        return None
+    return route_str
+
+
 class OptimizationController:
     """
     Handles optimization execution, control, and monitoring.
@@ -260,8 +273,16 @@ class OptimizationController:
                 # Multi-route: get unique values from route column
                 if actual_route_column in self.app.data.route_data.columns:
                     unique_routes = self.app.data.route_data[actual_route_column].unique()
-                    all_routes = sorted([route for route in unique_routes 
-                                        if route not in ["default", "_COMBINED_DATA_"]])
+                    normalized_routes = []
+                    for route in unique_routes:
+                        route_str = _normalize_route_value(route)
+                        if route_str is None:
+                            continue
+                        # Filter out internal/sentinel route IDs (case-insensitive)
+                        if route_str.lower() in {"default", "_combined_data_"}:
+                            continue
+                        normalized_routes.append(route_str)
+                    all_routes = sorted(set(normalized_routes))
                 else:
                     self.app.log_message(f"[ERROR] Route column '{actual_route_column}' not found in data!")
                     return
@@ -283,8 +304,19 @@ class OptimizationController:
                 else:
                     selected_routes = all_routes
 
+            # Normalize selected routes to string form to match all_routes
+            selected_routes = [r for r in (_normalize_route_value(r) for r in selected_routes) if r is not None]
+
             # Filter to only routes that actually exist in the data
             routes_to_process = [route for route in selected_routes if route in all_routes]
+
+            if len(routes_to_process) == 0:
+                if is_single_route_mode:
+                    raise ValueError("No route could be determined for single-route processing")
+                raise ValueError(
+                    "No selected routes matched the data. "
+                    "Re-open Route Filter (or re-load the file) and select at least one available route."
+                )
             
             self.app.log_message(f"Starting optimization for {len(routes_to_process)} route(s)...")
             if len(routes_to_process) > 1:
