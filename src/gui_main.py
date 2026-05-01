@@ -14,10 +14,12 @@ REFACTORING DEMONSTRATION:
 import tkinter as tk
 from tkinter import ttk, messagebox
 import os
+import sys
 import logging
 from datetime import datetime
 import webbrowser
 import tempfile
+import importlib.util
 try:
     import markdown
     from markdown.extensions import toc
@@ -83,6 +85,10 @@ class HighwaySegmentationGUI:
         
         # Create results_text widget immediately to enable logging during initialization
         self._create_early_log_widget()
+
+        # Best-effort dependency check: logs missing libraries and install hints.
+        # This is intentionally non-fatal for optional features.
+        self._log_dependency_status()
         
         # Initialize specialized manager classes (now safe to log during initialization)
         self.ui_builder = UIBuilder(self)
@@ -99,6 +105,78 @@ class HighwaySegmentationGUI:
         
         # Set up window close handler
         self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
+
+    def _log_dependency_status(self) -> None:
+        """Log availability of optional/required libraries.
+
+        Goal: make missing dependencies discoverable at runtime (especially when
+        users are running the GUI with a different interpreter than they used to
+        install packages).
+
+        This check is intentionally lightweight and should not block startup.
+        If dependencies are missing, the app will log clear messages and show a
+        single consolidated popup with install guidance.
+        """
+
+        def is_available(module_name: str) -> bool:
+            return importlib.util.find_spec(module_name) is not None
+
+        def log_ok(label: str) -> None:
+            # Intentionally silent when dependencies are present.
+            # Only log missing dependencies to avoid noisy startup logs.
+            return
+
+        missing: list[tuple[str, str, str]] = []
+
+        def require(module_name: str, label: str, pip_package: str) -> None:
+            if is_available(module_name):
+                log_ok(f"{label} ({module_name})")
+            else:
+                missing.append((module_name, label, pip_package))
+
+        def install_cmd(package: str) -> str:
+            # Use the current interpreter explicitly to reduce confusion.
+            return f"Run: {sys.executable} -m pip install {package}"
+
+        # Treat all referenced libraries as required.
+        require("numpy", "Core numeric library", "numpy")
+        require("pandas", "Core dataframe library", "pandas")
+        require("scipy", "Statistical utilities", "scipy")
+        require("matplotlib", "Plotting / visualization", "matplotlib")
+        require("openpyxl", "Excel export", "openpyxl")
+        require("markdown", "Help / documentation rendering", "markdown")
+        require("ruptures", "PELT Segmentation method", "ruptures")
+        require("jsonschema", "JSON schema validation", "jsonschema")
+
+        # If everything is present, stay silent by default.
+        if not missing:
+            return
+
+        # Only log when there are missing libraries (keeps startup logs clean).
+        self.log_message("=== Dependency Check (Missing Libraries) ===")
+        self.log_message(f"Python interpreter: {sys.executable}")
+
+        for module_name, label, pip_package in missing:
+            self.handle_error(
+                f"Missing required dependency: {module_name} ({label}). {install_cmd(pip_package)}",
+                severity="critical",
+                show_messagebox=False,
+                silence_console=True,
+            )
+
+        lines = [
+            "One or more required Python packages are missing.",
+            "",
+            f"Interpreter in use:\n  {sys.executable}",
+            "",
+            "Missing:",
+        ]
+        for module_name, label, pip_package in missing:
+            lines.append(f"- {module_name}: {label}")
+            lines.append(f"  {install_cmd(pip_package)}")
+        messagebox.showerror("Missing Dependencies", "\n".join(lines))
+
+        self.log_message("===========================================")
     
     def _initialize_variables(self):
         """Initialize all Tkinter variables and application state."""

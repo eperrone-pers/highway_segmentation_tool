@@ -6,6 +6,9 @@ matplotlib>=3.5.0
 # Statistical analysis dependencies  
 scipy>=1.9.0
 
+# Change point detection (PELT segmentation)
+ruptures>=1.1.10
+
 # Excel export functionality
 openpyxl>=3.0.0
 

@@ -471,14 +471,18 @@ PLUGIN_METADATA = {
 }
 
 
-# Auto-registration when imported (if base system available)
-if BASE_PLUGIN_AVAILABLE:
-    try:
-        from extensible_results_manager import JsonMethodRegistry
-        registry = JsonMethodRegistry()
-        if not any(isinstance(p, MultiObjectivePlugin) for p in registry.get_all_plugins()):
-            plugin_instance = MultiObjectivePlugin()
-            registry.register_plugin(plugin_instance)
-            print(f"Auto-registered {MultiObjectivePlugin.PLUGIN_NAME} v{MultiObjectivePlugin.PLUGIN_VERSION}")
-    except Exception as e:
-        print(f"Warning: Could not auto-register MultiObjectivePlugin: {e}")
+# Auto-registration when imported.
+# Keep this best-effort so plugin discovery never fails just because the
+# registry isn't available in a given execution context.
+try:
+    from extensible_results_manager import JsonMethodRegistry
+
+    registry = JsonMethodRegistry()
+    if not any(isinstance(p, MultiObjectivePlugin) for p in registry.get_all_plugins()):
+        plugin_instance = MultiObjectivePlugin()
+        registry.register_plugin(plugin_instance)
+        print(f"Auto-registered {MultiObjectivePlugin.PLUGIN_NAME} v{MultiObjectivePlugin.PLUGIN_VERSION}")
+except ImportError:
+    pass
+except Exception as e:
+    print(f"Warning: Could not auto-register MultiObjectivePlugin: {e}")

@@ -10,6 +10,22 @@ When using the AASHTO CDA (Cumulative Difference Approach) method in this softwa
 *"Enhanced AASHTO Cumulative Difference Approach (CDA) for Pavement Data Segmentation"*  
 Transportation Research Record, Accepted.
 
+## Additional Method Citations
+
+### PELT Segmentation (ruptures)
+
+When using the PELT segmentation method (`method_key="pelt_segmentation"`), please cite:
+
+**Killick, R., Fearnhead, P., & Eckley, I. A. (2012)**
+*Optimal detection of changepoints with a linear computational cost.*
+Journal of the American Statistical Association, 107(500), 1590–1598.
+
+This method uses the open-source Python package **`ruptures`** for change-point detection.
+`ruptures` is distributed under the BSD 2-Clause License; see:
+
+- <https://github.com/deepcharles/ruptures>
+- <https://centre-borelli.github.io/ruptures-docs/>
+
 ## Software License and Copyright
 
 ### AASHTO CDA Implementation

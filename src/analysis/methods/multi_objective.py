@@ -106,6 +106,10 @@ class MultiObjectiveMethod(AnalysisMethodBase):
         # Extract method-specific parameters with proper config defaults
         min_length = kwargs.get('min_length', param_defaults['min_length'])
         max_length = kwargs.get('max_length', param_defaults['max_length'])
+        # Preserve constraint values; later compromise-scoring code computes min/max stats
+        # and must not overwrite these configuration parameters.
+        min_length_constraint = min_length
+        max_length_constraint = max_length
         population_size = kwargs.get('population_size', param_defaults['population_size'])
         num_generations = kwargs.get('num_generations', param_defaults['num_generations'])
         crossover_rate = kwargs.get('crossover_rate', param_defaults['crossover_rate'])
@@ -382,7 +386,7 @@ class MultiObjectiveMethod(AnalysisMethodBase):
             length_values = [sol['avg_segment_length'] for sol in all_solutions]
             
             min_dev, max_dev = min(dev_values), max(dev_values)
-            min_length, max_length = min(length_values), max(length_values)
+            min_avg_length, max_avg_length = min(length_values), max(length_values)
             
             best_compromise = None
             best_compromise_score = float('inf')
@@ -390,7 +394,7 @@ class MultiObjectiveMethod(AnalysisMethodBase):
             for solution in all_solutions:
                 # Normalize deviation (lower is better) and segment length (higher is better)
                 norm_dev = (solution['deviation_fitness'] - min_dev) / (max_dev - min_dev) if max_dev > min_dev else 0
-                norm_length = 1 - (solution['avg_segment_length'] - min_length) / (max_length - min_length) if max_length > min_length else 0  # Invert for \"lower is better\"
+                norm_length = 1 - (solution['avg_segment_length'] - min_avg_length) / (max_avg_length - min_avg_length) if max_avg_length > min_avg_length else 0  # Invert for \"lower is better\"
                 
                 # Compromise score (equal weighting, both normalized to lower-is-better)
                 compromise_score = norm_dev + norm_length
@@ -440,8 +444,8 @@ class MultiObjectiveMethod(AnalysisMethodBase):
         # Prepare input parameters record using configuration values
         # These parameters are preserved for accurate JSON export
         input_parameters = {
-            'min_length': min_length,        # Configuration parameter value
-            'max_length': max_length,        # Configuration parameter value
+            'min_length': min_length_constraint,        # Configuration parameter value
+            'max_length': max_length_constraint,        # Configuration parameter value
             'population_size': population_size,
             'num_generations': num_generations,
             'crossover_rate': crossover_rate,

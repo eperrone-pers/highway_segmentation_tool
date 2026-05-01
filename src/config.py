@@ -637,6 +637,117 @@ AASHTO_CDA_PARAMETERS = [
 ]
 
 
+PELT_SEGMENTATION_PARAMETERS = [
+    # Change point detection parameters
+    SelectParameter(
+        name="model",
+        display_name="Cost Model",
+        description="Cost function used by PELT (l2=mean shifts, l1=robust mean shifts, rbf=kernel).",
+        group="change_point_detection",
+        order=1,
+        default_value="l2",
+        options=[
+            ("L2 (Mean Shifts)", "l2"),
+            ("L1 (Robust Mean Shifts)", "l1"),
+            ("RBF (Kernel)", "rbf"),
+        ],
+    ),
+    NumericParameter(
+        name="penalty",
+        display_name="Penalty",
+        description=(
+            "Main sensitivity knob (higher=fewer breakpoints). "
+            "Try a small grid like 6, 10, 14, 18 and pick the smallest penalty "
+            "that avoids chattering."
+        ),
+        group="change_point_detection",
+        order=2,
+        default_value=12.0,
+        min_value=0.1,
+        max_value=5000.0,
+        decimal_places=3,
+    ),
+    NumericParameter(
+        name="jump",
+        display_name="Jump",
+        description="Subsample candidate change point locations (1=all points; higher=coarser/faster).",
+        group="change_point_detection",
+        order=3,
+        default_value=1,
+        min_value=1,
+        max_value=50,
+        decimal_places=0,
+    ),
+
+    # Smoothing parameters
+    OptionalNumericParameter(
+        name="smooth_window_miles",
+        display_name="Smoothing Window (miles)",
+        description=(
+            "Optional smoothing window length in miles (None=off). "
+            "For 0.1-mile spacing, 0.3–1.0 miles is a typical starting range."
+        ),
+        group="smoothing",
+        order=1,
+        default_value=None,
+        min_value=0.0,
+        max_value=5.0,
+        decimal_places=3,
+    ),
+    SelectParameter(
+        name="smoothing_method",
+        display_name="Smoothing Method",
+        description="Smoothing statistic (only used when smoothing window is enabled).",
+        group="smoothing",
+        order=2,
+        default_value="mean",
+        options=[
+            ("Mean", "mean"),
+            ("Median (robust to spikes)", "median"),
+        ],
+    ),
+
+    # Segment constraints (use framework-style naming)
+    NumericParameter(
+        name="min_length",
+        display_name="Min Segment Length",
+        description=(
+            "Minimum segment length in miles. Also enforces a minimum of 2 samples per segment internally."
+        ),
+        group="segment_constraints",
+        order=1,
+        default_value=0.5,
+        min_value=0.0,
+        max_value=100.0,
+        decimal_places=3,
+    ),
+    NumericParameter(
+        name="max_length",
+        display_name="Max Segment Length",
+        description=(
+            "Maximum segment length in miles. PELT does not natively enforce a maximum; "
+            "we post-process and split any overlong data segments while preserving gap segments."
+        ),
+        group="segment_constraints",
+        order=2,
+        default_value=5.0,
+        min_value=0.0,
+        max_value=100.0,
+        decimal_places=3,
+    ),
+
+    # Processing options
+    BoolParameter(
+        name="enable_diagnostic_output",
+        display_name="Diagnostic Output",
+        description="Include additional per-section diagnostics in results (useful for debugging/tuning).",
+        group="processing",
+        order=1,
+        default_value=False,
+    ),
+]
+
+
 @dataclass
 class AlgorithmConstants:
     """Internal algorithm constants - not user-configurable parameters."""
@@ -912,6 +1023,14 @@ OPTIMIZATION_METHODS = [
         parameters=AASHTO_CDA_PARAMETERS,
         return_type="single_objective",  # Shows segmentation graph only
         method_class_path="analysis.methods.aashto_cda.AashtoCdaMethod",
+    ),
+    OptimizationMethodConfig(
+        method_key="pelt_segmentation",
+        display_name="PELT Segmentation (ruptures)",
+        description="Deterministic change-point detection using PELT (ruptures). Penalty controls sensitivity; supports optional smoothing and minimum segment length.",
+        parameters=PELT_SEGMENTATION_PARAMETERS,
+        return_type="single_objective",
+        method_class_path="analysis.methods.pelt_segmentation.PeltSegmentationMethod",
     )
     # FUTURE METHODS - Easy to add with completely different parameter sets:
     #
