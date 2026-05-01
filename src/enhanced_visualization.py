@@ -273,9 +273,53 @@ class EnhancedVisualizationWindow:
         # Create right figure (Segmentation) with tight layout  
         self.fig_right = Figure(figsize=(7, 6), dpi=100, tight_layout=True)
         self.ax_right = self.fig_right.add_subplot(111)
-        
+
+        # Keep paging controls in sync with any toolbar-driven x-limit changes.
+        try:
+            self._seg_xlim_callback_cid = self.ax_right.callbacks.connect(
+                'xlim_changed',
+                lambda ax: self._update_segmentation_paging_controls(),
+            )
+        except Exception:
+            self._seg_xlim_callback_cid = None
+
+        # Container to place paging arrows on either side of the segmentation canvas.
+        # The arrows only appear when the x-axis is zoomed in.
+        seg_plot_container = ttk.Frame(right_frame)
+        seg_plot_container.pack(side='top', fill='both', expand=True)
+        seg_plot_container.grid_rowconfigure(0, weight=1)
+        seg_plot_container.grid_columnconfigure(1, weight=1)
+
         # Canvas and toolbar for right pane
-        self.canvas_right = FigureCanvasTkAgg(self.fig_right, right_frame)
+        # IMPORTANT: canvas widget must be parented to seg_plot_container because we use
+        # grid inside seg_plot_container. right_frame itself uses pack.
+        self.canvas_right = FigureCanvasTkAgg(self.fig_right, seg_plot_container)
+
+        self.seg_page_left_button = ttk.Button(
+            seg_plot_container,
+            text="◀",
+            width=3,
+            command=lambda: self.page_segmentation_x_window(direction=-1),
+        )
+        self.seg_page_left_button.grid(row=0, column=0, sticky='ns', padx=(0, 6), pady=6)
+
+        self.canvas_right.get_tk_widget().grid(row=0, column=1, sticky='nsew')
+
+        self.seg_page_right_button = ttk.Button(
+            seg_plot_container,
+            text="▶",
+            width=3,
+            command=lambda: self.page_segmentation_x_window(direction=1),
+        )
+        self.seg_page_right_button.grid(row=0, column=2, sticky='ns', padx=(6, 0), pady=6)
+
+        # Hidden by default; shown when zoomed.
+        try:
+            self.seg_page_left_button.grid_remove()
+            self.seg_page_right_button.grid_remove()
+        except Exception:
+            pass
+
         right_bottom_bar = ttk.Frame(right_frame)
         right_bottom_bar.pack(side='bottom', fill='x')
 
@@ -300,8 +344,6 @@ class EnhancedVisualizationWindow:
             command=self.reset_segmentation_zoom,
         )
         self.reset_seg_zoom_button.pack(side='left', padx=(0, 0), pady=2)
-
-        self.canvas_right.get_tk_widget().pack(side='top', fill='both', expand=True)
 
         # X-only zoom selector for the segmentation axis (disabled by default)
         self._seg_span_selector = SpanSelector(
@@ -482,23 +524,10 @@ class EnhancedVisualizationWindow:
             # Apply X zoom
             self.ax_right.set_xlim(xmin, xmax)
 
-            # Autoscale Y to visible points if available; otherwise keep current Y
-            if self._current_seg_x is not None and self._current_seg_y is not None:
-                x = np.asarray(self._current_seg_x)
-                y = np.asarray(self._current_seg_y)
-                if x.size and y.size:
-                    mask = (x >= xmin) & (x <= xmax)
-                    if np.any(mask):
-                        y_vis = y[mask]
-                        y_min = float(np.nanmin(y_vis))
-                        y_max = float(np.nanmax(y_vis))
-                        if np.isfinite(y_min) and np.isfinite(y_max) and y_max >= y_min:
-                            pad = (y_max - y_min) * 0.05
-                            if pad == 0:
-                                pad = 1.0
-                            self.ax_right.set_ylim(y_min - pad, y_max + pad)
+            self._autoscale_segmentation_y_to_visible(xmin, xmax)
 
             self.canvas_right.draw_idle()
+            self._update_segmentation_paging_controls()
         except Exception as e:
             try:
                 self.status_label.config(text=f"❌ X Zoom failed: {e}")
@@ -513,9 +542,120 @@ class EnhancedVisualizationWindow:
             if self._seg_default_ylim is not None:
                 self.ax_right.set_ylim(*self._seg_default_ylim)
             self.canvas_right.draw_idle()
+            self._update_segmentation_paging_controls()
         except Exception as e:
             try:
                 self.status_label.config(text=f"❌ Reset seg zoom failed: {e}")
+            except Exception:
+                pass
+
+    def _autoscale_segmentation_y_to_visible(self, xmin: float, xmax: float) -> None:
+        """Autoscale segmentation Y limits to points visible within [xmin, xmax]."""
+        try:
+            if self._current_seg_x is None or self._current_seg_y is None:
+                return
+            x = np.asarray(self._current_seg_x)
+            y = np.asarray(self._current_seg_y)
+            if not x.size or not y.size:
+                return
+            mask = (x >= xmin) & (x <= xmax)
+            if not np.any(mask):
+                return
+            y_vis = y[mask]
+            y_min = float(np.nanmin(y_vis))
+            y_max = float(np.nanmax(y_vis))
+            if not (np.isfinite(y_min) and np.isfinite(y_max)):
+                return
+            if y_max < y_min:
+                return
+            pad = (y_max - y_min) * 0.05
+            if pad == 0:
+                pad = 1.0
+            self.ax_right.set_ylim(y_min - pad, y_max + pad)
+        except Exception:
+            return
+
+    def _update_segmentation_paging_controls(self) -> None:
+        """Show/hide the segmentation paging arrows depending on zoom state."""
+        try:
+            if not hasattr(self, 'seg_page_left_button') or not hasattr(self, 'seg_page_right_button'):
+                return
+            if self._seg_default_xlim is None:
+                self.seg_page_left_button.grid_remove()
+                self.seg_page_right_button.grid_remove()
+                return
+
+            full_xmin, full_xmax = self._seg_default_xlim
+            cur_xmin, cur_xmax = self.ax_right.get_xlim()
+            if cur_xmax < cur_xmin:
+                cur_xmin, cur_xmax = cur_xmax, cur_xmin
+
+            full_span = float(full_xmax) - float(full_xmin)
+            cur_span = float(cur_xmax) - float(cur_xmin)
+            if full_span <= 0 or cur_span <= 0:
+                self.seg_page_left_button.grid_remove()
+                self.seg_page_right_button.grid_remove()
+                return
+
+            # Only show arrows when zoomed in (current window smaller than full route view).
+            if cur_span < (full_span - 1e-9):
+                self.seg_page_left_button.grid()
+                self.seg_page_right_button.grid()
+            else:
+                self.seg_page_left_button.grid_remove()
+                self.seg_page_right_button.grid_remove()
+        except Exception:
+            return
+
+    def page_segmentation_x_window(self, direction: int) -> None:
+        """Page the segmentation x-window left/right by the current zoom span.
+
+        direction: -1 for left, +1 for right.
+        """
+        try:
+            if self._seg_default_xlim is None:
+                return
+            full_xmin, full_xmax = self._seg_default_xlim
+
+            cur_xmin, cur_xmax = self.ax_right.get_xlim()
+            if cur_xmax < cur_xmin:
+                cur_xmin, cur_xmax = cur_xmax, cur_xmin
+
+            span = float(cur_xmax) - float(cur_xmin)
+            full_span = float(full_xmax) - float(full_xmin)
+            if span <= 0 or full_span <= 0:
+                return
+
+            # If not zoomed, nothing to page.
+            if span >= full_span - 1e-9:
+                self._update_segmentation_paging_controls()
+                return
+
+            step = span if direction >= 0 else -span
+            new_xmin = float(cur_xmin) + step
+            new_xmax = float(cur_xmax) + step
+
+            # Clamp at boundaries, preserving the window length.
+            if new_xmin < float(full_xmin):
+                new_xmin = float(full_xmin)
+                new_xmax = float(full_xmin) + span
+            if new_xmax > float(full_xmax):
+                new_xmax = float(full_xmax)
+                new_xmin = float(full_xmax) - span
+
+            # Final safety: keep within bounds.
+            if new_xmin < float(full_xmin):
+                new_xmin = float(full_xmin)
+            if new_xmax > float(full_xmax):
+                new_xmax = float(full_xmax)
+
+            self.ax_right.set_xlim(new_xmin, new_xmax)
+            self._autoscale_segmentation_y_to_visible(new_xmin, new_xmax)
+            self.canvas_right.draw_idle()
+            self._update_segmentation_paging_controls()
+        except Exception as e:
+            try:
+                self.status_label.config(text=f"❌ Paging failed: {e}")
             except Exception:
                 pass
 
@@ -611,6 +751,9 @@ class EnhancedVisualizationWindow:
 
             # Update segmentation graph (RIGHT pane) with selected point
             self.update_segmentation_graph(route_id)
+
+            # Update paging control visibility after plotting.
+            self._update_segmentation_paging_controls()
 
             # Redraw canvases
             if self.is_multi_objective:

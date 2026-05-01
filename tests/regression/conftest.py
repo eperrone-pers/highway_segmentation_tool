@@ -1,5 +1,5 @@
 """
-Regression Test Fixtures and Utilities for Highway Segmentation GA
+Regression Test Fixtures and Utilities for Highway Segmentation Tool
 
 This module provides pytest fixtures and utility functions to support comprehensive
 regression testing across all optimization methods and data configurations.
@@ -61,6 +61,26 @@ if str(src_path) not in sys.path:
 from config import OPTIMIZATION_METHODS
 
 
+def pytest_collection_modifyitems(config, items):
+    """Mark all tests in this folder as regression tests.
+
+    This keeps the CLI ergonomics simple: `pytest -m regression` will run the
+    full regression suite under tests/regression without requiring every test
+    file to remember to add the marker.
+    """
+
+    regression_root = Path(__file__).parent.resolve()
+
+    for item in items:
+        try:
+            item_path = Path(str(item.fspath)).resolve()
+        except Exception:
+            continue
+
+        if regression_root == item_path or regression_root in item_path.parents:
+            item.add_marker(pytest.mark.regression)
+
+
 @pytest.fixture(scope="session")
 def test_parameters():
     """
@@ -112,6 +132,47 @@ def test_data_dir():
 def outputs_dir():
     """Path to test outputs directory."""
     return current_dir / "outputs"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _clean_regression_outputs_once(outputs_dir):
+    """Clean regression outputs once per session.
+
+    The regression suite writes artifacts under tests/regression/outputs/.
+    When running a subset (e.g., `pytest -m regression`), stale artifacts from
+    prior runs can survive and cause schema validation failures (e.g., invalid
+    JSON due to partial/previous writes).
+
+    Cleaning once per session keeps runs deterministic while still leaving the
+    freshly-generated artifacts on disk for inspection.
+    """
+
+    def _clear_dir_contents(path: Path) -> None:
+        path.mkdir(parents=True, exist_ok=True)
+        locked = []
+        for child in path.iterdir():
+            try:
+                if child.is_dir():
+                    shutil.rmtree(child)
+                else:
+                    child.unlink()
+            except PermissionError:
+                locked.append(str(child))
+            except OSError:
+                locked.append(str(child))
+
+        if locked:
+            pytest.fail(
+                "Could not clean regression outputs due to locked files. "
+                "Close any open Excel/JSON files under tests/regression/outputs and rerun. "
+                f"Locked paths: {locked}"
+            )
+
+    outputs_dir.mkdir(parents=True, exist_ok=True)
+    _clear_dir_contents(outputs_dir / "json")
+    _clear_dir_contents(outputs_dir / "excel")
+
+    yield
 
 
 @pytest.fixture(scope="session")

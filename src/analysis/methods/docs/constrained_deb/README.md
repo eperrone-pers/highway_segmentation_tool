@@ -6,6 +6,39 @@ This method is intentionally additive: it provides a second constrained GA varia
 
 ---
 
+## 0. Plain-language overview
+
+This method is for cases where you want segments that:
+
+1. **Fit the data well** (segments should look internally consistent), and
+2. **Have a practical average length** (e.g., “on average, about 1 mile per segment”).
+
+It uses a **genetic algorithm (GA)** to search for a good set of breakpoint milepoints. The “Deb feasibility” part means:
+
+- If a candidate segmentation **meets the average-length requirement**, it is treated as **strictly better** than any candidate that does not.
+- Only after that constraint is satisfied does the GA focus on optimizing data fit.
+
+This is different from the penalty-based constrained GA (`constrained`), where “meeting the length target” is encouraged via a penalty term. Here it is treated as a **hard-ish constraint** using a well-known rule set (Deb’s feasibility rules).
+
+### A quick example
+
+Suppose a 50-mile route and you’d like segments that average **about 1.0 mile**, with a tolerance of **±0.2 miles**.
+
+- Set `target_avg_length = 1.0`
+- Set `length_tolerance = 0.2`
+
+The GA will prefer any segmentation whose *average (non-gap) segment length* falls in $[0.8, 1.2]$ over any segmentation outside that band.
+
+### What you get
+
+You get a single “best” breakpoint set (per route) that:
+
+- Always includes route boundaries and gap boundaries (mandatory breakpoints)
+- Tries to satisfy `min_length`/`max_length`
+- Prioritizes meeting the average length constraint, then improves fit
+
+---
+
 ## 1. Problem formulation
 
 Given a route sampled at positions $x_i$ with measurements $y_i$, the goal is to choose a set of breakpoints that partition the route into contiguous segments.
@@ -36,10 +69,21 @@ Gap analysis defines mandatory breakpoints that are always preserved by genetic 
 
 The authoritative parameter definitions (names, defaults, validation bounds) are in `src/config.py` under `DEB_FEASIBILITY_CONSTRAINED_PARAMETERS`.
 
+### 3.0 How to think about the key parameters
+
+- Use `min_length` / `max_length` to encode **engineering practicality** (“don’t create 0.05-mile segments”, “don’t allow 20-mile segments”).
+- Use `target_avg_length` / `length_tolerance` to encode the **planning preference** for the overall average.
+- Use GA parameters to trade off **runtime vs stability**.
+
 ### 3.1 Segment constraints
 
 - `min_length` (miles): minimum allowed segment length
 - `max_length` (miles): maximum allowed segment length
+
+Notes:
+
+- These apply at the individual-segment level.
+- If you set `min_length` too high relative to your route length (or to the available non-gap mileage), the search space can become very constrained.
 
 ### 3.2 GA parameters
 
@@ -49,10 +93,20 @@ The authoritative parameter definitions (names, defaults, validation bounds) are
 - `mutation_rate`
 - `elite_ratio`
 
+Rules of thumb:
+
+- If results vary too much between runs, increase `population_size` and/or `num_generations`.
+- If runtime is too high, decrease `population_size` first (then `num_generations`).
+
 ### 3.3 Constraint parameters
 
 - `target_avg_length` (miles): desired average segment length
 - `length_tolerance` (miles): acceptable absolute deviation from the target
+
+How these interact:
+
+- A small `length_tolerance` makes the constraint harder to satisfy.
+- If the constraint is unrealistically tight, the GA will still return a result, but it may remain infeasible (see “both infeasible” case in Deb rules below).
 
 ### 3.4 Runtime/caching parameters
 
@@ -129,6 +183,18 @@ This comparison is used for:
 
 ---
 
+## 7.1 What Deb feasibility means in practice
+
+In practice, when you run an analysis you can interpret the GA’s behavior like this:
+
+- Early generations often explore many solutions that violate the average-length target.
+- As soon as the population finds feasible solutions, selection pressure shifts strongly toward keeping feasibility.
+- Within the feasible set, the GA behaves like an ordinary “best fit” GA.
+
+If you see the algorithm “stuck” near-but-not-in tolerance, it’s a sign the constraint band may be too tight for the other constraints (min/max length + mandatory breakpoints + gaps).
+
+---
+
 ## 8. Operators and repair
 
 The method reuses the same breakpoint-based operators as the other GA methods:
@@ -142,7 +208,44 @@ Invalid chromosomes are repaired using `ga._enforce_constraints(...)`.
 
 ---
 
-## 9. Outputs and result structure
+## 9. Tuning and troubleshooting
+
+### Recommended tuning workflow
+
+1. **Set the hard bounds first**
+   - Pick `min_length` and `max_length` based on what your team considers actionable.
+
+2. **Pick a realistic target band**
+   - Start with a tolerance that you expect can be met (e.g., `length_tolerance = 0.2–0.5`).
+   - If you need very tight control (e.g., ±0.05), expect you’ll need more generations and that some datasets may be infeasible.
+
+3. **Stabilize the GA**
+   - If results jump around between runs, increase `population_size` and/or `num_generations`.
+
+### Common symptoms and fixes
+
+- **No/very few feasible solutions (constraint not met)**
+  - Increase `length_tolerance`
+  - Ensure `target_avg_length` is between `min_length` and `max_length`
+  - Increase `population_size` / `num_generations`
+  - Check whether gaps + mandatory breakpoints force segment sizes that make the target band unrealistic
+
+- **Segments are too short / “chattery”**
+  - Increase `min_length`
+  - Consider lowering mutation rate slightly if the population keeps breaking good structures
+
+- **Segments are too long / too few breakpoints**
+  - Decrease `max_length`
+  - Decrease `target_avg_length`
+
+- **Runtime is too slow**
+  - Reduce `population_size`
+  - Reduce `num_generations`
+  - Increase `cache_clear_interval` only if memory is stable and you want fewer cache resets
+
+---
+
+## 10. Outputs and result structure
 
 The method returns an `AnalysisResult` with one solution in `all_solutions`.
 
@@ -154,7 +257,7 @@ The best solution includes (selected highlights):
 - `target_avg_length`, `length_deviation`, `length_tolerance`
 - `constraint_violation`, `is_feasible`
 
-### 9.1 Method-owned segmentation payload
+### 10.1 Method-owned segmentation payload
 
 For export, this method includes a method-owned `segmentation` payload containing:
 
@@ -166,7 +269,7 @@ This avoids requiring the exporter to impose a single global definition.
 
 ---
 
-## 10. Implementation map (source of truth)
+## 11. Implementation map (source of truth)
 
 Key implementation locations:
 
@@ -174,3 +277,14 @@ Key implementation locations:
 - GA engine (fitness, caching, average length): `src/analysis/utils/genetic_algorithm.py`
 - Operators and retry wrappers: `src/analysis/utils/ga_utilities.py`
 - Parameter definitions: `src/config.py`
+
+---
+
+## 12. Relationship to the penalty-based constrained method
+
+If you are choosing between constrained methods:
+
+- Use `constrained_deb` when “meeting the average-length target” should be treated as a **first-class constraint**.
+- Use `constrained` when you prefer a **soft trade-off** between fit and length via a penalty weight.
+
+Both methods share the same breakpoint representation and gap-aware mandatory breakpoints.
