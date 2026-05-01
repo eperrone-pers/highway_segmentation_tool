@@ -693,6 +693,7 @@ Required behavior summary:
 - Must implement `AnalysisMethodBase`.
 - Must expose `method_name` and `method_key`.
 - Must implement `run_analysis(data, route_id, x_column, y_column, gap_threshold, **kwargs)`.
+- Framework runtime passes `data` as a `RouteAnalysis` (with `.route_data`, `.mandatory_breakpoints`, `.gap_segments`, etc.).
 - Must return an `AnalysisResult` with exactly **one primary solution** in `all_solutions`.
 - The primary solution must include `'chromosome'` (sorted breakpoints including start/end).
 
@@ -773,11 +774,11 @@ class <NewMethodClass>(AnalysisMethodBase):
         )
 
         # 3) Normalize/prepare input data
-        # RouteAnalysis-only contract: gap analysis must be performed upstream.
+        # RouteAnalysis-only contract: gap analysis is performed upstream by the framework.
         if not (hasattr(data, "route_data") and hasattr(data, "mandatory_breakpoints")):
             raise TypeError(
                 "Expected RouteAnalysis input (with route_data and mandatory_breakpoints). "
-                "Use analyze_route_gaps(...) to build one from a DataFrame."
+                "The controller provides this automatically; if calling directly, build one via analyze_route_gaps(...)."
             )
 
         route_analysis = data
@@ -855,6 +856,10 @@ Required behavior summary:
   - `return_type="multi_objective"`
   - `objective_plot_configs=[...]` so the Pareto plot knows transforms/labels.
 
+Runtime note:
+
+- The controller passes `data` as a `RouteAnalysis` object. Your method should not perform gap detection itself.
+
 ```python
 """<New Analysis Method> (Multi Objective)
 
@@ -907,23 +912,16 @@ class <NewMethodClass>(AnalysisMethodBase):
         min_length = kwargs.get("min_length", param_defaults.get("min_length"))
         max_length = kwargs.get("max_length", param_defaults.get("max_length"))
 
-        # Normalize/prepare input
-        if hasattr(data, "route_data") and hasattr(data, "mandatory_breakpoints"):
-            route_analysis = data
-            route_df = route_analysis.route_data
-            mandatory_breakpoints = sorted(list(route_analysis.mandatory_breakpoints))
-        else:
-            from data_loader import analyze_route_gaps
-
-            route_analysis = analyze_route_gaps(
-                data,
-                x_column,
-                y_column,
-                route_id=route_id,
-                gap_threshold=gap_threshold,
+        # Normalize/prepare input (RouteAnalysis-only at framework runtime)
+        if not (hasattr(data, "route_data") and hasattr(data, "mandatory_breakpoints")):
+            raise TypeError(
+                "Expected RouteAnalysis input (with route_data and mandatory_breakpoints). "
+                "The controller provides this automatically; if calling directly, build one via analyze_route_gaps(...)."
             )
-            route_df = route_analysis.route_data
-            mandatory_breakpoints = sorted(list(route_analysis.mandatory_breakpoints))
+
+        route_analysis = data
+        route_df = route_analysis.route_data
+        mandatory_breakpoints = sorted(list(route_analysis.mandatory_breakpoints))
 
         x_values = np.asarray(route_df.iloc[:, 0])
         route_start = float(x_values.min())
