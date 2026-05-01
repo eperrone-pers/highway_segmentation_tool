@@ -81,6 +81,23 @@ class ParameterManager:
                 if not ok and msg:
                     errors.append(msg)
 
+                # Column selector parameters: if we know the loaded headers, ensure the selection exists.
+                try:
+                    from config import ColumnSelectParameter
+
+                    if isinstance(param_def, ColumnSelectParameter):
+                        selected = params.get(param_def.name)
+                        selected = "" if selected is None else str(selected).strip()
+
+                        available = getattr(self.app, 'available_columns', None)
+                        if selected and isinstance(available, list) and available and selected not in available:
+                            errors.append(
+                                f"{param_def.display_name} must be a column from the loaded data file"
+                            )
+                except Exception:
+                    # Non-fatal: fall back to method-level validation.
+                    pass
+
             # Cross-field validation for segment length constraints when both exist
             if 'min_length' in params and 'max_length' in params:
                 try:

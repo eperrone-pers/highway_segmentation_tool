@@ -202,6 +202,16 @@ Parameter types available in `src/config.py`:
   - Additional field: `options: List[Tuple[str, Any]]` where each tuple is `(display_text, value)`.
   - Validation behavior:
     - The value must match one of the `value` entries in `options`.
+- `ColumnSelectParameter`
+  - Use when a method needs the user to pick an additional input column (beyond `route`, `x`, and `y`).
+  - Stored value is the selected column *header name* (string), not the data.
+  - UI behavior:
+    - The widget is rendered as a dropdown populated from the currently loaded CSV headers (same source as the X/Y dropdowns).
+    - If the user loads a different file, the available header list changes accordingly.
+  - Validation behavior:
+    - Basic required/non-empty validation is declarative.
+    - When CSV headers are available, the app additionally validates that the selected name exists in the loaded file.
+    - Any deeper validation (numeric vs categorical, missing values, domain rules) should be performed by the method implementation.
 - `BoolParameter`
   - Checkbox-style boolean parameter.
   - Validation behavior:
@@ -209,6 +219,26 @@ Parameter types available in `src/config.py`:
 - `TextParameter`
   - String parameter.
   - Additional fields include `min_length`, `max_length`, `allowed_chars` (regex), `multiline`.
+
+### 3.1.1 Selecting additional columns (beyond X/Y)
+
+Most methods only need `x_column` and `y_column`, but some methods may require additional input columns (e.g., weights, grouping keys, lane counts, classifications).
+
+Recommended pattern:
+
+1. Declare a `ColumnSelectParameter` in your method's parameter list (in `src/config.py`).
+2. The user selects a column header from the loaded CSV.
+3. Your method receives the selected header string via `**kwargs`.
+4. Your method reads the data from the provided `RouteAnalysis.route_data` DataFrame.
+
+Example (conceptual):
+
+- Config parameter name: `weight_column`
+- Method code:
+  - `weight_column = kwargs.get("weight_column")`
+  - `weights = route_analysis.route_data[weight_column]`
+
+This keeps configuration ("which column") separate from data (the DataFrame already passed into the method).
 
 #### `ObjectivePlotConfig` (multi-objective plotting)
 
@@ -663,6 +693,7 @@ Required behavior summary:
 - Must implement `AnalysisMethodBase`.
 - Must expose `method_name` and `method_key`.
 - Must implement `run_analysis(data, route_id, x_column, y_column, gap_threshold, **kwargs)`.
+- Framework runtime passes `data` as a `RouteAnalysis` (with `.route_data`, `.mandatory_breakpoints`, `.gap_segments`, etc.).
 - Must return an `AnalysisResult` with exactly **one primary solution** in `all_solutions`.
 - The primary solution must include `'chromosome'` (sorted breakpoints including start/end).
 
@@ -743,11 +774,11 @@ class <NewMethodClass>(AnalysisMethodBase):
         )
 
         # 3) Normalize/prepare input data
-        # RouteAnalysis-only contract: gap analysis must be performed upstream.
+        # RouteAnalysis-only contract: gap analysis is performed upstream by the framework.
         if not (hasattr(data, "route_data") and hasattr(data, "mandatory_breakpoints")):
             raise TypeError(
                 "Expected RouteAnalysis input (with route_data and mandatory_breakpoints). "
-                "Use analyze_route_gaps(...) to build one from a DataFrame."
+                "The controller provides this automatically; if calling directly, build one via analyze_route_gaps(...)."
             )
 
         route_analysis = data
@@ -825,6 +856,10 @@ Required behavior summary:
   - `return_type="multi_objective"`
   - `objective_plot_configs=[...]` so the Pareto plot knows transforms/labels.
 
+Runtime note:
+
+- The controller passes `data` as a `RouteAnalysis` object. Your method should not perform gap detection itself.
+
 ```python
 """<New Analysis Method> (Multi Objective)
 
@@ -877,23 +912,16 @@ class <NewMethodClass>(AnalysisMethodBase):
         min_length = kwargs.get("min_length", param_defaults.get("min_length"))
         max_length = kwargs.get("max_length", param_defaults.get("max_length"))
 
-        # Normalize/prepare input
-        if hasattr(data, "route_data") and hasattr(data, "mandatory_breakpoints"):
-            route_analysis = data
-            route_df = route_analysis.route_data
-            mandatory_breakpoints = sorted(list(route_analysis.mandatory_breakpoints))
-        else:
-            from data_loader import analyze_route_gaps
-
-            route_analysis = analyze_route_gaps(
-                data,
-                x_column,
-                y_column,
-                route_id=route_id,
-                gap_threshold=gap_threshold,
+        # Normalize/prepare input (RouteAnalysis-only at framework runtime)
+        if not (hasattr(data, "route_data") and hasattr(data, "mandatory_breakpoints")):
+            raise TypeError(
+                "Expected RouteAnalysis input (with route_data and mandatory_breakpoints). "
+                "The controller provides this automatically; if calling directly, build one via analyze_route_gaps(...)."
             )
-            route_df = route_analysis.route_data
-            mandatory_breakpoints = sorted(list(route_analysis.mandatory_breakpoints))
+
+        route_analysis = data
+        route_df = route_analysis.route_data
+        mandatory_breakpoints = sorted(list(route_analysis.mandatory_breakpoints))
 
         x_values = np.asarray(route_df.iloc[:, 0])
         route_start = float(x_values.min())
