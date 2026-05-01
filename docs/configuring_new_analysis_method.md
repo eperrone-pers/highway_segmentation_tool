@@ -202,6 +202,16 @@ Parameter types available in `src/config.py`:
   - Additional field: `options: List[Tuple[str, Any]]` where each tuple is `(display_text, value)`.
   - Validation behavior:
     - The value must match one of the `value` entries in `options`.
+- `ColumnSelectParameter`
+  - Use when a method needs the user to pick an additional input column (beyond `route`, `x`, and `y`).
+  - Stored value is the selected column *header name* (string), not the data.
+  - UI behavior:
+    - The widget is rendered as a dropdown populated from the currently loaded CSV headers (same source as the X/Y dropdowns).
+    - If the user loads a different file, the available header list changes accordingly.
+  - Validation behavior:
+    - Basic required/non-empty validation is declarative.
+    - When CSV headers are available, the app additionally validates that the selected name exists in the loaded file.
+    - Any deeper validation (numeric vs categorical, missing values, domain rules) should be performed by the method implementation.
 - `BoolParameter`
   - Checkbox-style boolean parameter.
   - Validation behavior:
@@ -209,6 +219,26 @@ Parameter types available in `src/config.py`:
 - `TextParameter`
   - String parameter.
   - Additional fields include `min_length`, `max_length`, `allowed_chars` (regex), `multiline`.
+
+### 3.1.1 Selecting additional columns (beyond X/Y)
+
+Most methods only need `x_column` and `y_column`, but some methods may require additional input columns (e.g., weights, grouping keys, lane counts, classifications).
+
+Recommended pattern:
+
+1. Declare a `ColumnSelectParameter` in your method's parameter list (in `src/config.py`).
+2. The user selects a column header from the loaded CSV.
+3. Your method receives the selected header string via `**kwargs`.
+4. Your method reads the data from the provided `RouteAnalysis.route_data` DataFrame.
+
+Example (conceptual):
+
+- Config parameter name: `weight_column`
+- Method code:
+  - `weight_column = kwargs.get("weight_column")`
+  - `weights = route_analysis.route_data[weight_column]`
+
+This keeps configuration ("which column") separate from data (the DataFrame already passed into the method).
 
 #### `ObjectivePlotConfig` (multi-objective plotting)
 

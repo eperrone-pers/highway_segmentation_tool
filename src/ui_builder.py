@@ -364,7 +364,7 @@ class UIBuilder:
         per_method[param_name] = value
 
     def _format_param_value(self, param_def, value) -> str:
-        from config import NumericParameter, OptionalNumericParameter, SelectParameter, BoolParameter
+        from config import NumericParameter, OptionalNumericParameter, SelectParameter, BoolParameter, ColumnSelectParameter
 
         if isinstance(param_def, OptionalNumericParameter) and value is None:
             return param_def.none_text
@@ -375,6 +375,8 @@ class UIBuilder:
                 if v == value:
                     return str(display)
             return str(value)
+        if isinstance(param_def, ColumnSelectParameter):
+            return "" if value is None else str(value)
         if isinstance(param_def, NumericParameter):
             try:
                 if param_def.decimal_places == 0:
@@ -442,7 +444,7 @@ class UIBuilder:
             return
 
         # Bool: toggle immediately
-        from config import BoolParameter, SelectParameter, OptionalNumericParameter
+        from config import BoolParameter, SelectParameter, OptionalNumericParameter, ColumnSelectParameter
         current_value = self._get_dynamic_params_for_method(method_key).get(param_name, param_def.default_value)
         if isinstance(param_def, BoolParameter):
             new_value = not bool(current_value)
@@ -474,6 +476,26 @@ class UIBuilder:
             editor.place(x=x, y=y, width=width, height=height)
             editor.focus_set()
             editor.bind("<<ComboboxSelected>>", lambda _e: self._commit_dynamic_param_cell_edit())
+        elif isinstance(param_def, ColumnSelectParameter):
+            # Prefer dropdown from currently loaded CSV headers.
+            # If headers aren't available yet, fall back to a free-text entry.
+            available_columns = getattr(self.app, 'available_columns', None)
+            if isinstance(available_columns, list) and available_columns:
+                editor = ttk.Combobox(tree, values=available_columns, state="readonly")
+                if current_value is not None and str(current_value) in available_columns:
+                    editor.set(str(current_value))
+                else:
+                    editor.set("")
+                editor.place(x=x, y=y, width=width, height=height)
+                editor.focus_set()
+                editor.bind("<<ComboboxSelected>>", lambda _e: self._commit_dynamic_param_cell_edit())
+            else:
+                editor = ttk.Entry(tree)
+                editor.insert(0, "" if current_value is None else str(current_value))
+                editor.place(x=x, y=y, width=width, height=height)
+                editor.focus_set()
+                editor.selection_range(0, tk.END)
+                editor.bind("<Return>", lambda _e: self._commit_dynamic_param_cell_edit())
         else:
             editor = ttk.Entry(tree)
             if isinstance(param_def, OptionalNumericParameter) and current_value is None:
@@ -543,6 +565,27 @@ class UIBuilder:
                 pass
             return
 
+        # If this is a column selector and headers are available, enforce membership.
+        try:
+            from config import ColumnSelectParameter
+            if isinstance(param_def, ColumnSelectParameter):
+                available_columns = getattr(self.app, 'available_columns', None)
+                if isinstance(available_columns, list) and available_columns:
+                    col_name = ("" if value is None else str(value)).strip()
+                    if col_name and col_name not in available_columns:
+                        messagebox.showerror(
+                            "Parameter Validation Error",
+                            f"{param_def.display_name} must be a column from the loaded data file",
+                        )
+                        try:
+                            widget.focus_set()
+                        except Exception:
+                            pass
+                        return
+        except Exception:
+            # Non-fatal; fall back to method-level validation.
+            pass
+
         self._set_dynamic_param_value(method_key, param_name, value)
         tree.item(param_name, values=(param_def.display_name, self._format_param_value(param_def, value)))
 
@@ -555,7 +598,7 @@ class UIBuilder:
             pass
 
     def _read_inline_editor_value(self, param_def, widget):
-        from config import NumericParameter, OptionalNumericParameter, SelectParameter
+        from config import NumericParameter, OptionalNumericParameter, SelectParameter, ColumnSelectParameter
 
         if isinstance(param_def, SelectParameter):
             display = widget.get()
@@ -563,6 +606,9 @@ class UIBuilder:
                 if str(d) == str(display):
                     return v
             raise ValueError(f"Invalid selection for {param_def.display_name}")
+
+        if isinstance(param_def, ColumnSelectParameter):
+            return widget.get().strip()
 
         text = widget.get().strip()
 

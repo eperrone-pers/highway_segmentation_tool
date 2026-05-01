@@ -32,13 +32,17 @@ Phase: 1.95.1 - Common Analysis Interface Design
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Dict, List, Any, Optional, Callable, Union, Tuple
+from typing import Dict, List, Any, Optional, Callable, Union, Tuple, TYPE_CHECKING, cast
 import pandas as pd
 import time
 from datetime import datetime
 
 # Import configuration functions for dynamic method checking
 from config import is_multi_objective_method
+
+if TYPE_CHECKING:
+    # RouteAnalysis is the unified runtime input passed by the controller.
+    from data_loader import RouteAnalysis
 
 
 @dataclass
@@ -204,13 +208,15 @@ class AnalysisMethodBase(ABC):
         }
     
     @abstractmethod
-    def run_analysis(self, 
-                    data: pd.DataFrame,
-                    x_column: str,
-                    y_column: str,
-                    min_length: float,
-                    max_length: float,
-                    **kwargs) -> AnalysisResult:
+    def run_analysis(
+        self,
+        data: "RouteAnalysis",
+        route_id: str,
+        x_column: str,
+        y_column: str,
+        gap_threshold: float,
+        **kwargs,
+    ) -> AnalysisResult:
         """
         Execute the core optimization analysis.
         
@@ -218,18 +224,18 @@ class AnalysisMethodBase(ABC):
         standardized results. All analysis methods must implement this with
         consistent parameter handling and result formatting.
         
-        Common Parameters (all methods must accept):
-            data: Highway data with milepoint and value columns
-            x_column: Name of milepoint column (typically 'milepoint')
-            y_column: Name of value column (e.g., 'structural_strength_ind')
-            min_length: Minimum allowed segment length in miles  
-            max_length: Maximum allowed segment length in miles
+        Unified Calling Convention (used by the controller in this repo):
+            data: RouteAnalysis object (contains .route_data DataFrame and gap metadata)
+            route_id: Route identifier for this analysis
+            x_column: Name of milepoint/distance column
+            y_column: Name of value/measurement column
+            gap_threshold: Framework-level gap detection threshold (required, > 0)
             
-        Common Optional Parameters (via **kwargs):
-            route_id: Route identifier for multi-route processing
+        Common Method Parameters (via **kwargs):
+            min_length: Minimum allowed segment length (typically required)
+            max_length: Maximum allowed segment length (typically required)
             population_size: GA population size (default method-specific)
-            num_generations: Number of GA generations (default method-specific) 
-            gap_threshold: Auto-breakpoint threshold for data gaps
+            num_generations: Number of GA generations (default method-specific)
             log_callback: Function for progress logging
             stop_callback: Function to check for user stop request
             mutation_rate: GA mutation probability
@@ -353,21 +359,39 @@ class AnalysisMethodBase(ABC):
         Returns:
             dict: Data summary statistics
         """
-        x_values = data[x_column].values
-        y_values = data[y_column].values
+        # Use numeric Series reductions to avoid pandas ExtensionArray typing issues
+        # (and to handle pd.NA safely when present).
+        x_raw = cast(pd.Series, data[x_column])
+        y_raw = cast(pd.Series, data[y_column])
+
+        x_series = cast(pd.Series, pd.to_numeric(x_raw, errors="coerce"))
+        y_series = cast(pd.Series, pd.to_numeric(y_raw, errors="coerce"))
+
+        def _safe_float(value: Any) -> float:
+            try:
+                return float(value) if pd.notna(value) else float("nan")
+            except Exception:
+                return float("nan")
+
+        x_min = x_series.min(skipna=True)
+        x_max = x_series.max(skipna=True)
+        y_mean = y_series.mean(skipna=True)
+        y_std = y_series.std(skipna=True)
+        y_min = y_series.min(skipna=True)
+        y_max = y_series.max(skipna=True)
         
         return {
             'data_points': len(data),
             'milepoint_range': {
-                'start': float(x_values.min()),
-                'end': float(x_values.max()),
-                'span': float(x_values.max() - x_values.min())
+                'start': _safe_float(x_min),
+                'end': _safe_float(x_max),
+                'span': _safe_float(x_max - x_min) if pd.notna(x_min) and pd.notna(x_max) else float("nan"),
             },
             'value_statistics': {
-                'mean': float(y_values.mean()),
-                'std': float(y_values.std()),
-                'min': float(y_values.min()),
-                'max': float(y_values.max())
+                'mean': _safe_float(y_mean),
+                'std': _safe_float(y_std),
+                'min': _safe_float(y_min),
+                'max': _safe_float(y_max),
             },
             'route_id': kwargs.get('route_id', 'single_route'),
             'columns_used': {

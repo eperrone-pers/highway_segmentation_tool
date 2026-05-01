@@ -225,6 +225,57 @@ class SelectParameter(ParameterDefinition):
 
 
 @dataclass
+class ColumnSelectParameter(ParameterDefinition):
+    """Parameter definition for selecting an input data column by header name.
+
+    This parameter stores the selected column *name* (a string). The UI should
+    present a dropdown populated from the currently loaded CSV headers.
+
+    Notes:
+    - This parameter does not store the column's data itself.
+    - Existence/type validation beyond basic string checks is handled at runtime
+      by the UI/controller/method as appropriate.
+    """
+
+    # UI configuration
+    widget_width: int = 25
+
+    def create_widget(self, parent) -> tk.StringVar:
+        """Create widget variable for column selection.
+
+        The concrete dropdown widget is created by the UI builder.
+        """
+        widget_var = tk.StringVar(parent)
+        widget_var.set(str(self.default_value) if self.default_value is not None else "")
+        return widget_var
+
+    def get_widget_value(self, widget: tk.StringVar) -> str:
+        """Get selected column name."""
+        return str(widget.get()).strip()
+
+    def set_widget_value(self, widget: tk.StringVar, value: Any) -> None:
+        """Set selected column name."""
+        widget.set("" if value is None else str(value))
+
+    def validate_value(self, value: Any) -> tuple[bool, str]:
+        """Validate column selection.
+
+        This performs basic validation only (string/non-empty when required).
+        Column existence is validated by the UI (when column headers are known)
+        and/or by the method implementation.
+        """
+        if value is None:
+            return (not self.required), ("" if not self.required else f"{self.display_name} is required")
+
+        col = str(value).strip()
+        if not col:
+            if self.required:
+                return False, f"{self.display_name} is required"
+            return True, ""
+        return True, ""
+
+
+@dataclass
 class BoolParameter(ParameterDefinition):
     """Parameter definition for boolean (checkbox) values."""
     
