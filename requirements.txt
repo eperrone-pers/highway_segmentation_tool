@@ -7,7 +7,10 @@ matplotlib>=3.5.0
 scipy>=1.9.0
 
 # Change point detection (PELT segmentation)
-ruptures>=1.1.10
+# Locked to 1.1.9 because newer ruptures releases require Python <3.14.
+# This keeps the package installable in our current Python 3.14 environment.
+# TODO: revisit this when upgrading Python to 3.15+ or if ruptures adds 3.14 support again.
+ruptures==1.1.9
 
 # Excel export functionality
 openpyxl>=3.0.0
