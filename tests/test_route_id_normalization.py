@@ -69,7 +69,7 @@ def test_numeric_route_ids_match_string_selection(monkeypatch):
         x_column,
         y_column,
         gap_threshold,
-        is_single_route_mode,
+        _is_single_route_mode,
     ):
         assert routes_to_process == ["268296608"]
         return []  # Stop worker early (no heavy analysis)

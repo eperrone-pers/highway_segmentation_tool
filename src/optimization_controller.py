@@ -12,7 +12,6 @@ import os
 import json
 from datetime import datetime
 from tkinter import messagebox
-import traceback
 from config import get_optimization_method, resolve_method_class
 
 

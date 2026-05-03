@@ -46,7 +46,6 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Union
-from dataclasses import asdict
 
 logger = logging.getLogger(__name__)
 

@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
 import pandas as pd
 from analysis.methods.single_objective import SingleObjectiveMethod
-from data_loader import prepare_route_processing, RouteAnalysis
+from data_loader import RouteAnalysis
 
 def test_unified_single_objective_substep14():
     """Test unified single-objective implementation for Sub-step 1.4."""

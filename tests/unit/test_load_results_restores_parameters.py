@@ -93,10 +93,14 @@ def test_load_and_plot_results_restores_method_and_params(tmp_path, monkeypatch)
     results_path.write_text(json.dumps(results), encoding="utf-8")
 
     # Patch the exact module reference used by FileManager
-    monkeypatch.setattr("file_manager.filedialog.askopenfilename", lambda *a, **k: str(results_path))
+    monkeypatch.setattr(
+        "file_manager.filedialog.askopenfilename", lambda *_args, **_kwargs: str(results_path)
+    )
 
     # Avoid actually opening windows
-    monkeypatch.setattr("enhanced_visualization.show_enhanced_visualization", lambda *a, **k: None)
+    monkeypatch.setattr(
+        "enhanced_visualization.show_enhanced_visualization", lambda *_args, **_kwargs: None
+    )
 
     fm = FileManager(app)
     fm.load_and_plot_results()

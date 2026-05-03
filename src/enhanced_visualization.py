@@ -35,13 +35,7 @@ import json
 import os
 from pathlib import Path
 from datetime import datetime
-from matplotlib.ticker import MaxNLocator, MultipleLocator
-import openpyxl
-from openpyxl.utils.dataframe import dataframe_to_rows
-from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
-import openpyxl
-from openpyxl.utils.dataframe import dataframe_to_rows
-from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
+from matplotlib.ticker import MaxNLocator
 
 # Import configuration for axis transforms
 try:
@@ -278,7 +272,7 @@ class EnhancedVisualizationWindow:
         try:
             self._seg_xlim_callback_cid = self.ax_right.callbacks.connect(
                 'xlim_changed',
-                lambda ax: self._update_segmentation_paging_controls(),
+                lambda _ax: self._update_segmentation_paging_controls(),
             )
         except Exception:
             self._seg_xlim_callback_cid = None

@@ -26,7 +26,6 @@ if src_path not in sys.path:
 try:
     from file_manager import FileManager
     from parameter_manager import ParameterManager
-    from route_filter_dialog import RouteFilterDialog
 except ImportError as e:
     raise ImportError(f"Could not import required modules from src/. Original error: {e}")
 
