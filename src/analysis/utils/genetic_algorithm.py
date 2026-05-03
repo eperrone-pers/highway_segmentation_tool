@@ -1762,6 +1762,8 @@ class HighwaySegmentGA:
             chromosome: The chromosome to validate
             suppress_warnings: If True, don't log mandatory segment violation warnings
         """
+        # TODO: Honor suppress_warnings by gating any mandatory-segment warning logs in this method.
+        # Call sites already pass suppress_warnings=True in hot loops to avoid log spam.
         if len(chromosome) < 2:
             return False
         

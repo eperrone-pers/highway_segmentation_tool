@@ -87,7 +87,9 @@ def test_save_parameters_writes_structured_json(tmp_path, monkeypatch):
     out_file = tmp_path / "params.json"
 
     # Mock dialog + messagebox
-    monkeypatch.setattr("tkinter.filedialog.asksaveasfilename", lambda *a, **k: str(out_file))
+    monkeypatch.setattr(
+        "tkinter.filedialog.asksaveasfilename", lambda *_args, **_kwargs: str(out_file)
+    )
     showinfo = Mock()
     showerror = Mock()
     monkeypatch.setattr("tkinter.messagebox.showinfo", showinfo)
@@ -144,7 +146,9 @@ def test_load_parameters_structured_restores_state(tmp_path, monkeypatch):
     fm.load_csv_columns = Mock()
     fm.set_save_file_path = Mock()
 
-    monkeypatch.setattr("tkinter.filedialog.askopenfilename", lambda *a, **k: str(in_file))
+    monkeypatch.setattr(
+        "tkinter.filedialog.askopenfilename", lambda *_args, **_kwargs: str(in_file)
+    )
     showinfo = Mock()
     showerror = Mock()
     monkeypatch.setattr("tkinter.messagebox.showinfo", showinfo)
@@ -197,7 +201,9 @@ def test_load_parameters_legacy_flat_is_rejected(tmp_path, monkeypatch):
 
     fm = FileManager(app)
 
-    monkeypatch.setattr("tkinter.filedialog.askopenfilename", lambda *a, **k: str(in_file))
+    monkeypatch.setattr(
+        "tkinter.filedialog.askopenfilename", lambda *_args, **_kwargs: str(in_file)
+    )
     showinfo = Mock()
     showerror = Mock()
     monkeypatch.setattr("tkinter.messagebox.showinfo", showinfo)

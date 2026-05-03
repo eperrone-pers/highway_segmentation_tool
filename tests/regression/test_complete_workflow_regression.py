@@ -126,7 +126,6 @@ from data_loader import analyze_route_gaps
 from optimization_controller import OptimizationController 
 from file_manager import FileManager
 from parameter_manager import ParameterManager
-from extensible_results_manager import ExtensibleJsonResultsManager
 from excel_export import HighwaySegmentationExcelExporter
 from config import get_optimization_method
 
@@ -169,7 +168,6 @@ def _get_dataset_config(dataset_key: str) -> Dict[str, Any]:
     return data_confs[dataset_key]
 
 try:
-    import jsonschema
     from jsonschema import validate, ValidationError, Draft202012Validator
     SCHEMA_VALIDATION_AVAILABLE = True
 except ImportError:
@@ -287,7 +285,7 @@ class MockTkinterRoot:
         This mock provides identical interface while executing callbacks
         immediately for deterministic test behavior.
     """
-    def after(self, delay, callback):
+    def after(self, _delay, callback):
         """Mock after method - just call the callback immediately."""
         callback()
 
@@ -1089,7 +1087,6 @@ class TestSchemaValidation:
     def _check_jsonschema():
         """Check if jsonschema library is available"""
         try:
-            import jsonschema
             from jsonschema import Draft202012Validator
             return True
         except ImportError:
@@ -1148,7 +1145,6 @@ class TestSchemaValidation:
         
         # Schema validation
         if self.has_jsonschema:
-            import jsonschema
             from jsonschema import Draft202012Validator
             
             validator = Draft202012Validator(self.schema)

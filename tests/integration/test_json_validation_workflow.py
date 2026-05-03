@@ -29,7 +29,6 @@ if docs_path not in sys.path:
 
 try:
     from optimization_controller import OptimizationController
-    from extensible_results_manager import ExtensibleJsonResultsManager
     from validate_json_schema import validate_single_file
 except ImportError as e:
     pytest.skip(f"Required modules not available: {e}", allow_module_level=True)

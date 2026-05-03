@@ -45,7 +45,6 @@ Python translation notes:
 """
 
 import numpy as np
-from scipy import interpolate
 from typing import Tuple, List, Optional
 import math
 

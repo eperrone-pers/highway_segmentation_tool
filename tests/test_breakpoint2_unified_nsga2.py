@@ -13,7 +13,7 @@ import numpy as np
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
 from analysis.methods.multi_objective import MultiObjectiveMethod
-from data_loader import prepare_route_processing, filter_data_by_route, RouteAnalysis
+from data_loader import filter_data_by_route, RouteAnalysis
 
 def test_unified_nsga2_breakpoint2():
     """Test unified NSGA-II implementation at Breakpoint 2."""

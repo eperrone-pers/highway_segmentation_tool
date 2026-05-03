@@ -20,7 +20,6 @@ import json
 from typing import Dict, List, Any, Optional, Union
 from datetime import datetime
 from pathlib import Path
-from dataclasses import asdict
 
 class SetEncoder(json.JSONEncoder):
     """Custom JSON encoder that converts sets to lists for serialization."""

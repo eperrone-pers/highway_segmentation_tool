@@ -32,10 +32,10 @@ def _disable_tk_messageboxes(monkeypatch):
     try:
         import tkinter.messagebox as tk_messagebox
 
-        monkeypatch.setattr(tk_messagebox, "askyesno", lambda *args, **kwargs: True)
-        monkeypatch.setattr(tk_messagebox, "showerror", lambda *args, **kwargs: None)
-        monkeypatch.setattr(tk_messagebox, "showwarning", lambda *args, **kwargs: None)
-        monkeypatch.setattr(tk_messagebox, "showinfo", lambda *args, **kwargs: None)
+        monkeypatch.setattr(tk_messagebox, "askyesno", lambda *args, **_kwargs: True)
+        monkeypatch.setattr(tk_messagebox, "showerror", lambda *args, **_kwargs: None)
+        monkeypatch.setattr(tk_messagebox, "showwarning", lambda *args, **_kwargs: None)
+        monkeypatch.setattr(tk_messagebox, "showinfo", lambda *args, **_kwargs: None)
     except Exception:
         # If Tk isn't available in the test environment, just skip patching.
         pass

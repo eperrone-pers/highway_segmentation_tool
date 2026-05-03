@@ -32,7 +32,6 @@ except ImportError:
     can_test_gui = False
 
 from gui_main import HighwaySegmentationGUI
-from ui_builder import UIBuilder
 
 
 @pytest.fixture

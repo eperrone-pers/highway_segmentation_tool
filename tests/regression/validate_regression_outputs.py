@@ -62,7 +62,6 @@ from pathlib import Path
 from typing import List, Dict, Any, Tuple
 
 try:
-    import jsonschema
     from jsonschema import Draft202012Validator, ValidationError
 except ImportError:
     print("ERROR: jsonschema package not installed")
