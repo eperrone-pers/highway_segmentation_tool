@@ -37,6 +37,16 @@ from pathlib import Path
 from datetime import datetime
 from matplotlib.ticker import MaxNLocator
 
+from route_utils import normalize_route_id
+from visualization.utils import safe_print as _safe_print, default_colors
+from visualization.results_binding import (
+    resolve_routes,
+    original_data_path_from_results,
+    find_existing_original_data_file,
+    group_original_data_by_route,
+)
+from visualization.pareto import prepare_pareto_series
+
 # Import configuration for axis transforms
 try:
     from CONFIG import get_optimization_method
@@ -44,27 +54,8 @@ except ImportError:
     from config import get_optimization_method
 
 
-def _safe_print(message: str) -> None:
-    """Print to console without crashing on Windows encoding limitations."""
-    try:
-        print(message)
-    except UnicodeEncodeError:
-        # Fall back to ASCII-safe representation
-        print(message.encode("ascii", errors="backslashreplace").decode("ascii"))
-
 # Pleasant color scheme - updated for better contrast
-COLORS = {
-    'original_data': '#D3D3D3',      # Light gray (better contrast)
-    'original_edge': '#A9A9A9',      # Dark gray edges  
-    'mandatory_bp': '#DC143C',       # Crimson (softer red)
-    'analysis_bp': '#228B22',        # Forest green 
-    'segment_avg': '#0066CC',        # Bolder blue (was dodger blue)
-    'pareto_normal': '#4169E1',      # Royal blue
-    'pareto_selected': '#DC2626',    # Pleasant red (softer than primary)
-    'pareto_border': '#191970',      # Midnight blue
-    'grid': '#E5E5E5',              # Very light gray
-    'text_secondary': '#696969'      # Dim gray
-}
+COLORS = default_colors()
 
 
 class EnhancedVisualizationWindow:
@@ -138,33 +129,14 @@ class EnhancedVisualizationWindow:
         
     def setup_route_data(self):
         """Setup route information from available data."""
-        self.routes = []
-        
-        # Extract routes from JSON results using the ACTUAL schema structure
-        if self.json_results and 'route_results' in self.json_results:
-            for route_result in self.json_results['route_results']:
-                route_id = route_result.get('route_info', {}).get('route_id', 'Unknown')
-                self.routes.append(str(route_id).strip())
-        
-        # Extract routes from original data as backup
-        if not self.routes and self.original_data is not None:
-            # Get route column name from parent app if available
-            route_column = None
-            if hasattr(self.parent_app, 'route_column'):
-                route_column = self.parent_app.route_column.get()
-                if route_column == "None - treat as single route":
-                    route_column = None
-                    
-            # Try to find a route column in the data
-            if route_column and route_column in self.original_data.columns:
-                unique_routes = list(self.original_data[route_column].unique())
-                # Remove NaN values and convert to strings
-                unique_routes = [str(route) for route in unique_routes if str(route) != 'nan']
-                self.routes.extend(unique_routes)
-        
-        # Simple fallback - should rarely be needed if optimization processed correctly
-        if not self.routes:
-            self.routes = ['Unknown Route']
+        # Get route column name from parent app if available
+        route_column = None
+        if hasattr(self.parent_app, 'route_column'):
+            route_column = self.parent_app.route_column.get()
+            if route_column == "None - treat as single route":
+                route_column = None
+
+        self.routes = resolve_routes(self.json_results, self.original_data, route_column)
             
 
         
@@ -370,7 +342,7 @@ class EnhancedVisualizationWindow:
         # Load original data from input file info
         self.load_original_data()
         
-        print("Enhanced visualization interface ready")
+        _safe_print("Enhanced visualization interface ready")
         
     def get_optimization_summary(self):
         """Get summary of optimization results using actual schema structure."""
@@ -396,9 +368,12 @@ class EnhancedVisualizationWindow:
             return
             
         # Get file info from JSON schema
-        input_file_info = self.json_results.get('analysis_metadata', {}).get('input_file_info', {})
-        data_file_path = input_file_info.get('data_file_path')
-        data_file_name = input_file_info.get('data_file_name')
+        data_file_path = original_data_path_from_results(self.json_results)
+        data_file_name = (
+            self.json_results.get('analysis_metadata', {}).get('input_file_info', {}).get('data_file_name')
+            if isinstance(self.json_results.get('analysis_metadata', {}).get('input_file_info', {}), dict)
+            else None
+        )
         
         # Try to find the original data file.
         # Preference: only use the exact stored full path. Do not search for other
@@ -409,11 +384,12 @@ class EnhancedVisualizationWindow:
         # Add absolute path if provided (only path we will attempt)
         if data_file_path:
             search_paths.append(data_file_path)
-        
+
         # Search through all paths until we find the file
         for path in search_paths:
-            if Path(path).exists():
-                file_to_load = path
+            existing = find_existing_original_data_file(path)
+            if existing:
+                file_to_load = existing
                 _safe_print(f"[SUCCESS] Found original data file: {file_to_load}")
                 break
                 
@@ -427,18 +403,11 @@ class EnhancedVisualizationWindow:
                 route_processing = self.json_results.get('input_parameters', {}).get('route_processing', {})
                 route_column = route_processing.get('route_column')
 
-                # Organize data by route (string-based match)
-                if route_column and route_column in self.original_data.columns:
-                    route_series = self.original_data[route_column].astype("string").str.strip()
-                    for route_id in self.routes:
-                        route_id_str = str(route_id).strip()
-                        route_data = self.original_data.loc[route_series == route_id_str].copy()
-                        if not route_data.empty:
-                            self.original_data_by_route[route_id_str] = route_data
-                else:
-                    # Single route data
-                    if self.routes:
-                        self.original_data_by_route[str(self.routes[0]).strip()] = self.original_data.copy()
+                self.original_data_by_route = group_original_data_by_route(
+                    self.original_data,
+                    self.routes,
+                    route_column,
+                )
                         
                 _safe_print(f"[SUCCESS] Loaded original data from {file_to_load}")
                 self.loaded_original_data_path = str(Path(file_to_load).resolve())
@@ -548,24 +517,22 @@ class EnhancedVisualizationWindow:
         try:
             if self._current_seg_x is None or self._current_seg_y is None:
                 return
-            x = np.asarray(self._current_seg_x)
-            y = np.asarray(self._current_seg_y)
-            if not x.size or not y.size:
+            from visualization.autoscale import autoscale_y_limits, visible_y_values_in_x_window
+
+            y_vis = visible_y_values_in_x_window(
+                self._current_seg_x,
+                self._current_seg_y,
+                xmin=xmin,
+                xmax=xmax,
+            )
+            if y_vis is None:
                 return
-            mask = (x >= xmin) & (x <= xmax)
-            if not np.any(mask):
+
+            y_limits = autoscale_y_limits(y_vis, pad_fraction=0.05, min_pad=1.0)
+            if y_limits is None:
                 return
-            y_vis = y[mask]
-            y_min = float(np.nanmin(y_vis))
-            y_max = float(np.nanmax(y_vis))
-            if not (np.isfinite(y_min) and np.isfinite(y_max)):
-                return
-            if y_max < y_min:
-                return
-            pad = (y_max - y_min) * 0.05
-            if pad == 0:
-                pad = 1.0
-            self.ax_right.set_ylim(y_min - pad, y_max + pad)
+
+            self.ax_right.set_ylim(*y_limits)
         except Exception:
             return
 
@@ -574,25 +541,13 @@ class EnhancedVisualizationWindow:
         try:
             if not hasattr(self, 'seg_page_left_button') or not hasattr(self, 'seg_page_right_button'):
                 return
-            if self._seg_default_xlim is None:
-                self.seg_page_left_button.grid_remove()
-                self.seg_page_right_button.grid_remove()
-                return
+            from visualization.zoom_decisions import should_show_segmentation_paging_arrows
 
-            full_xmin, full_xmax = self._seg_default_xlim
-            cur_xmin, cur_xmax = self.ax_right.get_xlim()
-            if cur_xmax < cur_xmin:
-                cur_xmin, cur_xmax = cur_xmax, cur_xmin
-
-            full_span = float(full_xmax) - float(full_xmin)
-            cur_span = float(cur_xmax) - float(cur_xmin)
-            if full_span <= 0 or cur_span <= 0:
-                self.seg_page_left_button.grid_remove()
-                self.seg_page_right_button.grid_remove()
-                return
-
-            # Only show arrows when zoomed in (current window smaller than full route view).
-            if cur_span < (full_span - 1e-9):
+            show = should_show_segmentation_paging_arrows(
+                full_xlim=self._seg_default_xlim,
+                cur_xlim=self.ax_right.get_xlim(),
+            )
+            if show:
                 self.seg_page_left_button.grid()
                 self.seg_page_right_button.grid()
             else:
@@ -607,42 +562,18 @@ class EnhancedVisualizationWindow:
         direction: -1 for left, +1 for right.
         """
         try:
-            if self._seg_default_xlim is None:
-                return
-            full_xmin, full_xmax = self._seg_default_xlim
+            from visualization.zoom_decisions import compute_paged_xlim
 
-            cur_xmin, cur_xmax = self.ax_right.get_xlim()
-            if cur_xmax < cur_xmin:
-                cur_xmin, cur_xmax = cur_xmax, cur_xmin
-
-            span = float(cur_xmax) - float(cur_xmin)
-            full_span = float(full_xmax) - float(full_xmin)
-            if span <= 0 or full_span <= 0:
-                return
-
-            # If not zoomed, nothing to page.
-            if span >= full_span - 1e-9:
+            paged = compute_paged_xlim(
+                full_xlim=self._seg_default_xlim,
+                cur_xlim=self.ax_right.get_xlim(),
+                direction=direction,
+            )
+            if paged is None:
                 self._update_segmentation_paging_controls()
                 return
 
-            step = span if direction >= 0 else -span
-            new_xmin = float(cur_xmin) + step
-            new_xmax = float(cur_xmax) + step
-
-            # Clamp at boundaries, preserving the window length.
-            if new_xmin < float(full_xmin):
-                new_xmin = float(full_xmin)
-                new_xmax = float(full_xmin) + span
-            if new_xmax > float(full_xmax):
-                new_xmax = float(full_xmax)
-                new_xmin = float(full_xmax) - span
-
-            # Final safety: keep within bounds.
-            if new_xmin < float(full_xmin):
-                new_xmin = float(full_xmin)
-            if new_xmax > float(full_xmax):
-                new_xmax = float(full_xmax)
-
+            new_xmin, new_xmax = paged
             self.ax_right.set_xlim(new_xmin, new_xmax)
             self._autoscale_segmentation_y_to_visible(new_xmin, new_xmax)
             self.canvas_right.draw_idle()
@@ -671,7 +602,9 @@ class EnhancedVisualizationWindow:
         
     def update_visualizations(self):
         """Update both visualizations based on selected route and analysis method."""
-        route_id = str(self.route_var.get()).strip()
+        from route_utils import normalize_route_id
+
+        route_id = normalize_route_id(self.route_var.get()) or str(self.route_var.get()).strip()
 
         try:
             # Get route results for this route
@@ -741,7 +674,7 @@ class EnhancedVisualizationWindow:
                         self.main_paned.remove(self.left_frame)
                     except (tk.TclError, ValueError):
                         pass
-                    print(f"[ROUTE {route_id}] Hidden Pareto pane for single-objective (degenerate case)")
+                    _safe_print(f"[ROUTE {route_id}] Hidden Pareto pane for single-objective (degenerate case)")
 
             # Update segmentation graph (RIGHT pane) with selected point
             self.update_segmentation_graph(route_id)
@@ -783,7 +716,9 @@ class EnhancedVisualizationWindow:
         
     def get_current_route_data(self, route_id):
         """Get original data for the specified route from loaded data."""
-        route_key = str(route_id).strip()
+        from route_utils import normalize_route_id
+
+        route_key = normalize_route_id(route_id) or str(route_id).strip()
         if hasattr(self, 'original_data_by_route') and route_key in self.original_data_by_route:
             return self.original_data_by_route[route_key]
         return None
@@ -793,10 +728,14 @@ class EnhancedVisualizationWindow:
         if not self.json_results or 'route_results' not in self.json_results:
             return None
 
-        route_key = str(route_id).strip()
+        from route_utils import normalize_route_id
+
+        route_key = normalize_route_id(route_id) or str(route_id).strip()
         for route_result in self.json_results['route_results']:
             candidate = route_result.get('route_info', {}).get('route_id')
-            if str(candidate).strip() == route_key:
+
+            candidate_key = normalize_route_id(candidate) or str(candidate).strip()
+            if candidate_key == route_key:
                 return route_result
         return None
         
@@ -813,20 +752,10 @@ class EnhancedVisualizationWindow:
             self.ax_left.set_title(f"Pareto Analysis - {route_id} (Single Point)")
             return
             
-        # Extract objective values
-        obj1_values = []
-        obj2_values = []
-        point_ids = []
-        
-        for point in pareto_points:
-            objectives = point.get('objective_values', [])
-            if len(objectives) >= 2:
-                obj1_values.append(objectives[0])
-                obj2_values.append(objectives[1])
-                point_ids.append(point.get('point_id', 0))
-        
+        series = prepare_pareto_series(self.json_results, pareto_points)
+
         # If objective_values are not usable, show a clear message instead of a blank plot.
-        if not obj1_values or not obj2_values:
+        if not series.x_values or not series.y_values:
             self.ax_left.text(
                 0.5,
                 0.5,
@@ -840,93 +769,65 @@ class EnhancedVisualizationWindow:
             self.ax_left.set_title(f"Pareto Analysis - {route_id}")
             return
 
-        # Apply axis transforms based on method configuration
-        if obj1_values and obj2_values:
-            # Get analysis method from JSON (now contains method_key directly)  
-            analysis_method = self.json_results.get('analysis_metadata', {}).get('analysis_method', 'multi')
-            
-            # Get method configuration directly using method_key
-            try:
-                # Get method configuration from config.py
-                method_config = get_optimization_method(analysis_method)
-                plot_configs = getattr(method_config, 'objective_plot_configs', None)
-                
-                # Set default labels that guide user to configuration
-                x_label = 'X-Axis Label (Configure in config.py objective_plot_configs)'
-                y_label = 'Y-Axis Label (Configure in config.py objective_plot_configs)'
-                
-                if plot_configs and len(plot_configs) >= 2:
-                    # Apply transform to X-axis (first objective) if specified
-                    x_config = plot_configs[0]  # X-axis configuration (first in list)
-                    if hasattr(x_config, 'transform') and x_config.transform == 'negate':
-                        obj1_values = [-x for x in obj1_values]
-                        # Debug: Axis transformation (removed verbose logging)
-                        
-                    # Apply transform to Y-axis (second objective) if specified  
-                    y_config = plot_configs[1]  # Y-axis configuration (second in list)
-                    if hasattr(y_config, 'transform') and y_config.transform == 'negate':
-                        obj2_values = [-y for y in obj2_values]
-                        # Debug: Axis transformation (removed verbose logging)
-                        
-                    # Update axis labels from configuration
-                    if hasattr(x_config, 'name'):
-                        x_label = x_config.name
-                    if hasattr(y_config, 'name'):
-                        y_label = y_config.name
-                        
-            except Exception as e:
-                _safe_print(f"[WARN] Could not apply axis transforms from config: {e}")
-                
-            # Clear previous scatter plot references
-            self.pareto_scatter_plots = {}
-            self.point_id_map = {}  # Map from matplotlib artist to point_id for fast picker events
-            
-            # Plot all Pareto points with optimized selection handling
-            for i, (x, y, point_id) in enumerate(zip(obj1_values, obj2_values, point_ids)):
-                is_selected = (self.selected_pareto_point == point_id)
-                
-                color = COLORS['pareto_selected'] if is_selected else COLORS['pareto_normal']
-                size = 100 if is_selected else 50  # Selected point is larger
-                alpha = 0.9 if is_selected else 0.7
-                edge_color = COLORS['pareto_border']
-                edge_width = 2.5 if is_selected else 1.5  # Selected has thicker border
-                
-                scatter = self.ax_left.scatter(x, y, s=size, color=color, alpha=alpha,
-                                             edgecolors=edge_color, linewidth=edge_width,
-                                             picker=5, zorder=6 if is_selected else 5)  # picker=5 means 5 pixel tolerance
-                
-                # Store scatter plot reference and coordinates for fast access
-                self.pareto_scatter_plots[point_id] = {'scatter': scatter, 'x': x, 'y': y}
-                self.point_id_map[scatter] = point_id  # Direct mapping for picker events
-                
-                # No text annotation needed - visual highlighting is sufficient
-            
-            # Set axis labels and title
-            self.ax_left.set_xlabel(x_label)
-            self.ax_left.set_ylabel(y_label)
-            self.ax_left.set_title(f"Pareto Front - {route_id}")
-            
-            # Add grid with proper visibility
-            self.ax_left.grid(True, alpha=0.3, color=COLORS['grid'], linestyle='-', linewidth=0.5)
-            self.ax_left.set_axisbelow(True)  # Grid behind points
-            
-            # Set automatic tick intervals for better readability
-            self.ax_left.xaxis.set_major_locator(MaxNLocator(nbins=8, prune='both'))
-            self.ax_left.yaxis.set_major_locator(MaxNLocator(nbins=8, prune='both'))
-            
-            # Add minor ticks and minor grid for precision
-            self.ax_left.xaxis.set_minor_locator(MaxNLocator(nbins=16))
-            self.ax_left.yaxis.set_minor_locator(MaxNLocator(nbins=16))
-            self.ax_left.grid(True, which='minor', alpha=0.1, color=COLORS['grid'], linestyle='-', linewidth=0.3)
-            
-            # Debug: Pareto points plotted (removed verbose logging)
+        if series.warning:
+            _safe_print(f"[WARN] {series.warning}")
 
-            # Cache default limits (used by Reset Pareto Zoom); overwrite each redraw.
-            try:
-                self._pareto_default_xlim = self.ax_left.get_xlim()
-                self._pareto_default_ylim = self.ax_left.get_ylim()
-            except Exception:
-                pass
+        # Clear previous scatter plot references
+        self.pareto_scatter_plots = {}
+        self.point_id_map = {}  # Map from matplotlib artist to point_id for fast picker events
+
+        # Plot all Pareto points with optimized selection handling
+        for i, (x, y, point_id) in enumerate(zip(series.x_values, series.y_values, series.point_ids)):
+            is_selected = (self.selected_pareto_point == point_id)
+
+            color = COLORS['pareto_selected'] if is_selected else COLORS['pareto_normal']
+            size = 100 if is_selected else 50  # Selected point is larger
+            alpha = 0.9 if is_selected else 0.7
+            edge_color = COLORS['pareto_border']
+            edge_width = 2.5 if is_selected else 1.5  # Selected has thicker border
+
+            scatter = self.ax_left.scatter(
+                x,
+                y,
+                s=size,
+                color=color,
+                alpha=alpha,
+                edgecolors=edge_color,
+                linewidth=edge_width,
+                picker=5,
+                zorder=6 if is_selected else 5,
+            )  # picker=5 means 5 pixel tolerance
+
+            # Store scatter plot reference and coordinates for fast access
+            self.pareto_scatter_plots[point_id] = {'scatter': scatter, 'x': x, 'y': y}
+            self.point_id_map[scatter] = point_id  # Direct mapping for picker events
+
+            # No text annotation needed - visual highlighting is sufficient
+
+        # Set axis labels and title
+        self.ax_left.set_xlabel(series.x_label)
+        self.ax_left.set_ylabel(series.y_label)
+        self.ax_left.set_title(f"Pareto Front - {route_id}")
+
+        # Add grid with proper visibility
+        self.ax_left.grid(True, alpha=0.3, color=COLORS['grid'], linestyle='-', linewidth=0.5)
+        self.ax_left.set_axisbelow(True)  # Grid behind points
+
+        # Set automatic tick intervals for better readability
+        self.ax_left.xaxis.set_major_locator(MaxNLocator(nbins=8, prune='both'))
+        self.ax_left.yaxis.set_major_locator(MaxNLocator(nbins=8, prune='both'))
+
+        # Add minor ticks and minor grid for precision
+        self.ax_left.xaxis.set_minor_locator(MaxNLocator(nbins=16))
+        self.ax_left.yaxis.set_minor_locator(MaxNLocator(nbins=16))
+        self.ax_left.grid(True, which='minor', alpha=0.1, color=COLORS['grid'], linestyle='-', linewidth=0.3)
+
+        # Cache default limits (used by Reset Pareto Zoom); overwrite each redraw.
+        try:
+            self._pareto_default_xlim = self.ax_left.get_xlim()
+            self._pareto_default_ylim = self.ax_left.get_ylim()
+        except Exception:
+            pass
 
             
     def on_pareto_pick(self, event):
@@ -1023,20 +924,9 @@ class EnhancedVisualizationWindow:
         Returns:
             list: Sorted list of (start, end) tuples for efficient interval matching
         """
-        if not gap_segments:
-            return []
-            
-        # Extract and validate gap intervals, sort for potential binary search optimization
-        intervals = []
-        for gap in gap_segments:
-            start = gap.get('start')
-            end = gap.get('end') 
-            
-            # Validate gap data
-            if start is not None and end is not None and start < end:
-                intervals.append((float(start), float(end)))
-            
-        return sorted(intervals)  # Sorted for potential future binary search optimization
+        from visualization.segmentation_data import preprocess_gap_intervals
+
+        return preprocess_gap_intervals(gap_segments)
         
     def _segments_outside_gaps(self, segments, gap_intervals):
         """Efficiently filter segments to exclude those overlapping with gaps.
@@ -1048,28 +938,9 @@ class EnhancedVisualizationWindow:
         Returns:
             list: Segments that don't overlap with any gaps
         """
-        if not gap_intervals:
-            return segments
-            
-        valid_segments = []
-        
-        for seg_start, seg_end in segments:
-            # Fast overlap check against all gaps
-            overlaps = False
-            for gap_start, gap_end in gap_intervals:
-                # Early termination: if gap starts after segment ends, no more overlaps possible
-                if gap_start >= seg_end:
-                    break
-                    
-                # Check overlap: segment overlaps gap if NOT (seg_end <= gap_start OR seg_start >= gap_end)
-                if seg_end > gap_start and seg_start < gap_end:
-                    overlaps = True
-                    break
-                    
-            if not overlaps:
-                valid_segments.append((seg_start, seg_end))
-                
-        return valid_segments
+        from visualization.segmentation_data import segments_outside_gaps
+
+        return segments_outside_gaps(segments, gap_intervals)
         
     def update_segmentation_graph(self, route_id):
         """Update RIGHT pane with segmentation graph for the SELECTED ROUTE only."""
@@ -1078,7 +949,9 @@ class EnhancedVisualizationWindow:
         # Debug: Segmentation update (removed verbose logging)
         
         # Get original data and optimization results for this specific route
-        route_id = str(route_id).strip()
+        from route_utils import normalize_route_id
+
+        route_id = normalize_route_id(route_id) or str(route_id).strip()
         route_data = self.get_current_route_data(route_id)
         route_results = self.get_route_results(route_id)
         
@@ -1101,18 +974,18 @@ class EnhancedVisualizationWindow:
             return
             
         # Find selected point (or use first if none selected)
-        selected_point = None
-        if hasattr(self, 'selected_pareto_point') and self.selected_pareto_point is not None:
-            # Debug: Point selection (removed verbose logging)
-            for point in pareto_points:
-                point_id = point.get('point_id')
-                if point_id == self.selected_pareto_point:
-                    selected_point = point
-                    # Debug: Found matching point (removed verbose logging)
-                    break
-        
+        from visualization.pareto import choose_selected_pareto_point
+
+        selected_point = choose_selected_pareto_point(
+            pareto_points,
+            getattr(self, 'selected_pareto_point', None),
+        )
         if not selected_point:
-            selected_point = pareto_points[0]
+            self.ax_right.text(0.5, 0.5, 'Invalid/incompatible results JSON: empty pareto point list',
+                             transform=self.ax_right.transAxes, ha='center', va='center',
+                             fontsize=12, color=COLORS['mandatory_bp'])
+            self.ax_right.set_title(f"Highway Segmentation - {route_id} (Invalid Results)")
+            return
             
         # Get segmentation data
         segmentation = selected_point.get('segmentation', {})
@@ -1125,86 +998,119 @@ class EnhancedVisualizationWindow:
             self.ax_right.set_title(f"Highway Segmentation - {route_id} (No Breakpoints)")
             return
         
-        # Get column names from JSON schema - these should always be present 
-        route_processing = self.json_results.get('input_parameters', {}).get('route_processing', {})
-        x_col = route_processing.get('x_column')
-        y_col = route_processing.get('y_column')
-        
-        # If missing from route_processing, try backup location in input_file_info
-        if not x_col or not y_col:
-            column_info = self.json_results.get('analysis_metadata', {}).get('input_file_info', {}).get('column_info', {})
-            if not x_col:
-                x_col = column_info.get('x_column')
-            if not y_col:
-                y_col = column_info.get('y_column')
-                
-        # If still missing, this indicates a data integrity problem
-        if not x_col or not y_col:
-            self.app.log_message(f"WARNING: Missing column information in JSON file - x_col={x_col}, y_col={y_col}")
-            self.app.log_message("This may indicate a corrupted or outdated JSON results file")
-            # Use first/second columns as emergency fallback, but log the problem
-            if route_data is not None and not route_data.empty:
-                if not x_col:
-                    x_col = route_data.columns[0] if len(route_data.columns) > 0 else 'x'
-                    self.app.log_message(f"Emergency fallback: Using '{x_col}' as x-column")
-                if not y_col:
-                    y_col = route_data.columns[1] if len(route_data.columns) > 1 else route_data.columns[0]
-                    self.app.log_message(f"Emergency fallback: Using '{y_col}' as y-column")
+        # Resolve column names from results JSON.
+        # Strict mode: if missing, do NOT guess from the dataframe; show a clear warning.
+        from visualization.results_binding import resolve_xy_columns
+
+        xy = resolve_xy_columns(self.json_results)
+        x_col = xy.x_col
+        y_col = xy.y_col
         
         # Get mandatory breakpoints
-        mandatory_breakpoints = set()
-        if 'input_data_analysis' in route_results:
-            mandatory_segments = route_results['input_data_analysis'].get('mandatory_segments', {})
-            mandatory_breakpoints = set(mandatory_segments.get('mandatory_breakpoints', []))
+        from visualization.breakpoints import extract_mandatory_breakpoints
+
+        mandatory_breakpoints = extract_mandatory_breakpoints(route_results)
 
         # Always draw breakpoint lines from JSON when available, even if original points are missing.
         if breakpoints:
-            mandatory_plotted = False
-            analysis_plotted = False
-            for bp in breakpoints:
-                if bp in mandatory_breakpoints:
+            from visualization.breakpoints import compute_breakpoint_line_specs
+
+            specs = compute_breakpoint_line_specs(breakpoints, mandatory_breakpoints)
+            for spec in specs:
+                if spec.kind == 'mandatory':
                     self.ax_right.axvline(
-                        x=bp,
+                        x=spec.x,
                         color=COLORS['mandatory_bp'],
                         linestyle='--',
                         linewidth=1.2,
                         alpha=0.9,
                         zorder=3,
-                        label='Mandatory Breakpoints' if not mandatory_plotted else "",
+                        label=spec.label,
                     )
-                    mandatory_plotted = True
                 else:
                     self.ax_right.axvline(
-                        x=bp,
+                        x=spec.x,
                         color=COLORS['analysis_bp'],
                         linestyle='--',
                         linewidth=0.8,
                         alpha=0.8,
                         zorder=3,
-                        label='Analysis Breakpoints' if not analysis_plotted else "",
+                        label=spec.label,
                     )
-                    analysis_plotted = True
+
+        # If x/y column info is missing, stop here (breakpoints already drawn).
+        if xy.error_message:
+            self.app.log_message(f"WARNING: {xy.error_message}")
+            self.ax_right.text(
+                0.02,
+                0.98,
+                '⚠️ Missing x/y column info in results JSON\nShowing breakpoints only',
+                transform=self.ax_right.transAxes,
+                fontsize=11,
+                verticalalignment='top',
+                color=COLORS['mandatory_bp'],
+                weight='bold',
+            )
+
+            # Keep the view usable by setting x-limits from breakpoints.
+            from visualization.breakpoints import xlim_from_breakpoints
+
+            xlim = xlim_from_breakpoints(breakpoints)
+            if xlim:
+                self.ax_right.set_xlim(*xlim)
+
+            self._current_seg_x = None
+            self._current_seg_y = None
+
+            from visualization.graph_styling import pretty_axis_label
+
+            self.ax_right.set_xlabel(pretty_axis_label(x_col, default='X'))
+            self.ax_right.set_ylabel(pretty_axis_label(y_col, default='Y'))
+            self.ax_right.set_title(f"Highway Segmentation - {route_id}")
+            from visualization.graph_styling import default_segmentation_axis_style
+
+            style = default_segmentation_axis_style()
+            self.ax_right.grid(True, alpha=style.grid_alpha, color=COLORS['grid'], zorder=1)
+
+            self.ax_right.xaxis.set_major_locator(MaxNLocator(nbins=style.major_x_nbins, prune=style.major_x_prune))
+            self.ax_right.yaxis.set_major_locator(MaxNLocator(nbins=style.major_y_nbins, prune=style.major_y_prune))
+            self.ax_right.xaxis.set_minor_locator(MaxNLocator(nbins=style.minor_x_nbins))
+            self.ax_right.yaxis.set_minor_locator(MaxNLocator(nbins=style.minor_y_nbins))
+
+            handles, labels = self.ax_right.get_legend_handles_labels()
+            from visualization.graph_styling import dedupe_legend_entries
+
+            deduped_labels, deduped_handles = dedupe_legend_entries(labels, handles)
+            if deduped_labels:
+                self.ax_right.legend(deduped_handles, deduped_labels, loc='best', framealpha=0.9)
+
+            from visualization.zoom_decisions import should_cache_default_limits
+
+            if should_cache_default_limits(x_zoom_enabled=self._seg_x_zoom_enabled):
+                try:
+                    self._seg_default_xlim = self.ax_right.get_xlim()
+                    self._seg_default_ylim = self.ax_right.get_ylim()
+                except Exception:
+                    pass
+
+            return
         
         # Plot original input data points (Z-order: 2)
-        if route_data is not None and not route_data.empty:
-            # Ensure column names exist
-            if x_col not in route_data.columns:
-                x_col = route_data.columns[0] if len(route_data.columns) > 0 else 'x'
-            if y_col not in route_data.columns:
-                y_col = route_data.columns[1] if len(route_data.columns) > 1 else route_data.columns[0]
+        from visualization.original_data_prep import prepare_numeric_xy_series
 
-            # Convert X/Y to numeric for plotting (original CSV was loaded as strings to preserve IDs)
-            try:
-                route_data[x_col] = pd.to_numeric(route_data[x_col], errors='coerce')
-                route_data[y_col] = pd.to_numeric(route_data[y_col], errors='coerce')
-                route_data = route_data.dropna(subset=[x_col, y_col])
-            except Exception:
-                pass
+        prepared_series = prepare_numeric_xy_series(route_data, x_col=x_col, y_col=y_col)
+        if prepared_series.error_message:
+            self.app.log_message(f"WARNING: {prepared_series.error_message}")
+        
+        # Only plot original points when numeric preparation succeeded.
+        route_data = prepared_series.prepared_df
 
-            if route_data.empty:
-                route_data = None
-
-        if route_data is not None and not route_data.empty:
+        if (
+            route_data is not None
+            and not route_data.empty
+            and prepared_series.x_data is not None
+            and prepared_series.y_data is not None
+        ):
                 
             # Plot with improved contrast colors (light gray for original data)
             self.ax_right.scatter(route_data[x_col], route_data[y_col], 
@@ -1212,8 +1118,8 @@ class EnhancedVisualizationWindow:
                                edgecolors=COLORS['original_edge'], linewidth=0.5,
                                label='Original Data Points', zorder=2)
             
-            x_data = route_data[x_col].values
-            y_data = route_data[y_col].values
+            x_data = prepared_series.x_data
+            y_data = prepared_series.y_data
 
             # Cache current series for X-zoom autoscaling
             self._current_seg_x = x_data
@@ -1222,58 +1128,58 @@ class EnhancedVisualizationWindow:
             # Ensure route endpoints are included in mandatory breakpoints
             route_start = np.min(x_data)
             route_end = np.max(x_data)
-            
-            # Add route endpoints to mandatory breakpoints if not already present
-            if route_start not in mandatory_breakpoints:
-                mandatory_breakpoints.add(route_start)
-            if route_end not in mandatory_breakpoints:
-                mandatory_breakpoints.add(route_end)
-                
-            mandatory_breakpoints = sorted(set(mandatory_breakpoints))
+
+            from visualization.breakpoints import add_endpoints_to_mandatory_breakpoints
+
+            mandatory_breakpoints = add_endpoints_to_mandatory_breakpoints(
+                mandatory_breakpoints,
+                route_start,
+                route_end,
+            )
             
             # Get gap segments from JSON data for this specific route (for display info only)
             route_results = self.get_route_results(route_id)
-            gap_segments = []
-            if route_results and 'input_data_analysis' in route_results:
-                input_analysis = route_results['input_data_analysis']
-                gap_analysis = input_analysis.get('gap_analysis', {})
-                gap_segments = gap_analysis.get('gap_segments', [])
-                total_gaps = gap_analysis.get('total_gaps', 0)
-                if total_gaps > 0:
-                    # Only print gap info once per route to avoid repetition
-                    if not hasattr(self, '_gap_info_shown'):
-                        self._gap_info_shown = set()
-                    if route_id not in self._gap_info_shown:
-                        print(f"[INFO] Route '{route_id}': {total_gaps} data gaps in original data")
-                        self._gap_info_shown.add(route_id)
+            from visualization.gap_analysis_data import extract_gap_analysis, should_show_gap_info_once
+
+            gap_info = extract_gap_analysis(route_results)
+            gap_segments = gap_info.gap_segments
+
+            # Only print gap info once per route to avoid repetition
+            if not hasattr(self, '_gap_info_shown'):
+                self._gap_info_shown = set()
+
+            should_print, updated_shown = should_show_gap_info_once(
+                route_id=str(route_id),
+                total_gaps=gap_info.total_gaps,
+                already_shown_routes=self._gap_info_shown,
+            )
+            self._gap_info_shown = updated_shown
+
+            if should_print:
+                _safe_print(f"[INFO] Route '{route_id}': {gap_info.total_gaps} data gaps in original data")
             
             # Efficiently filter segments to exclude gaps (single-pass processing)
             if breakpoints:
-                sorted_breakpoints = sorted(breakpoints)
-                segments = [(sorted_breakpoints[i], sorted_breakpoints[i + 1])
-                           for i in range(len(sorted_breakpoints) - 1)]
+                from visualization.segmentation_data import compute_segment_average_lines
 
-                # Preprocess gap intervals once for efficient batch filtering
-                gap_intervals = self._preprocess_gap_intervals(gap_segments)
-                valid_segments = self._segments_outside_gaps(segments, gap_intervals)
-
-                segment_avg_plotted = False
-
-                # Draw averages only for valid (non-gap) segments
-                for start_bp, end_bp in valid_segments:
-                    # Get data for this segment and draw average if data exists
-                    segment_mask = (x_data >= start_bp) & (x_data <= end_bp)
-                    if np.any(segment_mask):
-                        segment_y = y_data[segment_mask]
-                        if len(segment_y) > 0:
-                            avg_y = np.mean(segment_y)
-
-                            # Draw horizontal segment average line with bolder blue
-                            self.ax_right.plot([start_bp, end_bp], [avg_y, avg_y],
-                                             color=COLORS['segment_avg'], linewidth=3, alpha=0.9,
-                                                 zorder=4, solid_capstyle='butt',
-                                                 label='Segment Averages' if not segment_avg_plotted else "")
-                            segment_avg_plotted = True
+                avg_lines = compute_segment_average_lines(
+                    x_data=x_data,
+                    y_data=y_data,
+                    breakpoints=breakpoints,
+                    gap_segments=gap_segments,
+                )
+                for line in avg_lines:
+                    # Draw horizontal segment average line with bolder blue
+                    self.ax_right.plot(
+                        [line.start_x, line.end_x],
+                        [line.avg_y, line.avg_y],
+                        color=COLORS['segment_avg'],
+                        linewidth=3,
+                        alpha=0.9,
+                        zorder=4,
+                        solid_capstyle='butt',
+                        label=line.label,
+                    )
                                              
         else:
             # No original points available for this route; still show breakpoints from JSON.
@@ -1290,40 +1196,48 @@ class EnhancedVisualizationWindow:
             )
 
             # If we have breakpoints, set a reasonable x-range to keep the view usable.
-            if breakpoints and len(breakpoints) >= 2:
-                try:
-                    bp_sorted = sorted(breakpoints)
-                    self.ax_right.set_xlim(bp_sorted[0], bp_sorted[-1])
-                except Exception:
-                    pass
+            from visualization.breakpoints import xlim_from_breakpoints
+
+            xlim = xlim_from_breakpoints(breakpoints)
+            if xlim:
+                self.ax_right.set_xlim(*xlim)
 
             # No points available; disable autoscale input but keep current Y as requested.
             self._current_seg_x = None
             self._current_seg_y = None
         
         # Set labels and title with pleasant styling
-        self.ax_right.set_xlabel((x_col or 'x').replace('_', ' ').title())
-        self.ax_right.set_ylabel((y_col or 'y').replace('_', ' ').title())  
+        from visualization.graph_styling import pretty_axis_label
+
+        self.ax_right.set_xlabel(pretty_axis_label(x_col, default='X'))
+        self.ax_right.set_ylabel(pretty_axis_label(y_col, default='Y'))
         self.ax_right.set_title(f"Highway Segmentation - {route_id}")
-        self.ax_right.grid(True, alpha=0.2, color=COLORS['grid'], zorder=1)  # Grid at lowest Z-order
-        
+        from visualization.graph_styling import default_segmentation_axis_style
+
+        style = default_segmentation_axis_style()
+        self.ax_right.grid(True, alpha=style.grid_alpha, color=COLORS['grid'], zorder=1)  # Grid at lowest Z-order
+
         # Set automatic tick intervals for better readability
-        self.ax_right.xaxis.set_major_locator(MaxNLocator(nbins=10, prune='both'))
-        self.ax_right.yaxis.set_major_locator(MaxNLocator(nbins=8, prune='both'))
-        
+        self.ax_right.xaxis.set_major_locator(MaxNLocator(nbins=style.major_x_nbins, prune=style.major_x_prune))
+        self.ax_right.yaxis.set_major_locator(MaxNLocator(nbins=style.major_y_nbins, prune=style.major_y_prune))
+
         # Add minor ticks for precision
-        self.ax_right.xaxis.set_minor_locator(MaxNLocator(nbins=20))
-        self.ax_right.yaxis.set_minor_locator(MaxNLocator(nbins=16))
+        self.ax_right.xaxis.set_minor_locator(MaxNLocator(nbins=style.minor_x_nbins))
+        self.ax_right.yaxis.set_minor_locator(MaxNLocator(nbins=style.minor_y_nbins))
         
         # Add legend (remove duplicates)
         handles, labels = self.ax_right.get_legend_handles_labels()
-        by_label = dict(zip(labels, handles))
-        if by_label:
-            self.ax_right.legend(by_label.values(), by_label.keys(), loc='best', framealpha=0.9)
+        from visualization.graph_styling import dedupe_legend_entries
+
+        deduped_labels, deduped_handles = dedupe_legend_entries(labels, handles)
+        if deduped_labels:
+            self.ax_right.legend(deduped_handles, deduped_labels, loc='best', framealpha=0.9)
 
         # Cache default segmentation limits for reset.
         # Only update defaults when X-zoom is currently OFF (so reset returns to full view).
-        if not self._seg_x_zoom_enabled:
+        from visualization.zoom_decisions import should_cache_default_limits
+
+        if should_cache_default_limits(x_zoom_enabled=self._seg_x_zoom_enabled):
             try:
                 self._seg_default_xlim = self.ax_right.get_xlim()
                 self._seg_default_ylim = self.ax_right.get_ylim()
@@ -1454,7 +1368,7 @@ def show_enhanced_visualization(parent_app, json_results_path=None, json_results
         
         # Load JSON results if path provided
         if json_results_path and Path(json_results_path).exists():
-            print(f"[FILE] Loading results from: {json_results_path}")
+            _safe_print(f"[FILE] Loading results from: {json_results_path}")
             with open(json_results_path, 'r') as f:
                 json_data = json.load(f)
         elif json_results_data:
@@ -1462,7 +1376,7 @@ def show_enhanced_visualization(parent_app, json_results_path=None, json_results
             # Using provided JSON results data
         else:
             json_data = None
-            print("[WARN] No JSON results provided, showing data visualization only")
+            _safe_print("[WARN] No JSON results provided, showing data visualization only")
         
         # Get original data from parent app
         original_data = None

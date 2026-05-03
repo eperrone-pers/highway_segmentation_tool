@@ -9,6 +9,8 @@ import json
 import os
 from typing import Dict, Any
 
+from logger import create_logger
+
 
 class SettingsManager:
     """
@@ -91,7 +93,7 @@ class SettingsManager:
                 return self.default_settings.copy()
                 
         except (json.JSONDecodeError, FileNotFoundError, PermissionError) as e:
-            print(f"Warning: Could not load settings ({e}). Using defaults.")
+            create_logger().log(f"Warning: Could not load settings ({e}). Using defaults.")
             return self.default_settings.copy()
     
     def save_settings(self, settings: Dict[str, Any]) -> bool:
@@ -115,7 +117,7 @@ class SettingsManager:
             return True
             
         except (PermissionError, OSError) as e:
-            print(f"Warning: Could not save settings ({e})")
+            create_logger().log(f"Warning: Could not save settings ({e})")
             return False
     
     def _merge_with_defaults(self, loaded_settings: Dict[str, Any]) -> Dict[str, Any]:

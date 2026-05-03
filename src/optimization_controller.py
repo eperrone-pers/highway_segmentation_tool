@@ -13,19 +13,7 @@ import json
 from datetime import datetime
 from tkinter import messagebox
 from config import get_optimization_method, resolve_method_class
-
-
-def _normalize_route_value(route_value):
-    """Normalize route identifiers to a stable string form for comparisons."""
-    if route_value is None:
-        return None
-    route_str = str(route_value).strip()
-    if not route_str:
-        return None
-    # Handle common missing-value string forms (e.g., from pandas/numpy)
-    if route_str.lower() in {"nan", "none", "null"}:
-        return None
-    return route_str
+from route_utils import normalize_route_id
 
 
 class OptimizationController:
@@ -274,7 +262,7 @@ class OptimizationController:
                     unique_routes = self.app.data.route_data[actual_route_column].unique()
                     normalized_routes = []
                     for route in unique_routes:
-                        route_str = _normalize_route_value(route)
+                        route_str = normalize_route_id(route)
                         if route_str is None:
                             continue
                         # Filter out internal/sentinel route IDs (case-insensitive)
@@ -304,7 +292,7 @@ class OptimizationController:
                     selected_routes = all_routes
 
             # Normalize selected routes to string form to match all_routes
-            selected_routes = [r for r in (_normalize_route_value(r) for r in selected_routes) if r is not None]
+            selected_routes = [r for r in (normalize_route_id(r) for r in selected_routes) if r is not None]
 
             # Filter to only routes that actually exist in the data
             routes_to_process = [route for route in selected_routes if route in all_routes]
@@ -831,11 +819,11 @@ class OptimizationController:
         return self.app.is_running and (self.optimization_thread is not None and self.optimization_thread.is_alive())
     
     def _show_enhanced_multi_route_visualization(self, json_path, all_route_results, method_key):
-        """Show enhanced visualization for multi-route optimization results."""
+        """Show visualization for multi-route optimization results."""
         try:
 
             
-            from enhanced_visualization import show_enhanced_visualization
+            from visualization_ui import show_enhanced_visualization
             
             # Load JSON data if available, otherwise create from route results
             json_data = None
@@ -885,7 +873,7 @@ class OptimizationController:
                     'routes': enhanced_routes
                 }
             
-            # Show enhanced visualization
+            # Show visualization
             viz_window = show_enhanced_visualization(
                 parent_app=self.app,
                 json_results_path=json_path,
@@ -893,14 +881,14 @@ class OptimizationController:
             )
             
             if viz_window:
-                self.app.log_message("[SUCCESS] Enhanced multi-route visualization opened successfully!")
+                self.app.log_message("[SUCCESS] Multi-route visualization opened successfully!")
             else:
-                self.app.log_message("[ERROR] Enhanced multi-route visualization failed to open")
+                self.app.log_message("[ERROR] Multi-route visualization failed to open")
                 
         except ImportError as e:
-            self.app.log_message(f"[ERROR] Error importing enhanced visualization: {str(e)}")
+            self.app.log_message(f"[ERROR] Error importing visualization UI: {str(e)}")
         except Exception as e:
-            self.app.log_message(f"[ERROR] Error showing enhanced multi-route visualization: {str(e)}")
+            self.app.log_message(f"[ERROR] Error showing multi-route visualization: {str(e)}")
 
     def _prepare_multi_route_analyses(self, original_data, route_column, selected_routes, x_column, y_column, gap_threshold=0.5, is_single_route_mode=False):
         """

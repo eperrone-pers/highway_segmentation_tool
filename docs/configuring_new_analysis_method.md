@@ -175,6 +175,12 @@ Each method registered in `OPTIMIZATION_METHODS` is an `OptimizationMethodConfig
 
 #### `ParameterDefinition` and parameter types (method parameters)
 
+Design note (core extensibility principle):
+
+- Parameter definitions are intended to be primarily **declarative** (name, defaults, validation rules, UI grouping).
+- The GUI renders and edits parameters dynamically using `UIBuilder`/`ParameterManager` based on the parameter list.
+- The `config.py` module is kept safe to import in non-GUI contexts (tests/headless) by avoiding importing `tkinter` at import time. Any widget helper methods on parameter definitions perform `tkinter` imports lazily when called.
+
 All method parameters are declared using `ParameterDefinition` subclasses. Common fields across all parameter types:
 
 - `name` (str): Key used in parameter dicts and passed into methods (e.g., `"alpha"`, `"population_size"`).

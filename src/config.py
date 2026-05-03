@@ -8,11 +8,17 @@ Author: Eric (Mott MacDonald)
 Date: March 2026
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
-from typing import Dict, Tuple, Any, List, Optional, Union, Type
+from typing import Dict, Tuple, Any, List, Optional, Union, Type, TYPE_CHECKING
 from abc import ABC, abstractmethod
-import tkinter as tk
 import importlib
+
+from value_parsing import coerce_optional_numeric_text
+
+if TYPE_CHECKING:
+    import tkinter as tk
 
 
 # ===== PARAMETER DEFINITION CLASSES FOR EXTENSIBLE FRAMEWORK =====
@@ -72,6 +78,7 @@ class NumericParameter(ParameterDefinition):
     
     def create_widget(self, parent) -> tk.Entry:
         """Create numeric entry widget."""
+        import tkinter as tk
         widget = tk.Entry(parent, width=self.widget_width)
         self.set_widget_value(widget, self.default_value)
         return widget
@@ -86,6 +93,7 @@ class NumericParameter(ParameterDefinition):
     
     def set_widget_value(self, widget: tk.Entry, value: Union[int, float]) -> None:
         """Set entry widget to numeric value."""
+        import tkinter as tk
         widget.delete(0, tk.END)
         if self.decimal_places == 0:
             widget.insert(0, str(int(value)))
@@ -129,14 +137,15 @@ class OptionalNumericParameter(ParameterDefinition):
     
     def create_widget(self, parent) -> tk.Entry:
         """Create numeric entry widget that supports None values."""
+        import tkinter as tk
         widget = tk.Entry(parent, width=self.widget_width)
         self.set_widget_value(widget, self.default_value)
         return widget
     
     def get_widget_value(self, widget: tk.Entry) -> Union[int, float, None]:
         """Get numeric value from entry widget, supporting None."""
-        text = widget.get().strip()
-        if not text or text.lower() in ('none', '(none)', 'null', ''):
+        text = coerce_optional_numeric_text(widget.get())
+        if text is None:
             return None
         try:
             value = float(text)
@@ -146,6 +155,7 @@ class OptionalNumericParameter(ParameterDefinition):
     
     def set_widget_value(self, widget: tk.Entry, value: Union[int, float, None]) -> None:
         """Set entry widget to numeric value or None."""
+        import tkinter as tk
         widget.delete(0, tk.END)
         if value is None:
             widget.insert(0, self.none_text)
@@ -192,6 +202,7 @@ class SelectParameter(ParameterDefinition):
     
     def create_widget(self, parent) -> tk.StringVar:
         """Create combobox/dropdown widget."""
+        import tkinter as tk
         # Note: This returns StringVar for now - actual combobox creation handled by UI builder
         widget_var = tk.StringVar(parent)
         # Find default display text
@@ -245,6 +256,7 @@ class ColumnSelectParameter(ParameterDefinition):
 
         The concrete dropdown widget is created by the UI builder.
         """
+        import tkinter as tk
         widget_var = tk.StringVar(parent)
         widget_var.set(str(self.default_value) if self.default_value is not None else "")
         return widget_var
@@ -281,6 +293,7 @@ class BoolParameter(ParameterDefinition):
     
     def create_widget(self, parent) -> tk.BooleanVar:
         """Create checkbox widget variable."""
+        import tkinter as tk
         widget_var = tk.BooleanVar(parent)
         widget_var.set(self.default_value)
         return widget_var
@@ -315,6 +328,7 @@ class TextParameter(ParameterDefinition):
     
     def create_widget(self, parent) -> Union[tk.Entry, tk.Text]:
         """Create text entry widget."""
+        import tkinter as tk
         if self.multiline:
             widget = tk.Text(parent, width=self.widget_width, height=3)
             widget.insert("1.0", str(self.default_value))
@@ -325,6 +339,7 @@ class TextParameter(ParameterDefinition):
     
     def get_widget_value(self, widget: Union[tk.Entry, tk.Text]) -> str:
         """Get text value from widget."""
+        import tkinter as tk
         if isinstance(widget, tk.Text):
             return widget.get("1.0", tk.END).strip()
         else:
@@ -332,6 +347,7 @@ class TextParameter(ParameterDefinition):
     
     def set_widget_value(self, widget: Union[tk.Entry, tk.Text], value: str) -> None:
         """Set widget to text value."""
+        import tkinter as tk
         if isinstance(widget, tk.Text):
             widget.delete("1.0", tk.END)
             widget.insert("1.0", str(value))

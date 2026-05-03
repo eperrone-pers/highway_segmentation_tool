@@ -590,9 +590,9 @@ class FileManager:
                     self.app.log_message(f"❌ {error_msg}")
                 return
 
-            # Launch enhanced visualization with JSON data
+            # Launch visualization with JSON data
             try:
-                from enhanced_visualization import show_enhanced_visualization
+                from visualization_ui import show_enhanced_visualization
                 
                 # Launch visualization - it will handle column extraction internally
                 show_enhanced_visualization(
@@ -602,7 +602,7 @@ class FileManager:
                 
                 # Get method type for logging
                 method_key = json_data.get('analysis_metadata', {}).get('analysis_method', 'unknown')
-                self.app.log_message(f"✅ Enhanced visualization opened for {method_key} results")
+                self.app.log_message(f"✅ Visualization opened for {method_key} results")
                 
             except Exception as e:
                 error_msg = f"Failed to open visualization: {str(e)}"

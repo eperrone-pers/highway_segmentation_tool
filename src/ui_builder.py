@@ -11,6 +11,8 @@ from tkinter import ttk
 import sys
 from tkinter import messagebox
 from config import UIConfig, get_optimization_method_names, get_method_key_from_display_name
+from value_parsing import coerce_optional_numeric_text
+from logger import create_logger
 
 # Create UI config instance
 ui_config = UIConfig()
@@ -610,10 +612,9 @@ class UIBuilder:
         if isinstance(param_def, ColumnSelectParameter):
             return widget.get().strip()
 
-        text = widget.get().strip()
-
         if isinstance(param_def, OptionalNumericParameter):
-            if not text or text.lower() in ("none", "(none)", "null"):
+            text = coerce_optional_numeric_text(widget.get())
+            if text is None:
                 return None
             try:
                 num = float(text)
@@ -624,6 +625,8 @@ class UIBuilder:
                     raise ValueError(f"{param_def.display_name} must be an integer or None")
                 return int(num)
             return round(num, param_def.decimal_places)
+
+        text = widget.get().strip()
 
         if isinstance(param_def, NumericParameter):
             try:
@@ -738,14 +741,14 @@ class UIBuilder:
                             elif hasattr(self.app, 'log_message'):
                                 self.app.log_message(f"Warning: Could not restore parameter '{param_name}': {e}")
                             else:
-                                print(f"Warning: Could not restore {param_name}: {e}")
+                                create_logger().log(f"Warning: Could not restore {param_name}: {e}")
             
         except (ValueError, AttributeError) as e:
             # Handle case where method is not found or dropdown not ready
             if hasattr(self.app, 'handle_error'):
                 self.app.handle_error("Error updating dynamic parameters", e, severity="warning", show_messagebox=False)
             else:
-                print(f"Error updating dynamic parameters: {e}")
+                create_logger().log(f"Warning: Error updating dynamic parameters: {e}")
             # Fallback to first method if current selection fails
             if hasattr(self.app, 'method_dropdown') and self.app.method_dropdown.get():
                 try:
@@ -765,7 +768,7 @@ class UIBuilder:
                     elif hasattr(self.app, 'log_message'):
                         self.app.log_message(f"Warning: Could not fall back to first method: {e}")
                     else:
-                        print(f"Warning: Could not fall back to first method: {e}")
+                        create_logger().log(f"Warning: Could not fall back to first method: {e}")
     
     def _toggle_parameter_sections(self, required_sections):
         """Show/hide parameter sections based on required sections list."""
@@ -970,7 +973,17 @@ class UIBuilder:
             return groups
             
         except (ValueError, AttributeError) as e:
-            print(f"Error getting parameter groups for method {method_key}: {e}")
+            if hasattr(self.app, 'handle_error'):
+                self.app.handle_error(
+                    f"Error getting parameter groups for method '{method_key}'",
+                    e,
+                    severity="warning",
+                    show_messagebox=False,
+                )
+            elif hasattr(self.app, 'log_message'):
+                self.app.log_message(f"Warning: Error getting parameter groups for method {method_key}: {e}")
+            else:
+                create_logger().log(f"Warning: Error getting parameter groups for method {method_key}: {e}")
             return {}
     
     def create_dynamic_parameter_widgets(self, parent, method_key: str):
