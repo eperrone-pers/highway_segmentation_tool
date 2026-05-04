@@ -18,13 +18,11 @@ Phase: 1.95.4 - Multi-Objective Method Extraction
 
 import time
 import random
-from typing import Any, Dict, List, Optional, Callable, Tuple, Union
-import numpy as np
+from typing import Any
 
 from ..base import AnalysisMethodBase, AnalysisResult 
 from ..utils.ga_utilities import (
-    nsga2_tournament_selection, fast_non_dominated_sort, calculate_crowding_distance,
-    crossover_with_retries, mutation_with_retries, analyze_population_diversity
+    nsga2_tournament_selection, crossover_with_retries, mutation_with_retries, analyze_population_diversity
 )
 from ..utils.segment_metrics import average_length_excluding_gap_segments
 
@@ -139,7 +137,7 @@ class MultiObjectiveMethod(AnalysisMethodBase):
         log = logger.log
         
         log("Initializing NSGA-II multi-objective optimization...")
-        log(f"Objectives: Minimize deviation (data fit) vs. Maximize average segment length")
+        log("Objectives: Minimize deviation (data fit) vs. Maximize average segment length")
         log(f"Parameters: {population_size} individuals, {num_generations} generations")
         
         # Initialize genetic algorithm (RouteAnalysis-only contract)

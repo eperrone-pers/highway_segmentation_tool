@@ -43,7 +43,6 @@ Date: April 2026
 import json
 import logging
 from abc import ABC, abstractmethod
-from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Union
 
@@ -652,7 +651,7 @@ class ExtensibleJsonResultsManager:
         """
         
         # Import config system to detect multi-objective methods dynamically  
-        from config import get_optimization_method, is_multi_objective_method
+        from config import is_multi_objective_method
         
         # Check if this is a multi-objective method using dynamic config lookup
         is_multi_obj = is_multi_objective_method(result.method_key)

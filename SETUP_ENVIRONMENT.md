@@ -18,11 +18,11 @@ source .venv/bin/activate
 ### 2. Install Dependencies
 
 ```bash
-# Install all requirements
+# Install runtime + test requirements
 pip install -r requirements.txt
 
-# Or install with development dependencies
-pip install -e .
+# Optional: install development-only tools (linting/formatting)
+pip install -r requirements-dev.txt
 ```
 
 ### 3. Verify Installation

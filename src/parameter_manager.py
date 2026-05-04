@@ -5,7 +5,6 @@ This module handles parameter validation, state management, and UI updates
 related to optimization parameters, separating this logic from the main GUI class.
 """
 
-import os
 import tkinter as tk
 from tkinter import messagebox
 from config import AlgorithmConstants, ConstrainedOptimizationConfig, get_method_key_from_display_name, get_optimization_method

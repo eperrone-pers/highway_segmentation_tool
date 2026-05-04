@@ -30,8 +30,6 @@ Version: 1.95.0 (Phase 1.95 Analysis Method Extraction)
 import time
 import random
 import numpy as np
-from datetime import datetime
-from typing import Dict, Any, List, Optional, Callable
 
 # Import base interface and utilities
 from ..base import AnalysisMethodBase, AnalysisResult
@@ -141,10 +139,9 @@ class ConstrainedMethod(AnalysisMethodBase):
         penalty_weight = parameters['penalty_weight']
         length_tolerance = parameters['length_tolerance']
         cache_clear_interval = int(parameters['cache_clear_interval'])
-        enable_performance_stats = parameters['enable_performance_stats']
         # Segment caching always enabled for performance
         
-        log(f"Initializing constrained single-objective GA...")
+        log("Initializing constrained single-objective GA...")
         log(f"Target: {target_avg_length:.2f} mile average segments (±{length_tolerance:.2f} tolerance)")
         log(f"Parameters: {population_size} individuals, {num_generations} generations")
         
@@ -186,7 +183,7 @@ class ConstrainedMethod(AnalysisMethodBase):
         log(f"[OK] Generated {len(population)} valid chromosomes")
         
         # ===== EVOLUTION LOOP =====
-        log(f"\\nStarting constrained evolution...")
+        log("\\nStarting constrained evolution...")
         log("Progress: [" + "-" * 50 + "]")
         
         best_fitness_history = []
@@ -466,7 +463,7 @@ class ConstrainedMethod(AnalysisMethodBase):
                 else:
                     required_regular_avg = target_avg_length
                 
-                log(f"Gap-aware calculation:")
+                log("Gap-aware calculation:")
                 log(f"  Mandatory segments: {num_mandatory_segments} covering {mandatory_total_distance:.2f} miles")
                 log(f"  Remaining distance: {remaining_distance:.2f} miles for regular segments")
                 log(f"  Target regular segments: {target_regular_segments}")
@@ -478,7 +475,7 @@ class ConstrainedMethod(AnalysisMethodBase):
                     log(f"           Target {target_avg_length:.2f} may be unrealistic with current gap pattern")
                 elif required_regular_avg < min_length * 1.1:
                     log(f"  WARNING: Required regular segment avg ({required_regular_avg:.2f}) is near min_length ({min_length:.2f})")
-                    log(f"           Consider lower target length")
+                    log("           Consider lower target length")
             else:
                 target_segments = num_mandatory_segments
                 log(f"  All distance covered by mandatory segments: {num_mandatory_segments} segments")

@@ -25,7 +25,7 @@ from typing import List, Tuple, Dict, Any, Optional
 import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
-from config import get_optimization_method, optimization_config
+from config import optimization_config
 
 
 def tournament_selection(population: List[List[float]], 
@@ -369,7 +369,6 @@ def mutation_with_retries(chromosome: List[float], x_data: List[float],
             if not removable:
                 return chrom
             i = random.choice(removable)
-            bp = chrom[i]
             new_chrom = chrom[:i] + chrom[i + 1 :]
             return new_chrom
 

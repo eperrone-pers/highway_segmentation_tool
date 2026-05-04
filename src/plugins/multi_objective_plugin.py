@@ -31,7 +31,6 @@ Date: April 2026
 """
 
 from typing import Dict, List, Any
-import math
 
 try:
     from extensible_results_manager import AnalysisMethodPlugin

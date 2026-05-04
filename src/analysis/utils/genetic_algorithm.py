@@ -272,7 +272,7 @@ class HighwaySegmentGA:
         self.mandatory_breakpoints = self.route_analysis.mandatory_breakpoints.copy()
         
         # Log results using pre-computed analysis
-        print(f"[INFO] Using pre-computed gap analysis:")
+        print("[INFO] Using pre-computed gap analysis:")
         print(f"  - Route: {self.route_analysis.route_stats['route_start']:.3f} to {self.route_analysis.route_stats['route_end']:.3f} miles")
         print(f"  - Total gaps detected: {len(self.route_analysis.gap_segments)}")
         print(f"  - Gap coverage: {self.route_analysis.route_stats['gap_total_length']:.3f} miles ({self.route_analysis.route_stats['gap_total_length']/self.route_analysis.route_stats['total_length']*100:.1f}%)")
@@ -1104,9 +1104,9 @@ class HighwaySegmentGA:
             # Build index mapping when first enabled
             self._build_x_value_index_map()
             print(f"[HYBRID CACHE] Segment-level caching enabled - built index map for {len(self.sorted_x_data)} points")
-            print(f"[HYBRID CACHE] Both chromosome and segment caches now active for maximum performance")
+            print("[HYBRID CACHE] Both chromosome and segment caches now active for maximum performance")
         elif not enable:
-            print(f"[HYBRID CACHE] Segment caching disabled - using chromosome-level caching only")
+            print("[HYBRID CACHE] Segment caching disabled - using chromosome-level caching only")
             
         return old_state
     
@@ -1155,28 +1155,15 @@ class HighwaySegmentGA:
             - Segment caches: Can be substantial for complex segmentations
             - Immediate memory reclaim through garbage collection
         """
-        import time
-        start_time = time.time()
-        
         # Clear chromosome level caches - use replacement for faster clearing
-        old_chrom_cache_size = len(self._fitness_cache)
-        old_multi_cache_size = len(self._multi_fitness_cache)
-        
         # Replace dictionaries instead of clearing (much faster for large caches)
         self._fitness_cache = {}
         self._multi_fitness_cache = {}
         
         # Clear segment cache if enabled and show comprehensive stats
         if self.enable_segment_caching:
-            stats = self.get_segment_cache_stats()
-            segment_cache_size = stats['cache_size']
-            hit_rate = stats.get('hit_rate', 0.0)
-            
             self.clear_segment_cache()
-            
-            elapsed = time.time() - start_time
-        else:
-            elapsed = time.time() - start_time
+
     
     def analyze_population_diversity(self, population):
         """Analyze diversity metrics of the current population"""
@@ -1276,13 +1263,7 @@ class HighwaySegmentGA:
             distances[sorted_indices[-1]] = float('inf')  # Worst in this objective
             
             # DEBUG: Log edge assignments for verification
-            if len(front_indices) > 2:  # Only log for non-trivial fronts
-                edge_low_idx = front_indices[sorted_indices[0]]
-                edge_high_idx = front_indices[sorted_indices[-1]]
-                edge_low_fitness = fitness_values[edge_low_idx]
-                edge_high_fitness = fitness_values[edge_high_idx]
-                # Uncomment for detailed edge tracking:
-
+            # Uncomment for detailed edge tracking:
             
             # Calculate distances for middle points
             obj_range = (fitness_values[front_indices[sorted_indices[-1]]][obj_idx] - 
@@ -1461,7 +1442,6 @@ class HighwaySegmentGA:
         elif len(new_population) < population_size:
             # Pad with random selection from combined pool if needed
             combined = population + offspring
-            combined_fits = fitnesses + offspring_fitnesses
             while len(new_population) < population_size:
                 idx = np.random.choice(len(combined))
                 new_population.append(combined[idx])
@@ -1574,9 +1554,8 @@ class HighwaySegmentGA:
         # Calculate percentages and rates
         if stats['total_attempts'] > 0:
             failure_rate = (stats['failed_generations'] / stats['total_attempts']) * 100
-            fallback_rate = (stats['fallback_chromosomes'] / stats['total_attempts']) * 100
         else:
-            failure_rate = fallback_rate = 0
+            failure_rate = 0
             
         # Create summary message
         msg = f"[CONSTRAINT STATS] Gen {generation}: {failure_rate:.1f}% generation failures, {stats['crossover_failures']} crossover failures, {stats['fallback_chromosomes']} fallbacks used"

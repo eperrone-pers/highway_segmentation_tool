@@ -17,13 +17,7 @@ import os
 import sys
 import logging
 from datetime import datetime
-import importlib.util
-try:
-    import markdown
-    from markdown.extensions import toc
-    MARKDOWN_AVAILABLE = True
-except ImportError:
-    MARKDOWN_AVAILABLE = False
+from typing import List, Optional
 
 # Import the specialized manager classes
 from ui_builder import UIBuilder
@@ -86,8 +80,8 @@ class HighwaySegmentationGUI:
         # Create results_text widget immediately to enable logging during initialization
         self._create_early_log_widget()
 
-        # Best-effort dependency check: logs missing libraries and install hints.
-        # This is intentionally non-fatal for optional features.
+        # Dependency check: provide a user-friendly error and exit early if
+        # required packages are missing.
         self._log_dependency_status()
         
         # Initialize specialized manager classes (now safe to log during initialization)
@@ -107,46 +101,23 @@ class HighwaySegmentationGUI:
         self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
 
     def _log_dependency_status(self) -> None:
-        """Log availability of optional/required libraries.
+        """Validate required libraries.
 
         Goal: make missing dependencies discoverable at runtime (especially when
         users are running the GUI with a different interpreter than they used to
         install packages).
 
-        This check is intentionally lightweight and should not block startup.
-        If dependencies are missing, the app will log clear messages and show a
-        single consolidated popup with install guidance.
+        If dependencies are missing, the app logs clear messages, shows one
+        consolidated popup with install guidance, then exits startup.
         """
 
-        def is_available(module_name: str) -> bool:
-            return importlib.util.find_spec(module_name) is not None
+        from dependency_check import (
+            missing_dependencies,
+            install_cmd,
+            format_missing_dependencies_message,
+        )
 
-        def log_ok(label: str) -> None:
-            # Intentionally silent when dependencies are present.
-            # Only log missing dependencies to avoid noisy startup logs.
-            return
-
-        missing: list[tuple[str, str, str]] = []
-
-        def require(module_name: str, label: str, pip_package: str) -> None:
-            if is_available(module_name):
-                log_ok(f"{label} ({module_name})")
-            else:
-                missing.append((module_name, label, pip_package))
-
-        def install_cmd(package: str) -> str:
-            # Use the current interpreter explicitly to reduce confusion.
-            return f"Run: {sys.executable} -m pip install {package}"
-
-        # Treat all referenced libraries as required.
-        require("numpy", "Core numeric library", "numpy")
-        require("pandas", "Core dataframe library", "pandas")
-        require("scipy", "Statistical utilities", "scipy")
-        require("matplotlib", "Plotting / visualization", "matplotlib")
-        require("openpyxl", "Excel export", "openpyxl")
-        require("markdown", "Help / documentation rendering", "markdown")
-        require("ruptures", "PELT Segmentation method", "ruptures")
-        require("jsonschema", "JSON schema validation", "jsonschema")
+        missing = missing_dependencies()
 
         # If everything is present, stay silent by default.
         if not missing:
@@ -156,30 +127,38 @@ class HighwaySegmentationGUI:
         self.log_message("=== Dependency Check (Missing Libraries) ===")
         self.log_message(f"Python interpreter: {sys.executable}")
 
-        for module_name, label, pip_package in missing:
+        for dep in missing:
             self.handle_error(
-                f"Missing required dependency: {module_name} ({label}). {install_cmd(pip_package)}",
+                f"Missing required dependency: {dep.module} ({dep.label}). {install_cmd(dep.pip_package)}",
                 severity="critical",
                 show_messagebox=False,
                 silence_console=True,
             )
 
-        lines = [
-            "One or more required Python packages are missing.",
-            "",
-            f"Interpreter in use:\n  {sys.executable}",
-            "",
-            "Missing:",
-        ]
-        for module_name, label, pip_package in missing:
-            lines.append(f"- {module_name}: {label}")
-            lines.append(f"  {install_cmd(pip_package)}")
-        messagebox.showerror("Missing Dependencies", "\n".join(lines))
+        messagebox.showerror(
+            "Missing Dependencies",
+            format_missing_dependencies_message(missing),
+        )
 
         self.log_message("===========================================")
+
+        # Exit startup: these are required for correct operation.
+        try:
+            self.root.destroy()
+        except Exception:
+            pass
+        raise SystemExit(1)
     
     def _initialize_variables(self):
         """Initialize all Tkinter variables and application state."""
+        # Widgets are created by UIBuilder and attached dynamically to this
+        # instance (e.g., self.method_dropdown). Predeclare key ones so static
+        # type checkers can reason about them.
+        self.dynamic_params_parent: Optional[ttk.Frame] = None
+        self.method_dropdown: Optional[ttk.Combobox] = None
+        self.route_info_label: Optional[ttk.Label] = None
+        self.filter_routes_button: Optional[ttk.Button] = None
+
         # Data management
         self.data = None
         self._data_file_path = ""
@@ -260,7 +239,7 @@ class HighwaySegmentationGUI:
         # Note: start/stop buttons now moved to top of right pane
 
         # Dynamic parameters UI: Treeview grid + editor panel
-        if hasattr(self, "dynamic_params_parent"):
+        if self.dynamic_params_parent is not None:
             self.ui_builder.create_dynamic_params_section(self.dynamic_params_parent)
         
         # Build right pane (now includes start/stop buttons at top)
@@ -399,7 +378,7 @@ class HighwaySegmentationGUI:
         """Return currently selected method key, best-effort."""
         try:
             from config import get_method_key_from_display_name
-            if hasattr(self, 'method_dropdown') and hasattr(self.method_dropdown, 'get'):
+            if self.method_dropdown is not None:
                 return get_method_key_from_display_name(self.method_dropdown.get())
         except (ImportError, AttributeError, ValueError, KeyError, TypeError):
             pass
@@ -488,8 +467,9 @@ class HighwaySegmentationGUI:
 
         self.available_routes = []
         self.selected_routes = []
-        self.route_info_label.config(text="")
-        if hasattr(self, 'filter_routes_button'):
+        if self.route_info_label is not None:
+            self.route_info_label.config(text="")
+        if self.filter_routes_button is not None:
             self.filter_routes_button.config(state="disabled")
 
     def _route_column_exists_in_file(self, data_path: str, route_col: str) -> bool:
@@ -522,7 +502,7 @@ class HighwaySegmentationGUI:
                             self.log_message(f"Warning: Could not normalize route column to string: {e}")
                         # Column exists - safe to detect routes
                         self.file_manager.detect_available_routes()
-                        if hasattr(self, 'filter_routes_button'):
+                        if self.filter_routes_button is not None:
                             self.filter_routes_button.config(state="normal")
                     else:
                         # Column doesn't exist - reset quietly without popup
@@ -593,12 +573,15 @@ class HighwaySegmentationGUI:
             # Use simpler error dialog for better macOS compatibility
             try:
                 messagebox.showerror("Dialog Error", error_msg)
-            except:
+            except Exception:
                 # Fallback if messagebox also fails
                 self.log_message(f"Critical error: {error_msg}")
     
     def _update_route_info_display(self):
         """Update the route info label to show selected route count."""
+        if self.route_info_label is None:
+            return
+
         if self.available_routes:
             total_routes = len(self.available_routes)
             selected_count = len(self.selected_routes)
@@ -754,13 +737,20 @@ class HighwaySegmentationGUI:
 
     def _open_markdown_path_in_browser(self, markdown_path: str, title: str):
         """Render a markdown file to HTML and open it in the browser."""
+        try:
+            import importlib
+
+            markdown_module = importlib.import_module("markdown")
+        except Exception:
+            markdown_module = None
+
         open_markdown_path_in_browser(
             root=self.root,
             markdown_path=markdown_path,
             title=title,
             messagebox=messagebox,
-            markdown_available=MARKDOWN_AVAILABLE,
-            markdown_module=globals().get("markdown"),
+            markdown_available=markdown_module is not None,
+            markdown_module=markdown_module,
         )
 
     def _restore_file_paths_from_settings(self) -> None:
@@ -843,7 +833,7 @@ class HighwaySegmentationGUI:
     def _apply_method_selection_to_dropdown(self, opt_settings, method_key: str) -> None:
         """Apply method selection to dropdown and refresh method-specific UI (best-effort)."""
         # Apply method selection to dropdown BEFORE loading parameters
-        if hasattr(self, 'method_dropdown') and hasattr(self.method_dropdown, 'set'):
+        if self.method_dropdown is not None:
             try:
                 # Convert method key to display name
                 from config import get_optimization_method
@@ -939,7 +929,7 @@ class HighwaySegmentationGUI:
         # Auto-scroll to the bottom
         self.results_text.see(tk.END)
     
-    def handle_error(self, error_message: str, exception: Exception = None, 
+    def handle_error(self, error_message: str, exception: Optional[Exception] = None, 
                     severity: str = "error", show_messagebox: bool = False, 
                     silence_console: bool = True) -> None:
         """
@@ -994,7 +984,7 @@ class HighwaySegmentationGUI:
 
     def show_current_parameters(self):
         """Display all current parameter values in the log for user review."""
-        method = self.ui_builder.method_dropdown.get()
+        method = self.method_dropdown.get() if self.method_dropdown is not None else ""
         self.log_message("=== CURRENT PARAMETER VALUES ===")
         self.log_message(f"Optimization Method: {method}")
         self.log_message("")
@@ -1119,9 +1109,7 @@ class HighwaySegmentationGUI:
         # Track only framework/global UI state here.
         # Method-specific optimization parameters are persisted via the dynamic
         # parameter store and the Apply/Reset buttons in the editor.
-        tracked_vars = [
-            self.custom_save_name,
-        ]
+        tracked_vars: List[tk.Variable] = [self.custom_save_name]
         
         # Add column selection variables if they exist
         if hasattr(self, 'x_column'):
@@ -1178,9 +1166,14 @@ class HighwaySegmentationGUI:
                 self.settings['optimization'].pop(k, None)
             
             # Update method selection from dropdown - convert display name to key for settings
-            if hasattr(self.ui_builder, 'method_dropdown'):
+            method_dropdown = getattr(self, "method_dropdown", None)
+            if method_dropdown is None:
+                ui_builder = getattr(self, "ui_builder", None)
+                method_dropdown = getattr(ui_builder, "method_dropdown", None)
+
+            if method_dropdown is not None:
                 from config import get_method_key_from_display_name
-                display_name = self.ui_builder.method_dropdown.get()
+                display_name = method_dropdown.get()
                 try:
                     method_key = get_method_key_from_display_name(display_name)
                 except ValueError:
@@ -1340,7 +1333,7 @@ def main():
         return
 
     # Create and run application
-    app = HighwaySegmentationGUI(root)
+    HighwaySegmentationGUI(root)
     
     try:
         root.mainloop()

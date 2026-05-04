@@ -8,7 +8,7 @@ import os
 import pandas as pd
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, List, Optional, Any, Union
+from typing import Dict, List
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 from openpyxl.utils.dataframe import dataframe_to_rows
@@ -126,7 +126,6 @@ class HighwaySegmentationExcelExporter:
         ])
         
         metadata = self.json_data.get('analysis_metadata', {})
-        input_params = self.json_data.get('input_parameters', {})
         
         row = 2
         
@@ -335,10 +334,10 @@ class HighwaySegmentationExcelExporter:
                     next_length = self._safe_float(breakpoint_info[i+1]['milepoint']) - self._safe_float(bp_info['milepoint'])
                 
                 # Add to worksheet with formatting for gap rows
-                cell_route = ws.cell(row=row, column=1, value=route_id)
+                ws.cell(row=row, column=1, value=route_id)
                 ws.cell(row=row, column=2, value=bp_info['bp_num'])
                 ws.cell(row=row, column=3, value=bp_info['milepoint'])
-                cell_type = ws.cell(row=row, column=4, value=bp_info['type'])
+                ws.cell(row=row, column=4, value=bp_info['type'])
                 ws.cell(row=row, column=5, value=bp_info['gap_length'])
                 ws.cell(row=row, column=6, value=bp_info['reason'])
                 ws.cell(row=row, column=7, value=prev_length)

@@ -311,7 +311,7 @@ def load_highway_data(file_path: str) -> Optional[pd.DataFrame]:
     """
     try:
         return pd.read_csv(file_path)
-    except Exception as exc:
+    except Exception:
         logger.exception("Error loading data from %r", file_path)
         return None
 

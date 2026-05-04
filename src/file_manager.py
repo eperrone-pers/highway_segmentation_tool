@@ -9,6 +9,7 @@ from the main GUI class.
 import os
 import sys
 import json
+import jsonschema
 import pandas as pd
 import tkinter as tk
 from tkinter import filedialog, messagebox
@@ -429,7 +430,7 @@ class FileManager:
                 return
             
             # Perform gap analysis on the cleaned data (combined analysis for route detection)
-            from data_loader import RouteAnalysis, analyze_route_gaps
+            from data_loader import analyze_route_gaps
             effective_gap_threshold = float(self.app.gap_threshold.get())
             if effective_gap_threshold <= 0:
                 raise ValueError(f"gap_threshold must be > 0 (got {effective_gap_threshold})")
@@ -497,10 +498,10 @@ class FileManager:
                 show_error_message(
                     "Column Not Found", 
                     f"Route column '{route_col}' not found in the selected data file.\n\n" +
-                    f"This may happen when switching between different CSV files.\n\n" +
-                    f"Available columns:\n" + "\n".join(f"• {col}" for col in available_columns) +
-                    f"\n\nThe route column has been reset to 'None'. " +
-                    f"Please select a valid route column if you need multi-route processing.",
+                    "This may happen when switching between different CSV files.\n\n" +
+                    "Available columns:\n" + "\n".join(f"• {col}" for col in available_columns) +
+                    "\n\nThe route column has been reset to 'None'. " +
+                    "Please select a valid route column if you need multi-route processing.",
                     self.app.log_message
                 )
                 self.app.available_routes = []
@@ -812,13 +813,6 @@ class FileManager:
             
             if not schema_path.exists():
                 return {'valid': False, 'warnings': ['Schema file not found in src/ directory']}
-            
-            # Import jsonschema if available
-            try:
-                import jsonschema
-                from jsonschema import validate, ValidationError
-            except ImportError:
-                return {'valid': True, 'warnings': ['jsonschema package not installed - validation skipped']}
             
             # Load schema
             with open(schema_path, 'r') as f:
