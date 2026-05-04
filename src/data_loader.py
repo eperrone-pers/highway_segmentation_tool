@@ -3,6 +3,8 @@ from dataclasses import dataclass
 import logging
 from typing import List, Set, Dict, Tuple, Optional
 
+from route_utils import normalize_route_id
+
 logger = logging.getLogger(__name__)
 
 
@@ -293,8 +295,8 @@ def filter_data_by_route(data, route_column, route_value):
 
     # Treat route identifiers as categorical strings regardless of CSV inference.
     # This avoids mismatches like int 268296608 (data) vs "268296608" (UI selection).
-    route_str = "" if route_value is None else str(route_value).strip()
-    if not route_str:
+    route_str = normalize_route_id(route_value)
+    if route_str is None:
         return data.iloc[0:0].copy()
 
     route_series = data[route_column].astype("string").str.strip()

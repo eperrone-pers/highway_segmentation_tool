@@ -58,7 +58,7 @@ The application is split into:
 
 5. **Visualization behavior**
    - Determines whether to show Pareto plots based on the configured `return_type`.
-   - Lives in `src/enhanced_visualization.py`.
+   - Lives in `src/visualization_ui.py`.
 
 6. **Method documentation (optional but recommended)**
      - If you add a per-method README at `src/analysis/methods/docs/{method_key}/README.md`,
@@ -174,6 +174,12 @@ Each method registered in `OPTIMIZATION_METHODS` is an `OptimizationMethodConfig
 - `objective_plot_configs` (optional): The preferred, per-objective plotting configuration for multi-objective methods (see `ObjectivePlotConfig` below).
 
 #### `ParameterDefinition` and parameter types (method parameters)
+
+Design note (core extensibility principle):
+
+- Parameter definitions are intended to be primarily **declarative** (name, defaults, validation rules, UI grouping).
+- The GUI renders and edits parameters dynamically using `UIBuilder`/`ParameterManager` based on the parameter list.
+- The `config.py` module is kept safe to import in non-GUI contexts (tests/headless) by avoiding importing `tkinter` at import time. Any widget helper methods on parameter definitions perform `tkinter` imports lazily when called.
 
 All method parameters are declared using `ParameterDefinition` subclasses. Common fields across all parameter types:
 
@@ -505,7 +511,7 @@ Output contract:
 The enhanced visualization decides whether to show the Pareto panel using the configured method return type:
 
 ```python
-# src/enhanced_visualization.py
+# src/visualization_ui.py
 analysis_method = self.json_results.get('analysis_metadata', {}).get('analysis_method', 'single')
 from config import is_multi_objective_method
 self.is_multi_objective = is_multi_objective_method(analysis_method)

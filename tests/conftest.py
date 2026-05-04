@@ -45,6 +45,8 @@ import sys
 src_dir = Path(__file__).parent.parent / "src"
 sys.path.insert(0, str(src_dir))
 
+from route_utils import ROUTE_COLUMN_NONE_SENTINEL
+
 # Import RouteAnalysis and analyze_route_gaps for creating test fixtures
 from data_loader import RouteAnalysis, analyze_route_gaps
 
@@ -209,7 +211,7 @@ def mock_gui_app():
     mock_app.available_routes = []
     mock_app.selected_routes = []
     mock_app.route_column = Mock()
-    mock_app.route_column.get.return_value = "None - treat as single route"
+    mock_app.route_column.get.return_value = ROUTE_COLUMN_NONE_SENTINEL
     
     # Mock UI route components  
     mock_app._update_route_info_display = Mock()

@@ -13,19 +13,12 @@ import json
 from datetime import datetime
 from tkinter import messagebox
 from config import get_optimization_method, resolve_method_class
-
-
-def _normalize_route_value(route_value):
-    """Normalize route identifiers to a stable string form for comparisons."""
-    if route_value is None:
-        return None
-    route_str = str(route_value).strip()
-    if not route_str:
-        return None
-    # Handle common missing-value string forms (e.g., from pandas/numpy)
-    if route_str.lower() in {"nan", "none", "null"}:
-        return None
-    return route_str
+from route_utils import (
+    INTERNAL_ROUTE_IDS_TO_SKIP_LOWER,
+    ROUTE_COLUMN_NONE_SENTINEL,
+    normalize_route_column_selection,
+    normalize_route_id,
+)
 
 
 class OptimizationController:
@@ -249,16 +242,15 @@ class OptimizationController:
             
             # UNIFIED ROUTE PROCESSING: Always use route-based processing
             # Determine actual route column name (user-selected or created from filename)
-            route_column = self.app.route_column.get() if hasattr(self.app, 'route_column') else None
-            
-            if (route_column and 
-                route_column != "None - treat as single route" and
-                route_column in self.app.data.route_data.columns):
+            route_column_raw = self.app.route_column.get() if hasattr(self.app, 'route_column') else None
+            route_column = normalize_route_column_selection(route_column_raw)
+
+            if route_column and route_column in self.app.data.route_data.columns:
                 # User selected specific route column that exists
                 actual_route_column = route_column
                 is_single_route_mode = False
             else:
-                # Default to single route mode (covers "None - treat as single route" and unselected cases)
+                # Default to single route mode (covers ROUTE_COLUMN_NONE_SENTINEL and unselected cases)
                 actual_route_column = None
                 is_single_route_mode = True
             
@@ -271,14 +263,42 @@ class OptimizationController:
             else:
                 # Multi-route: get unique values from route column
                 if actual_route_column in self.app.data.route_data.columns:
+                    # B1 behavior: exclude rows with missing/invalid route IDs.
+                    # This matters when the user selects a route column after loading.
+                    try:
+                        route_series = self.app.data.route_data[actual_route_column]
+                        normalized_series = route_series.apply(normalize_route_id)
+                        invalid_mask = normalized_series.isna()
+                        invalid_count = int(invalid_mask.sum())
+                        if invalid_count > 0:
+                            self.app.log_message(
+                                f"Route column '{actual_route_column}' contains {invalid_count} record(s) "
+                                "with missing route IDs. "
+                                "Those records will be excluded from multi-route analysis."
+                            )
+
+                        if invalid_count == len(self.app.data.route_data):
+                            raise ValueError(
+                                f"All records in the selected route column '{actual_route_column}' are missing. "
+                                "Choose a different route column, or select 'None - treat as single route'."
+                            )
+
+                        if invalid_count > 0:
+                            filtered = self.app.data.route_data.loc[~invalid_mask].copy()
+                            filtered[actual_route_column] = normalized_series.loc[~invalid_mask].astype("string")
+                            self.app.data.route_data = filtered
+                    except Exception as e:
+                        # If normalization/filtering fails for unexpected reasons, treat as fatal.
+                        raise
+
                     unique_routes = self.app.data.route_data[actual_route_column].unique()
                     normalized_routes = []
                     for route in unique_routes:
-                        route_str = _normalize_route_value(route)
+                        route_str = normalize_route_id(route)
                         if route_str is None:
                             continue
                         # Filter out internal/sentinel route IDs (case-insensitive)
-                        if route_str.lower() in {"default", "_combined_data_"}:
+                        if route_str.lower() in INTERNAL_ROUTE_IDS_TO_SKIP_LOWER:
                             continue
                         normalized_routes.append(route_str)
                     all_routes = sorted(set(normalized_routes))
@@ -304,7 +324,7 @@ class OptimizationController:
                     selected_routes = all_routes
 
             # Normalize selected routes to string form to match all_routes
-            selected_routes = [r for r in (_normalize_route_value(r) for r in selected_routes) if r is not None]
+            selected_routes = [r for r in (normalize_route_id(r) for r in selected_routes) if r is not None]
 
             # Filter to only routes that actually exist in the data
             routes_to_process = [route for route in selected_routes if route in all_routes]
@@ -696,7 +716,7 @@ class OptimizationController:
                     in_memory_columns = []
 
             route_col_requested = actual_route_column
-            if route_col_requested == "None - treat as single route":
+            if route_col_requested == ROUTE_COLUMN_NONE_SENTINEL:
                 route_col_requested = None
 
             if route_col_requested and route_col_requested in in_memory_columns:
@@ -799,13 +819,15 @@ class OptimizationController:
             from data_loader import filter_data_by_route
             
             original_data_by_route = {}
-            route_column = self.app.route_column.get() if hasattr(self.app, 'route_column') else None
+            route_column = normalize_route_column_selection(
+                self.app.route_column.get() if hasattr(self.app, 'route_column') else None
+            )
             
             for result in analysis_results:
                 route_id = result.route_id
                 
                 try:
-                    if route_column and route_column != "None - treat as single route":
+                    if route_column is not None:
                         # Multi-route: filter by route ID
                         route_df = filter_data_by_route(self.app.data.route_data, route_column, route_id)
                     else:
@@ -831,11 +853,11 @@ class OptimizationController:
         return self.app.is_running and (self.optimization_thread is not None and self.optimization_thread.is_alive())
     
     def _show_enhanced_multi_route_visualization(self, json_path, all_route_results, method_key):
-        """Show enhanced visualization for multi-route optimization results."""
+        """Show visualization for multi-route optimization results."""
         try:
 
             
-            from enhanced_visualization import show_enhanced_visualization
+            from visualization_ui import show_enhanced_visualization
             
             # Load JSON data if available, otherwise create from route results
             json_data = None
@@ -885,7 +907,7 @@ class OptimizationController:
                     'routes': enhanced_routes
                 }
             
-            # Show enhanced visualization
+            # Show visualization
             viz_window = show_enhanced_visualization(
                 parent_app=self.app,
                 json_results_path=json_path,
@@ -893,14 +915,14 @@ class OptimizationController:
             )
             
             if viz_window:
-                self.app.log_message("[SUCCESS] Enhanced multi-route visualization opened successfully!")
+                self.app.log_message("[SUCCESS] Multi-route visualization opened successfully!")
             else:
-                self.app.log_message("[ERROR] Enhanced multi-route visualization failed to open")
+                self.app.log_message("[ERROR] Multi-route visualization failed to open")
                 
         except ImportError as e:
-            self.app.log_message(f"[ERROR] Error importing enhanced visualization: {str(e)}")
+            self.app.log_message(f"[ERROR] Error importing visualization UI: {str(e)}")
         except Exception as e:
-            self.app.log_message(f"[ERROR] Error showing enhanced multi-route visualization: {str(e)}")
+            self.app.log_message(f"[ERROR] Error showing multi-route visualization: {str(e)}")
 
     def _prepare_multi_route_analyses(self, original_data, route_column, selected_routes, x_column, y_column, gap_threshold=0.5, is_single_route_mode=False):
         """

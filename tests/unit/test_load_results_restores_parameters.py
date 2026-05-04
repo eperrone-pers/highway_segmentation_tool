@@ -99,7 +99,7 @@ def test_load_and_plot_results_restores_method_and_params(tmp_path, monkeypatch)
 
     # Avoid actually opening windows
     monkeypatch.setattr(
-        "enhanced_visualization.show_enhanced_visualization", lambda *_args, **_kwargs: None
+        "visualization_ui.show_enhanced_visualization", lambda *_args, **_kwargs: None
     )
 
     fm = FileManager(app)

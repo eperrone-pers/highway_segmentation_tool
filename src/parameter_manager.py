@@ -9,6 +9,8 @@ import os
 import tkinter as tk
 from tkinter import messagebox
 from config import AlgorithmConstants, ConstrainedOptimizationConfig, get_method_key_from_display_name, get_optimization_method
+from value_parsing import coerce_none_like
+from logger import create_logger
 
 # Create config instances
 optimization_config = AlgorithmConstants()
@@ -204,7 +206,12 @@ class ParameterManager:
                 if hasattr(self.app.ui_builder, 'refresh_dynamic_params_grid'):
                     self.app.ui_builder.refresh_dynamic_params_grid(self.app.optimization_method)
         except Exception as e:
-            print(f"Error updating method display: {e}")
+            if hasattr(self.app, 'handle_error'):
+                self.app.handle_error("Error updating method display", e, severity="warning", show_messagebox=False)
+            elif hasattr(self.app, 'log_message'):
+                self.app.log_message(f"Warning: Error updating method display: {e}")
+            else:
+                create_logger().log(f"Warning: Error updating method display: {e}")
     
     def _get_selected_method_key(self, strict: bool = False):
         """Get the currently selected method key from the dropdown.
@@ -350,10 +357,7 @@ class ParameterManager:
 
                 value = params.get(name)
                 if isinstance(param_def, OptionalNumericParameter):
-                    if value is None:
-                        value = None
-                    elif isinstance(value, str) and value.strip().lower() in ("", "none", "(none)", "null"):
-                        value = None
+                    value = coerce_none_like(value)
 
                 per_method[name] = value
 

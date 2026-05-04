@@ -14,6 +14,8 @@ import tkinter as tk
 from unittest.mock import Mock, patch, MagicMock
 from pathlib import Path
 
+from route_utils import ROUTE_COLUMN_NONE_SENTINEL
+
 # Add src to path for imports
 current_file_dir = os.path.dirname(__file__)
 tests_dir = os.path.dirname(current_file_dir)  
@@ -71,7 +73,7 @@ def complex_mock_app():
     app.available_routes = []
     app.selected_routes = []
     app.route_column = Mock()
-    app.route_column.get.return_value = "None - treat as single route"  # Fix Mock iteration issue
+    app.route_column.get.return_value = ROUTE_COLUMN_NONE_SENTINEL  # Fix Mock iteration issue
     app.route_column.set = Mock()
     
     # Parameter validation mocks (fix parameter validation comparison errors)
@@ -191,7 +193,7 @@ class TestPhase1CompleteWorkflow:
             # Verify combo box widgets were updated with column values
             complex_mock_app.x_column_combo.__setitem__.assert_called_with('values', expected_columns)
             complex_mock_app.y_column_combo.__setitem__.assert_called_with('values', expected_columns)
-            route_options = ["None - treat as single route"] + expected_columns
+            route_options = [ROUTE_COLUMN_NONE_SENTINEL] + expected_columns
             complex_mock_app.route_column_combo.__setitem__.assert_called_with('values', route_options)
             
             # === PHASE 2: ROUTE COLUMN SELECTION ===
@@ -271,7 +273,7 @@ class TestPhase1CompleteWorkflow:
             file_manager.load_csv_columns()
             
             # Step 2: Select "None - treat as single route"
-            complex_mock_app.route_column.get.return_value = "None - treat as single route"
+            complex_mock_app.route_column.get.return_value = ROUTE_COLUMN_NONE_SENTINEL
             
             # Step 3: Trigger route column change
             mock_event = Mock()
@@ -465,7 +467,7 @@ SR-123,0.5,"""
                 file_manager.detect_available_routes()
                 
                 # Verify consistent results each time
-                expected_routes = ['Default', 'I-75', 'SR-123', 'US-35']  # Including 'Default' for null values
+                expected_routes = ['I-75', 'SR-123', 'US-35']
                 assert complex_mock_app.available_routes == expected_routes
                 
                 expected_columns = ['milepoint', 'route', 'structural_strength_ind']

@@ -38,7 +38,10 @@ Date: April 2026
 
 import os
 import importlib.util
+import logging
 from typing import List, Dict, Any
+
+logger = logging.getLogger(__name__)
 
 def discover_plugins() -> List['AnalysisMethodPlugin']:
     """
@@ -71,7 +74,7 @@ def discover_plugins() -> List['AnalysisMethodPlugin']:
                         plugin_class = module.get_plugin_class()
                         plugin_instance = plugin_class()
                         plugins.append(plugin_instance)
-                        print(f"Discovered plugin: {plugin_class.__name__}")
+                        logger.info("Discovered plugin: %s", plugin_class.__name__)
                         
                     elif hasattr(module, 'PLUGIN_METADATA'):
                         metadata = module.PLUGIN_METADATA
@@ -79,10 +82,10 @@ def discover_plugins() -> List['AnalysisMethodPlugin']:
                             plugin_class = metadata['plugin_class']
                             plugin_instance = plugin_class()
                             plugins.append(plugin_instance)
-                            print(f"Discovered plugin via metadata: {plugin_class.__name__}")
+                            logger.info("Discovered plugin via metadata: %s", plugin_class.__name__)
                             
             except Exception as e:
-                print(f"Warning: Could not load plugin {filename}: {e}")
+                logger.warning("Could not load plugin %s: %s", filename, e)
     
     return plugins
 
@@ -113,7 +116,7 @@ def get_available_plugins() -> Dict[str, Dict[str, Any]]:
                         plugins_info[plugin_name] = module.PLUGIN_METADATA
                         
             except Exception as e:
-                print(f"Warning: Could not read plugin metadata {filename}: {e}")
+                logger.warning("Could not read plugin metadata %s: %s", filename, e)
     
     return plugins_info
 

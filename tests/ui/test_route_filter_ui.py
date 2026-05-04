@@ -22,6 +22,8 @@ from pathlib import Path
 # Add src to path for imports
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
+from route_utils import ROUTE_COLUMN_NONE_SENTINEL
+
 # Try importing tkinter, skip tests if not available
 try:
     import tkinter as tk
@@ -51,7 +53,7 @@ def mock_gui_app():
     
     # Mock tkinter StringVar
     mock_app.route_column = Mock()
-    mock_app.route_column.get = Mock(return_value='None - treat as single route')
+    mock_app.route_column.get = Mock(return_value=ROUTE_COLUMN_NONE_SENTINEL)
     mock_app.route_column.set = Mock()
     
     # Mock file manager
@@ -114,13 +116,13 @@ class TestRouteFilterUIMock:
     def test_route_column_state_logic(self, mock_gui_app):
         """Test route column selection logic without GUI."""
         # Test single route mode
-        route_column_value = "None - treat as single route"
-        should_enable_button = route_column_value != "None - treat as single route"
+        route_column_value = ROUTE_COLUMN_NONE_SENTINEL
+        should_enable_button = route_column_value != ROUTE_COLUMN_NONE_SENTINEL
         assert should_enable_button == False
         
         # Test multi-route mode
         route_column_value = "RDB"
-        should_enable_button = route_column_value != "None - treat as single route"
+        should_enable_button = route_column_value != ROUTE_COLUMN_NONE_SENTINEL
         assert should_enable_button == True
 
     def test_dialog_preconditions_logic(self, mock_gui_app):
@@ -134,10 +136,10 @@ class TestRouteFilterUIMock:
         
         # Test no route column
         data_file_path = "/some/path"
-        route_column = "None - treat as single route" 
+        route_column = ROUTE_COLUMN_NONE_SENTINEL
         available_routes = []
         
-        should_show_warning = len(available_routes) == 0 or route_column == "None - treat as single route"
+        should_show_warning = len(available_routes) == 0 or route_column == ROUTE_COLUMN_NONE_SENTINEL
         assert should_show_warning == True
         
         # Test valid conditions
@@ -145,7 +147,7 @@ class TestRouteFilterUIMock:
         route_column = "RDB"
         available_routes = ["Route1", "Route2"] 
         
-        should_show_warning = len(available_routes) == 0 or route_column == "None - treat as single route"
+        should_show_warning = len(available_routes) == 0 or route_column == ROUTE_COLUMN_NONE_SENTINEL
         assert should_show_warning == False
 
 
@@ -286,7 +288,7 @@ class TestRouteFilterUIReal:
         gui_app.filter_routes_button.config(state='normal')
         
         # Set route column to "None"
-        gui_app.route_column.set("None - treat as single route")
+        gui_app.route_column.set(ROUTE_COLUMN_NONE_SENTINEL)
         gui_app.on_route_column_change()
         
         # Check that button is disabled
@@ -300,7 +302,7 @@ class TestRouteFilterUIReal:
         gui_app.selected_routes = ['Route1']
         
         # Switch to single route mode
-        gui_app.route_column.set("None - treat as single route")
+        gui_app.route_column.set(ROUTE_COLUMN_NONE_SENTINEL)
         gui_app.on_route_column_change()
         
         # Check that data is cleared
@@ -363,7 +365,7 @@ class TestRouteFilterUIReal:
         
         # Mock file manager to return a data file but no route column
         with patch.object(gui_app.file_manager, 'get_data_file_path', return_value='/some/path'):
-            gui_app.route_column.set("None - treat as single route")
+            gui_app.route_column.set(ROUTE_COLUMN_NONE_SENTINEL)
             gui_app.open_route_filter_dialog()
             
             # Verify warning was shown
@@ -467,7 +469,7 @@ class TestRouteFilterIntegration:
             assert "3 of 3 selected" in info_text, f"Should show route selection info, got '{info_text}'"
             
             # Switch back to single-route mode
-            app.route_column.set("None - treat as single route")
+            app.route_column.set(ROUTE_COLUMN_NONE_SENTINEL)
             app.on_route_column_change()
             
             # Verify return to single-route mode

@@ -13,6 +13,12 @@ import pandas as pd
 import tkinter as tk
 from tkinter import filedialog, messagebox
 from config import UIConfig
+from route_utils import (
+    INTERNAL_ROUTE_IDS_TO_SKIP_LOWER,
+    ROUTE_COLUMN_NONE_SENTINEL,
+    normalize_route_column_selection,
+    normalize_route_id,
+)
 
 # Create UI config instance
 ui_config = UIConfig()
@@ -203,7 +209,7 @@ class FileManager:
             
             # Reset route column selection to default when loading new file
             if hasattr(self.app, 'route_column'):
-                self.app.route_column.set("None - treat as single route")
+                self.app.route_column.set(ROUTE_COLUMN_NONE_SENTINEL)
             
             # Reset optimization controller state to prevent stale data issues
             if hasattr(self.app, 'optimization_controller'):
@@ -228,7 +234,7 @@ class FileManager:
                     self.app.log_message(f"Cleared Y column selection (was '{current_y}', not in new file)")
             if hasattr(self.app, 'route_column_combo'):
                 # Add "None" option at the beginning for route column
-                route_options = ["None - treat as single route"] + columns
+                route_options = [ROUTE_COLUMN_NONE_SENTINEL] + columns
                 self.app.route_column_combo['values'] = route_options
                 self.app.log_message(f"Updated route column combo with {len(route_options)} options: {route_options}")
                 
@@ -236,11 +242,11 @@ class FileManager:
                 current_route_col = self.app.route_column.get()
                 if current_route_col and current_route_col not in route_options:
                     # Current selection is no longer valid - reset to "None"
-                    self.app.route_column.set("None - treat as single route")
+                    self.app.route_column.set(ROUTE_COLUMN_NONE_SENTINEL)
                     self.app.log_message(f"Reset route column selection: '{current_route_col}' not found in new file")
-                elif not current_route_col or "None" not in current_route_col:
-                    # Reset to "None" if currently showing placeholder or empty
-                    self.app.route_column.set("None - treat as single route")
+                elif normalize_route_column_selection(current_route_col) is None:
+                    # Reset to "None" if currently showing placeholder/sentinel or empty
+                    self.app.route_column.set(ROUTE_COLUMN_NONE_SENTINEL)
             else:
                 self.app.log_message("Warning: route_column_combo widget not found!")
             
@@ -251,8 +257,7 @@ class FileManager:
                     
             # After loading columns, if a route column was previously selected, detect routes
             if (hasattr(self.app, 'route_column') and 
-                self.app.route_column.get() and 
-                self.app.route_column.get() != "None - treat as single route"):
+                normalize_route_column_selection(self.app.route_column.get()) is not None):
                 self.app.log_message("Re-detecting routes after column reload...")
                 self.detect_available_routes()
                     
@@ -291,19 +296,20 @@ class FileManager:
             # Either use user-selected route column or create one from filename
             route_col = getattr(self.app, 'route_column', None)
             route_col_name = route_col.get() if route_col else None
-            
-            if (route_col_name and 
-                route_col_name != "None - treat as single route" and
-                route_col_name in data.columns):
+
+            route_col_name_norm = normalize_route_column_selection(route_col_name)
+            if route_col_name_norm and route_col_name_norm in data.columns:
                 # User selected a route column - use it
-                actual_route_column = route_col_name
-                self.app.log_message(f"Using user-selected route column: '{route_col_name}'")
+                actual_route_column = route_col_name_norm
+                self.app.log_message(f"Using user-selected route column: '{route_col_name_norm}'")
+                user_selected_route_column = True
             else:
                 # Create route column from filename - unified processing
                 actual_route_column = 'route'
                 filename = os.path.splitext(os.path.basename(data_path))[0]
                 data[actual_route_column] = filename
                 self.app.log_message(f"Created route column from filename: '{filename}'")
+                user_selected_route_column = False
 
             # Treat the route column as categorical (string) regardless of CSV type inference.
             # This keeps route matching consistent across UI selection, optimization, export, etc.
@@ -342,6 +348,35 @@ class FileManager:
                 if _has_leading_zero_integers(data[col]):
                     continue
                 data[col] = _safe_to_numeric(data[col])
+
+            # B1 behavior: if a user selected a real route column, exclude rows with
+            # missing/invalid route IDs from the analysis.
+            if user_selected_route_column:
+                normalized_routes = data[actual_route_column].apply(normalize_route_id)
+                invalid_route_mask = normalized_routes.isna()
+                invalid_route_count = int(invalid_route_mask.sum())
+
+                if invalid_route_count > 0:
+                    self.app.log_message(
+                            f"Route column '{actual_route_column}' contains {invalid_route_count} record(s) "
+                            "with missing route IDs. "
+                        "Those records will be excluded from multi-route analysis."
+                    )
+
+                if invalid_route_count == len(data):
+                    show_error_message(
+                        "No Valid Routes",
+                            f"All records in the selected route column '{actual_route_column}' are missing.\n\n"
+                        "Multi-route analysis cannot proceed.\n\n"
+                        "Choose a different route column, or select 'None - treat as single route'.",
+                        self.app.log_message,
+                    )
+                    return
+
+                if invalid_route_count > 0:
+                    filtered = data.loc[~invalid_route_mask].copy()
+                    filtered[actual_route_column] = normalized_routes.loc[~invalid_route_mask].astype("string")
+                    data = filtered
             
             # Keep the full dataset in memory.
             # Rationale: users may change the selected route column after loading the file.
@@ -421,8 +456,7 @@ class FileManager:
             # the newly detected distinct routes.
             try:
                 if (hasattr(self.app, 'route_column') and
-                    self.app.route_column.get() and
-                    self.app.route_column.get() != "None - treat as single route"):
+                    normalize_route_column_selection(self.app.route_column.get()) is not None):
                     self.detect_available_routes()
             except Exception as e:
                 self.app.log_message(f"Warning: Could not re-detect routes after load: {e}")
@@ -442,9 +476,9 @@ class FileManager:
     def detect_available_routes(self):
         """Detect and populate available routes based on selected route column."""
         data_path = self.get_data_file_path()
-        route_col = self.app.route_column.get()
-        
-        if not data_path or not route_col or route_col == "None - treat as single route":
+        route_col = normalize_route_column_selection(self.app.route_column.get())
+
+        if not data_path or route_col is None:
             self.app.available_routes = []
             self.app.selected_routes = []
             return
@@ -458,7 +492,7 @@ class FileManager:
                 self.app.log_message(f"Available columns: {available_columns}")
                 
                 # Auto-reset to "None" to prevent repeated errors
-                self.app.route_column.set("None - treat as single route")
+                self.app.route_column.set(ROUTE_COLUMN_NONE_SENTINEL)
                 
                 show_error_message(
                     "Column Not Found", 
@@ -475,10 +509,42 @@ class FileManager:
             
             # Load just the route column to get distinct values
             df = pd.read_csv(data_path, usecols=[route_col], dtype={route_col: str})
-            
-            # Get distinct routes, handle missing values
-            distinct_routes = df[route_col].fillna('Default').astype("string").str.strip().unique()
-            distinct_routes = sorted([str(route) for route in distinct_routes if str(route).strip()])
+
+            # B1 behavior: rows with missing/invalid route IDs are excluded from analysis.
+            # So do NOT create a "Default" bucket; instead, ignore invalid route IDs here.
+            normalized = df[route_col].apply(normalize_route_id)
+            invalid_count = int(normalized.isna().sum())
+
+            distinct_routes = []
+            for route_str in normalized.dropna().astype(str).tolist():
+                if route_str.lower() in INTERNAL_ROUTE_IDS_TO_SKIP_LOWER:
+                    continue
+                distinct_routes.append(route_str)
+            distinct_routes = sorted(set(distinct_routes))
+
+            if invalid_count > 0:
+                self.app.log_message(
+                    f"Ignored {invalid_count} record(s) with missing route IDs in column '{route_col}'. "
+                    "Those records will be excluded from multi-route analysis."
+                )
+
+            if len(distinct_routes) == 0:
+                # All route IDs are missing/invalid. This is a hard error in multi-route mode.
+                self.app.log_message(
+                    f"ERROR: No valid route IDs found in column '{route_col}'. "
+                    "All rows have missing route IDs."
+                )
+                show_error_message(
+                    "No Valid Routes",
+                    f"All records in the selected route column '{route_col}' are missing/invalid.\n\n"
+                    "Multi-route analysis cannot proceed.\n\n"
+                    "Choose a different route column, or select 'None - treat as single route'.",
+                    self.app.log_message,
+                )
+                self.app.route_column.set(ROUTE_COLUMN_NONE_SENTINEL)
+                self.app.available_routes = []
+                self.app.selected_routes = []
+                return
             
             self.app.available_routes = distinct_routes
             
@@ -517,7 +583,7 @@ class FileManager:
         This supports workflows where a user loads a file, then changes the selected
         route column. Route identifiers are treated as categorical keys, not numeric.
         """
-        if not route_col or route_col == "None - treat as single route":
+        if normalize_route_column_selection(route_col) is None:
             return
         if not hasattr(self.app, "data") or self.app.data is None:
             return
@@ -590,9 +656,9 @@ class FileManager:
                     self.app.log_message(f"❌ {error_msg}")
                 return
 
-            # Launch enhanced visualization with JSON data
+            # Launch visualization with JSON data
             try:
-                from enhanced_visualization import show_enhanced_visualization
+                from visualization_ui import show_enhanced_visualization
                 
                 # Launch visualization - it will handle column extraction internally
                 show_enhanced_visualization(
@@ -602,7 +668,7 @@ class FileManager:
                 
                 # Get method type for logging
                 method_key = json_data.get('analysis_metadata', {}).get('analysis_method', 'unknown')
-                self.app.log_message(f"✅ Enhanced visualization opened for {method_key} results")
+                self.app.log_message(f"✅ Visualization opened for {method_key} results")
                 
             except Exception as e:
                 error_msg = f"Failed to open visualization: {str(e)}"

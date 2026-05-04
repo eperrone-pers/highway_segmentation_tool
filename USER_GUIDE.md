@@ -76,6 +76,8 @@ The interface is split into a left configuration pane and a right execution/resu
 - **Route Column (Optional)**:
   - Set to **None - treat as single route** to analyze the file as one route.
   - Set to a column name to enable multi-route mode, then use **Filter** to pick which route IDs to process.
+  - In multi-route mode, rows with missing route IDs (blank/empty) are excluded from analysis and this is logged.
+    If all rows are missing/invalid for the selected route column, the run is blocked with an error.
 - **Gap Threshold (miles)**: Framework parameter used by all methods; gaps larger than this force mandatory breakpoints.
 - **Reset to Defaults**: Resets parameters back to their defaults.
 - **Results File (Required)**:
@@ -147,6 +149,9 @@ When you load results (or when a run completes), the enhanced visualization wind
 
 - Tip: **Select All Routes** / **Clear All Routes** are convenient for large files.
 - In multi-route mode you must select at least one route.
+
+- Note: If the selected route column contains missing route IDs (blank/empty), those rows are excluded from analysis.
+  If that excludes all rows, multi-route analysis cannot proceed.
 
 ### To load and visualize an existing results file
 
@@ -682,6 +687,11 @@ If you need a simple CSV of breakpoints for GIS/tools, export to Excel or parse 
 - **Gap Threshold**: Too small values create excessive mandatory breakpoints
 - **Data Range**: Verify milepoint values span reasonable distance
 - **Parameter Relaxation**: Increase max length or decrease min length
+
+**❌ "No Valid Routes" / route column error**:
+
+- **Cause**: In multi-route mode, the selected route column contains only missing route IDs (blank/empty).
+- **Fix**: Choose a different route column, or select **None - treat as single route**.
 
 ### Analysis Problems
 
