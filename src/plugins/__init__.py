@@ -39,7 +39,10 @@ Date: April 2026
 import os
 import importlib.util
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict, Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from extensible_results_manager import AnalysisMethodPlugin
 
 logger = logging.getLogger(__name__)
 

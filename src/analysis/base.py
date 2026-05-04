@@ -32,9 +32,8 @@ Phase: 1.95.1 - Common Analysis Interface Design
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Dict, List, Any, Optional, Callable, Union, Tuple, TYPE_CHECKING, cast
+from typing import Dict, List, Any, Union, Tuple, TYPE_CHECKING, cast
 import pandas as pd
-import time
 from datetime import datetime
 
 # Import configuration functions for dynamic method checking

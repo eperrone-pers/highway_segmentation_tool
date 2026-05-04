@@ -26,7 +26,6 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.figure import Figure
 from matplotlib.widgets import SpanSelector
@@ -37,7 +36,7 @@ from pathlib import Path
 from datetime import datetime
 from matplotlib.ticker import MaxNLocator
 
-from route_utils import normalize_route_column_selection, normalize_route_id
+from route_utils import normalize_route_column_selection
 from visualization.utils import safe_print as _safe_print, default_colors
 from visualization.results_binding import (
     resolve_routes,
@@ -46,12 +45,6 @@ from visualization.results_binding import (
     group_original_data_by_route,
 )
 from visualization.pareto import prepare_pareto_series
-
-# Import configuration for axis transforms
-try:
-    from CONFIG import get_optimization_method
-except ImportError:
-    from config import get_optimization_method
 
 
 # Pleasant color scheme - updated for better contrast
@@ -446,7 +439,6 @@ class EnhancedVisualizationWindow:
                 
     def on_route_changed(self, event=None):
         """Handle route selection change."""
-        selected_route = self.route_var.get()
         # Route changed
         # Reset zoom state on route change (user preference)
         self._seg_x_zoom_enabled = False
@@ -1326,7 +1318,7 @@ class EnhancedVisualizationWindow:
                 result = messagebox.askyesno("Export Success", 
                     f"Successfully saved:\\n{file_path}\\n\\n" +
                     f"📊 Exported {route_count} routes: {route_list}\\n" +
-                    f"📋 10 comprehensive data tabs created\\n\\n" +
+                    "📋 10 comprehensive data tabs created\\n\\n" +
                     "Would you like to open the file now?")
                 
                 if result:  # User clicked Yes

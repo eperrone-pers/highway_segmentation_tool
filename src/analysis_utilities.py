@@ -100,7 +100,7 @@ def print_optimization_summary(pareto_front, fitness_values, generation_times, e
     # Performance statistics
     if enable_performance_stats and generation_times:
         avg_gen_time = np.mean(generation_times)
-        print(f"\n[PERF] Performance:")
+        print("\n[PERF] Performance:")
         print(f"   Average generation time: {avg_gen_time:.3f}s")
         print(f"   Generations per second: {1.0/avg_gen_time:.1f}")
         
@@ -141,7 +141,7 @@ def print_single_objective_summary(best_chromosome, best_fitness, fitness_histor
     
     # Performance statistics
     if enable_performance_stats and diversity_stats:
-        log(f"\n[PERF] Performance:")
+        log("\n[PERF] Performance:")
         log(f"   Final population diversity: {diversity_stats['unique_segment_counts']} different designs")
         log(f"   Segment count range: {diversity_stats['min_segments']} - {diversity_stats['max_segments']} (avg: {diversity_stats['avg_segments']:.1f})")
         
@@ -162,13 +162,13 @@ def print_constrained_single_objective_summary(best_chromosome, best_constrained
     log("=" * 60)
     
     # Basic solution info
-    log(f"\nSolution Overview:")
+    log("\nSolution Overview:")
     log(f"  Breakpoints: {len(best_chromosome)}")
     log(f"  Segments: {len(best_chromosome) - 1}")
     log(f"  Total length: {best_chromosome[-1] - best_chromosome[0]:.3f} miles")
     
     # Constraint satisfaction
-    log(f"\nConstraint Performance:")
+    log("\nConstraint Performance:")
     log(f"  Target avg length: {target_avg_length:.3f} miles")
     log(f"  Achieved avg length: {best_avg_length:.3f} miles")
     log(f"  Length deviation: {length_deviation:.3f} miles")
@@ -181,7 +181,7 @@ def print_constrained_single_objective_summary(best_chromosome, best_constrained
         log(f"  Excess deviation: {excess:.3f} miles")
     
     # Fitness details
-    log(f"\nFitness Details:")
+    log("\nFitness Details:")
     log(f"  Constrained fitness: {best_constrained_fitness:.6f}")
     log(f"  Base fitness (deviation): {best_unconstrained_fitness:.6f}")
     penalty = best_constrained_fitness - best_unconstrained_fitness
@@ -189,7 +189,7 @@ def print_constrained_single_objective_summary(best_chromosome, best_constrained
     
     # Performance statistics
     if enable_performance_stats and diversity_stats:
-        log(f"\nPerformance Statistics:")
+        log("\nPerformance Statistics:")
         log(f"  Evolution time: {elapsed_time:.2f} seconds")
         log(f"  Final diversity: {diversity_stats['unique_segment_counts']} segment count types")
         log(f"  Segment range: {diversity_stats['min_segments']}-{diversity_stats['max_segments']}")

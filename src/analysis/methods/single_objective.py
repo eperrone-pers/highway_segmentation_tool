@@ -24,14 +24,13 @@ import time
 import random
 import numpy as np
 from datetime import datetime
-from typing import Dict, Any, List, Optional, Callable
+from typing import Dict, Any, List, Optional
 
 # Import base interface and utilities
 from ..base import AnalysisMethodBase, AnalysisResult
 from ..utils.ga_utilities import (
     crossover_with_retries,
     mutation_with_retries,
-    analyze_population_diversity,
 )
 from ..utils.segment_metrics import average_length_excluding_gap_segments
 
@@ -136,7 +135,7 @@ class SingleObjectiveMethod(AnalysisMethodBase):
                 log_callback(message)
                 
         log("Initializing single-objective genetic algorithm...")
-        log(f"Objective: Maximize data fit (minimize deviation)")
+        log("Objective: Maximize data fit (minimize deviation)")
         log(f"Parameters: {population_size} individuals, {num_generations} generations")
         
         # Initialize genetic algorithm
@@ -291,7 +290,7 @@ class SingleObjectiveMethod(AnalysisMethodBase):
         avg_length = stats.avg_length if hasattr(stats, 'avg_length') else 0
         
         # Print summary
-        log(f"\\n=== SINGLE-OBJECTIVE RESULTS ===")
+        log("\\n=== SINGLE-OBJECTIVE RESULTS ===")
         log(f"Best fitness: {best_fitness:.6f}")
         log(f"Segments: {segment_count}")
         log(f"Average length: {avg_length:.3f} miles")

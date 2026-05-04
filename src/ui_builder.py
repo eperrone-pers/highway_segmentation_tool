@@ -8,7 +8,6 @@ organization and maintainability.
 
 import tkinter as tk
 from tkinter import ttk
-import sys
 from tkinter import messagebox
 from config import UIConfig, get_optimization_method_names, get_method_key_from_display_name
 from value_parsing import parse_optional_float, parse_optional_int
@@ -1113,18 +1112,6 @@ class UIBuilder:
         }
         
         return icons.get(formatted, formatted)
-    
-    def get_parameter_values(self):
-        """Return current dynamic parameter values for the selected method.
-
-        NOTE: This method is used by controller/validation/save-load paths.
-        The source of truth is the settings-backed store populated by the
-        Treeview/editor UI.
-        """
-        method_key = self._get_selected_method_key_safe()
-        if not method_key:
-            return {}
-        return self._get_dynamic_params_for_method(method_key)
     
     def _extract_widget_value(self, widget, param_def):
         """Extract value from widget based on parameter definition type."""

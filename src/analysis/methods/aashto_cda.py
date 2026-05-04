@@ -45,7 +45,7 @@ Python translation notes:
 """
 
 import numpy as np
-from typing import Tuple, List, Optional
+from typing import Tuple, Optional
 import math
 
 from ..base import AnalysisMethodBase, AnalysisResult
@@ -108,7 +108,9 @@ def aashto_cda(y: np.ndarray,
     if method == 1:
         # MAD with normal distribution assumption
         diff_y = np.diff(y)
-        sigma = 1.4826 * np.median(np.abs(diff_y - np.median(diff_y))) / math.sqrt(2)
+        sigma: float = float(
+            1.4826 * np.median(np.abs(diff_y - np.median(diff_y))) / math.sqrt(2)
+        )
     elif method == 2:
         # Standard deviation of differences (recommended) - MATLAB compatibility
         diff_y = np.diff(y)
@@ -118,7 +120,7 @@ def aashto_cda(y: np.ndarray,
             # Too few points for sample std; fall back to population std (or 0.0 for empty/singleton)
             std_diff = float(np.std(diff_y, ddof=0))
 
-        sigma = std_diff / math.sqrt(2)
+        sigma = float(std_diff / math.sqrt(2))
     else:
         # Standard deviation of measurements
         if len(y) >= 2:
@@ -132,9 +134,9 @@ def aashto_cda(y: np.ndarray,
     while i <= num_sections:
         try:
             location, change_point = find_change_point(
-                cy, nodes[:i], x, sigma, alpha, min_segment_datapoints, global_local, False
+                cy, nodes[:i], x, float(sigma), alpha, min_segment_datapoints, global_local, False
             )
-        except Exception as e:
+        except Exception:
             break
         
         if change_point == 0:
@@ -172,7 +174,7 @@ def aashto_cda(y: np.ndarray,
     
     # Apply minimum section difference constraint if specified
     if enable_diagnostic_output:
-        print(f"\n--- Initial Segmentation ---")
+        print("\n--- Initial Segmentation ---")
         print(f"Found {len(mu)} initial segments")
         print(f"Segment means: {[round(m, 3) for m in mu]}")
     
@@ -189,7 +191,7 @@ def aashto_cda(y: np.ndarray,
             
             if min_change >= min_section_difference:
                 if enable_diagnostic_output:
-                    print(f"STOP: All differences >= threshold")
+                    print("STOP: All differences >= threshold")
                 break
                 
             # Find minimum difference location
@@ -221,10 +223,10 @@ def aashto_cda(y: np.ndarray,
         uniform_sections = np.concatenate([[uniform_sections[0]], uniform_sections])
     
     if enable_diagnostic_output:
-        print(f"\n=== FINAL RESULTS ===")
+        print("\n=== FINAL RESULTS ===")
         print(f"Final segments: {len(mu)}")
         print(f"Final means: {[round(m, 3) for m in mu]}")
-        print(f"Expected from MATLAB: 9 segments")
+        print("Expected from MATLAB: 9 segments")
         print(f"Match: {'YES' if len(mu) == 9 else 'NO'}")  # Use ASCII only
         print(f"RETURNING nodes: {nodes}")
         print(f"Node count: {len(nodes)}")
@@ -448,8 +450,17 @@ class AashtoCdaMethod(AnalysisMethodBase):
                     f"y_column={y_column!r} not found in RouteAnalysis.route_data columns: {list(route_data.columns)!r}"
                 )
 
-            x_values = route_data[x_column].values
-            y_values = route_data[y_column].values
+            # Ensure we are working with numeric numpy arrays for comparisons/searchsorted.
+            # RouteAnalysis data should already have numeric X/Y in normal GUI flows,
+            # but this keeps direct/integration usages safe and keeps Pylance happy.
+            try:
+                x_values = np.asarray(route_data[x_column].to_numpy(), dtype=float)
+                y_values = np.asarray(route_data[y_column].to_numpy(), dtype=float)
+            except Exception as e:
+                raise ValueError(
+                    f"AASHTO CDA requires numeric columns for x_column={x_column!r}, y_column={y_column!r}. "
+                    f"Could not convert to float arrays: {e}"
+                ) from e
             mandatory_breakpoints = sorted(route_analysis.mandatory_breakpoints)
             
             # Validate min_segment_datapoints parameter (sample-std safe)
@@ -458,7 +469,6 @@ class AashtoCdaMethod(AnalysisMethodBase):
             
             # Process each segmentable section independently (CORRECT ARCHITECTURE)
             all_breakpoints = list(mandatory_breakpoints)  # Start with mandatory breakpoints
-            all_segment_stats = []
             section_diagnostics = []
             
             if enable_diagnostic_output:
@@ -533,7 +543,7 @@ class AashtoCdaMethod(AnalysisMethodBase):
             
             # DEBUG: Show final collected breakpoints
             if enable_diagnostic_output:
-                print(f"\n=== FINAL BREAKPOINT COLLECTION ===")
+                print("\n=== FINAL BREAKPOINT COLLECTION ===")
                 print(f"Total breakpoints collected: {len(all_breakpoints)}")
                 print(f"All breakpoints: {all_breakpoints.tolist()}")
             

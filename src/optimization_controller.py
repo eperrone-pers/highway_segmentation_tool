@@ -287,7 +287,7 @@ class OptimizationController:
                             filtered = self.app.data.route_data.loc[~invalid_mask].copy()
                             filtered[actual_route_column] = normalized_series.loc[~invalid_mask].astype("string")
                             self.app.data.route_data = filtered
-                    except Exception as e:
+                    except Exception:
                         # If normalization/filtering fails for unexpected reasons, treat as fatal.
                         raise
 
@@ -361,13 +361,11 @@ class OptimizationController:
             self.app.log_message(f"Successfully prepared {len(prepared_routes)} route(s) for optimization")
             
             # Get common parameters
-            data = self.app.data
             x_column = self.app.x_column.get()
             y_column = self.app.y_column.get()
             # Note: All other parameters are now passed directly to methods via params dict
             
             # Import new analysis methods
-            from analysis.methods.single_objective import SingleObjectiveMethod
             
             # PHASE 1B: Collect results from all routes for consolidated saving
             all_route_results = []
@@ -900,7 +898,11 @@ class OptimizationController:
                     'optimization_metadata': {
                         'method': method_key,
                         'total_routes': len(all_route_results),
-                        'generations': params.get('num_generations'),
+                        'generations': (
+                            (all_route_results[0].get('input_parameters') or {}).get('num_generations')
+                            if all_route_results
+                            else None
+                        ),
                         'timestamp': datetime.now().isoformat(),
                         'multi_route': True
                     },

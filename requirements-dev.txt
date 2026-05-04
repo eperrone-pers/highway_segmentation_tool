@@ -1,0 +1,5 @@
+# Development-only dependencies
+# These are not required to run the application.
+
+ruff>=0.6.0
+pandas-stubs
