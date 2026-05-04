@@ -13,6 +13,7 @@ from tkinter import messagebox
 from config import UIConfig, get_optimization_method_names, get_method_key_from_display_name
 from value_parsing import coerce_optional_numeric_text
 from logger import create_logger
+from route_utils import ROUTE_COLUMN_NONE_SENTINEL
 
 # Create UI config instance
 ui_config = UIConfig()
@@ -123,7 +124,7 @@ class UIBuilder:
         
         self.app.route_column_combo = ttk.Combobox(route_controls_frame, textvariable=self.app.route_column,
                                                   width=20)
-        self.app.route_column_combo.set("None - treat as single route")
+        self.app.route_column_combo.set(ROUTE_COLUMN_NONE_SENTINEL)
         self.app.route_column_combo.grid(row=0, column=0, sticky="w")
         self.app.route_column_combo.bind('<<ComboboxSelected>>', self.app.on_route_column_change)
         

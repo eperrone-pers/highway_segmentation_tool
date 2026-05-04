@@ -24,6 +24,8 @@ try:
 except ImportError as e:
     raise ImportError(f"Could not import ParameterManager from src/. Original error: {e}")
 
+from route_utils import ROUTE_COLUMN_NONE_SENTINEL
+
 
 class TestParameterManagerRouteProcessing:
     """Test suite for ParameterManager Phase 1 route processing functionality."""
@@ -139,7 +141,7 @@ class TestParameterManagerRouteProcessing:
     def test_validate_parameters_no_route_column_single_route_mode(self, parameter_manager):
         """Test parameter validation in single route mode (no route column)."""
         # Set up mock app state for single route mode
-        parameter_manager.app.route_column.get.return_value = "None - treat as single route"
+        parameter_manager.app.route_column.get.return_value = ROUTE_COLUMN_NONE_SENTINEL
         parameter_manager.app.available_routes = []
         parameter_manager.app.selected_routes = []
         
@@ -185,7 +187,7 @@ class TestParameterManagerRouteProcessing:
         mock_event = Mock()
         
         # Set up app state for single route mode
-        parameter_manager.app.route_column.get.return_value = "None - treat as single route"
+        parameter_manager.app.route_column.get.return_value = ROUTE_COLUMN_NONE_SENTINEL
         
         # Execute
         parameter_manager.on_route_column_change(mock_event)

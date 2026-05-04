@@ -1,11 +1,13 @@
 # Code Quality Review + Refactor Plan
 
-Branch: `refactor/code-quality-audit`
+Branch: `main`
 
 ## Goals
 - Improve maintainability and readability without changing user-visible behavior.
 - Reduce duplication and tighten module responsibilities.
 - Make future changes safer via clearer interfaces and tests.
+
+Note: One targeted user-visible behavior change was explicitly approved (see "B1 Route Null Exclusion" below).
 
 ## Ground Rules
 - Keep refactors behavior-preserving unless explicitly agreed.
@@ -45,6 +47,33 @@ Largest modules under `src/` (approx lines):
   - `pytest -q tests/test_route_id_normalization.py`
   - full `pytest -q`
 
+### Phase 1 — Route Column Sentinel + Selection Normalization (behavior-preserving)
+- Centralized the route-column dropdown sentinel text in `src/route_utils.py`:
+  - `ROUTE_COLUMN_NONE_SENTINEL = "None - treat as single route"`
+  - `normalize_route_column_selection()` helper
+- Updated call sites in GUI/controller/visualization to use the shared constant/helper.
+- Added unit test coverage for `normalize_route_column_selection()`.
+- Validation: full `pytest -q` (223 passed, 14 skipped).
+
+### B1 Route Null Exclusion (behavior change — explicitly approved)
+When a user selects a real route column (multi-route mode):
+- Rows where the route ID is missing/invalid (blank/whitespace/none/null/nan) are removed from analysis.
+- The application logs how many rows were removed and why.
+- If all rows have missing/invalid route IDs, this is a hard error (multi-route analysis cannot proceed).
+
+Implemented in:
+- `src/file_manager.py`
+  - `detect_available_routes()` now ignores invalid route IDs (no "Default" bucket).
+  - `load_data_file()` filters out invalid route IDs when a user-selected route column is used.
+- `src/optimization_controller.py`
+  - Safety net: if the route column is selected/changed after load, invalid route-ID rows are filtered before processing.
+
+Validation:
+- Targeted Phase 1 tests:
+  - `pytest -q tests/unit/test_phase1_file_manager.py tests/integration/test_phase1_complete_workflow.py`
+- Full suite:
+  - `pytest -q` (223 passed, 14 skipped).
+
 ## Refactor Phases
 
 ### Phase 0 — Baseline + Guardrails (no behavior change)
@@ -61,7 +90,7 @@ Targets: duplicated logic, confusing naming, and non-local side effects.
 
 Exit criteria:
 - All tests still pass.
-- No new UI behavior.
+- No new UI behavior unless explicitly approved.
 
 ### Phase 2 — Module seams + interfaces
 Targets: tight coupling between GUI ↔ controller ↔ file I/O.
@@ -83,13 +112,11 @@ Exit criteria:
 - Same external API, same outputs, easier navigation.
 
 ## Proposed Next Refactor (Phase 1)
-- Centralize common "safe string" handling for optional params.
-  - Goal: one helper for treating missing markers consistently (e.g. `None`, `""`, `"null"`, `"none"`, `"nan"`).
-  - Candidate placement: new `src/string_utils.py` (keep it dependency-free) OR add a small helper to `src/route_utils.py`
-    if scope stays strictly about route-ish identifiers.
-  - Start with the highest-impact call sites (UI dropdown sentinels like
-    `"None - treat as single route"`, results-loading paths, and route filtering).
+Now that the route-column sentinel is centralized and B1 is implemented, the next Phase 1 targets are:
+- Centralize "safe string" handling for other optional UI parameters (beyond routing).
+  - Candidate placement: `src/value_parsing.py` (preferred, already exists) rather than a new module.
   - Validation: add/extend unit tests first; run full `pytest -q`.
+- Audit remaining ad-hoc string sentinels in tests and replace with shared constants where appropriate.
 
 ## How We’ll Validate
 - Run `pytest -q` after each step.

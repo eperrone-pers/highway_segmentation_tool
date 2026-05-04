@@ -34,6 +34,7 @@ from parameter_manager import ParameterManager
 from optimization_controller import OptimizationController
 from settings_manager import SettingsManager
 from config import UIConfig, AlgorithmConstants, ConstrainedOptimizationConfig
+from route_utils import ROUTE_COLUMN_NONE_SENTINEL, normalize_route_column_selection
 
 # Create config instances
 ui_config = UIConfig()
@@ -189,7 +190,7 @@ class HighwaySegmentationGUI:
         # Column mapping - initialized empty, UI builder sets display text
         self.x_column = tk.StringVar(value="")
         self.y_column = tk.StringVar(value="")
-        self.route_column = tk.StringVar(value="None - treat as single route")  # New route column selection
+        self.route_column = tk.StringVar(value=ROUTE_COLUMN_NONE_SENTINEL)  # New route column selection
         
         # Framework parameters (like x/y columns)
         self.gap_threshold = tk.DoubleVar(value=0.5)  # Framework-level parameter
@@ -484,9 +485,10 @@ class HighwaySegmentationGUI:
     
     def on_route_column_change(self, event=None):
         """Handle route column selection change."""
-        route_col = self.route_column.get()
-        
-        if route_col and route_col != "None - treat as single route":
+        route_col_raw = self.route_column.get()
+        route_col = normalize_route_column_selection(route_col_raw)
+
+        if route_col is not None:
             # Route column selected - validate it exists before trying to detect routes
             data_path = self.file_manager.get_data_file_path()
             if data_path:
@@ -507,7 +509,7 @@ class HighwaySegmentationGUI:
                     else:
                         # Column doesn't exist - reset quietly without popup
                         self.log_message(f"Route column '{route_col}' not found - resetting selection")
-                        self.route_column.set("None - treat as single route")
+                        self.route_column.set(ROUTE_COLUMN_NONE_SENTINEL)
                         self.available_routes = []
                         self.selected_routes = []
                         self.route_info_label.config(text="")
@@ -516,7 +518,7 @@ class HighwaySegmentationGUI:
                 except Exception as e:
                     # Error reading file - reset to safe state
                     self.log_message(f"Error validating route column: {str(e)}")
-                    self.route_column.set("None - treat as single route")
+                    self.route_column.set(ROUTE_COLUMN_NONE_SENTINEL)
                     self.available_routes = []
                     self.selected_routes = []
                     self.route_info_label.config(text="")
@@ -545,12 +547,14 @@ class HighwaySegmentationGUI:
         if not self.available_routes:
             # Try to automatically detect routes using current settings
             data_path = self.file_manager.get_data_file_path()
-            route_col = self.route_column.get() if hasattr(self, 'route_column') else None
+            route_col = normalize_route_column_selection(
+                self.route_column.get() if hasattr(self, 'route_column') else None
+            )
             
             if not data_path:
                 messagebox.showwarning("No Data File", "Please select a data file first before filtering routes.")
                 return
-            elif not route_col or route_col == "None - treat as single route":
+            elif route_col is None:
                 messagebox.showwarning("No Route Column", "Please select a route column first before filtering routes.")
                 return
             else:
@@ -1116,8 +1120,7 @@ class HighwaySegmentationGUI:
             
             # If route column is set and data file exists, trigger full route processing
             if (hasattr(self, 'route_column') and 
-                self.route_column.get() and 
-                self.route_column.get() != "None - treat as single route" and
+                normalize_route_column_selection(self.route_column.get()) is not None and
                 self.file_manager.get_data_file_path()):
                 self.log_message("Detecting routes from restored settings...")
                 # Call the full route column change handler to enable button and update display

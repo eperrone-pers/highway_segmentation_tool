@@ -1,6 +1,7 @@
 import json
 from types import SimpleNamespace
 from unittest.mock import Mock
+from route_utils import ROUTE_COLUMN_NONE_SENTINEL
 
 import pytest
 
@@ -52,7 +53,7 @@ def _make_minimal_app_for_params():
     app.x_column = FakeVar("milepoint")
     app.y_column = FakeVar("structural_strength_ind")
     app.gap_threshold = FakeVar(0.5)
-    app.route_column = FakeVar("None - treat as single route")
+    app.route_column = FakeVar(ROUTE_COLUMN_NONE_SENTINEL)
     app.selected_routes = []
     app.custom_save_name = FakeVar("highway_segmentation")
 

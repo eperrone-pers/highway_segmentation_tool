@@ -27,6 +27,8 @@ try:
 except ImportError as e:
     raise ImportError(f"Could not import FileManager from src/. Original error: {e}")
 
+from route_utils import ROUTE_COLUMN_NONE_SENTINEL
+
 
 class TestFileManagerRouteProcessing:
     """Test suite for FileManager Phase 1 route processing functionality."""
@@ -122,7 +124,7 @@ SR-123,0.1,4.2"""
         """Test route detection when no route column is selected."""
         # Set up mocks
         file_manager.get_data_file_path = Mock(return_value=temp_multi_route_csv)
-        file_manager.app.route_column.get.return_value = "None - treat as single route"
+        file_manager.app.route_column.get.return_value = ROUTE_COLUMN_NONE_SENTINEL
         
         # Execute
         file_manager.detect_available_routes()
@@ -171,12 +173,12 @@ I-75,0.2,4.9
         try:
             # Set up mock
             file_manager.get_data_file_path = Mock(return_value=temp_path)
-            
+            file_manager.app.route_column.get = Mock(return_value="route")
             # Execute
             file_manager.detect_available_routes()
             
             # Verify results - should handle nulls properly
-            expected_routes = ['Default', 'I-75', 'US-35']  # Default for null values, sorted
+            expected_routes = ['I-75', 'US-35']
             assert file_manager.app.available_routes == expected_routes
         
         finally:
@@ -241,7 +243,7 @@ I-75,0.1,6.0"""
         
         # Mock route column to prevent route detection from being triggered
         file_manager.app.route_column = Mock()
-        file_manager.app.route_column.get = Mock(return_value="None - treat as single route")
+        file_manager.app.route_column.get = Mock(return_value=ROUTE_COLUMN_NONE_SENTINEL)
         
         # Execute
         file_manager.load_csv_columns()
@@ -287,7 +289,7 @@ I-75,0.1,6.0"""
         assert set(file_manager.app.available_columns) == set(expected_columns)
         
         # Verify route dropdown was configured with "None" option plus columns  
-        expected_route_options = ["None - treat as single route"] + expected_columns
+        expected_route_options = [ROUTE_COLUMN_NONE_SENTINEL] + expected_columns
         mock_route_dropdown.__setitem__.assert_called_with('values', expected_route_options)
     
     @pytest.mark.unit

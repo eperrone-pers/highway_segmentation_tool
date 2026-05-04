@@ -128,6 +128,7 @@ from file_manager import FileManager
 from parameter_manager import ParameterManager
 from excel_export import HighwaySegmentationExcelExporter
 from config import get_optimization_method
+from route_utils import ROUTE_COLUMN_NONE_SENTINEL
 
 
 def _load_regression_template() -> Dict[str, Any]:
@@ -420,7 +421,7 @@ class MockGUIApp:
         self.data_file = MockStringVar("Test data file")
         self.x_column = MockStringVar(x_column)
         self.y_column = MockStringVar(y_column)
-        self.route_column = MockStringVar(route_column if route_column else "None - treat as single route")
+        self.route_column = MockStringVar(route_column if route_column else ROUTE_COLUMN_NONE_SENTINEL)
         
         # Algorithm parameters (matching production GUI types)
         self.gap_threshold = MockDoubleVar(0.1)  # Required by optimization controller
@@ -472,7 +473,7 @@ class MockGUIApp:
         
         # CRITICAL: Match production behavior - always create route column when none specified
         route_col = self.route_column.get()
-        if route_col and route_col != "None - treat as single route" and route_col in df.columns:
+        if route_col and route_col != ROUTE_COLUMN_NONE_SENTINEL and route_col in df.columns:
             # Multi-route mode: use existing route column
             actual_route_column = route_col
             selected_columns = [self.x_column.get(), self.y_column.get(), actual_route_column]
@@ -497,7 +498,7 @@ class MockGUIApp:
         )
         
         # Set up route management based on actual route column used
-        if route_col and route_col != "None - treat as single route" and route_col in df.columns:
+        if route_col and route_col != ROUTE_COLUMN_NONE_SENTINEL and route_col in df.columns:
             # Multi-route mode: get unique routes from column
             unique_routes = sorted(df[actual_route_column].unique())
             self.available_routes = unique_routes

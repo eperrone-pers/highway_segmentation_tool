@@ -58,7 +58,7 @@ The application is split into:
 
 5. **Visualization behavior**
    - Determines whether to show Pareto plots based on the configured `return_type`.
-   - Lives in `src/enhanced_visualization.py`.
+    - Lives in `src/visualization_ui.py`.
 
 6. **Method documentation (optional but recommended)**
      - If you add a per-method README at `src/analysis/methods/docs/{method_key}/README.md`,
@@ -511,7 +511,7 @@ Output contract:
 The enhanced visualization decides whether to show the Pareto panel using the configured method return type:
 
 ```python
-# src/enhanced_visualization.py
+# src/visualization_ui.py
 analysis_method = self.json_results.get('analysis_metadata', {}).get('analysis_method', 'single')
 from config import is_multi_objective_method
 self.is_multi_objective = is_multi_objective_method(analysis_method)

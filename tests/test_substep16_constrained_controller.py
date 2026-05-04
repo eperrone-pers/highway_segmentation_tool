@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from optimization_controller import OptimizationController
 from data_loader import analyze_route_gaps
+from route_utils import ROUTE_COLUMN_NONE_SENTINEL
 
 
 def create_test_highway_data():
@@ -55,7 +56,7 @@ def create_mock_app_for_constrained():
     
     # Mock route configuration (single-route for simplicity)
     mock_app.route_column = Mock()
-    mock_app.route_column.get.return_value = "None - treat as single route"
+    mock_app.route_column.get.return_value = ROUTE_COLUMN_NONE_SENTINEL
     mock_app.selected_routes = []
     
     # Mock GUI controls

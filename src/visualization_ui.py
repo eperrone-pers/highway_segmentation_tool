@@ -37,7 +37,7 @@ from pathlib import Path
 from datetime import datetime
 from matplotlib.ticker import MaxNLocator
 
-from route_utils import normalize_route_id
+from route_utils import normalize_route_column_selection, normalize_route_id
 from visualization.utils import safe_print as _safe_print, default_colors
 from visualization.results_binding import (
     resolve_routes,
@@ -130,11 +130,9 @@ class EnhancedVisualizationWindow:
     def setup_route_data(self):
         """Setup route information from available data."""
         # Get route column name from parent app if available
-        route_column = None
-        if hasattr(self.parent_app, 'route_column'):
-            route_column = self.parent_app.route_column.get()
-            if route_column == "None - treat as single route":
-                route_column = None
+        route_column = normalize_route_column_selection(
+            self.parent_app.route_column.get() if hasattr(self.parent_app, 'route_column') else None
+        )
 
         self.routes = resolve_routes(self.json_results, self.original_data, route_column)
             
