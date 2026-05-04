@@ -273,13 +273,13 @@ class OptimizationController:
                         if invalid_count > 0:
                             self.app.log_message(
                                 f"Route column '{actual_route_column}' contains {invalid_count} record(s) "
-                                "with missing/invalid route IDs (blank/none/null/nan). "
+                                "with missing route IDs. "
                                 "Those records will be excluded from multi-route analysis."
                             )
 
                         if invalid_count == len(self.app.data.route_data):
                             raise ValueError(
-                                f"All records in the selected route column '{actual_route_column}' are missing/invalid. "
+                                f"All records in the selected route column '{actual_route_column}' are missing. "
                                 "Choose a different route column, or select 'None - treat as single route'."
                             )
 

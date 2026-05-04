@@ -358,15 +358,15 @@ class FileManager:
 
                 if invalid_route_count > 0:
                     self.app.log_message(
-                        f"Route column '{actual_route_column}' contains {invalid_route_count} record(s) "
-                        "with missing/invalid route IDs (blank/none/null/nan). "
+                            f"Route column '{actual_route_column}' contains {invalid_route_count} record(s) "
+                            "with missing route IDs. "
                         "Those records will be excluded from multi-route analysis."
                     )
 
                 if invalid_route_count == len(data):
                     show_error_message(
                         "No Valid Routes",
-                        f"All records in the selected route column '{actual_route_column}' are missing/invalid.\n\n"
+                            f"All records in the selected route column '{actual_route_column}' are missing.\n\n"
                         "Multi-route analysis cannot proceed.\n\n"
                         "Choose a different route column, or select 'None - treat as single route'.",
                         self.app.log_message,
@@ -524,7 +524,7 @@ class FileManager:
 
             if invalid_count > 0:
                 self.app.log_message(
-                    f"Ignored {invalid_count} record(s) with missing/invalid route IDs in column '{route_col}'. "
+                    f"Ignored {invalid_count} record(s) with missing route IDs in column '{route_col}'. "
                     "Those records will be excluded from multi-route analysis."
                 )
 
@@ -532,7 +532,7 @@ class FileManager:
                 # All route IDs are missing/invalid. This is a hard error in multi-route mode.
                 self.app.log_message(
                     f"ERROR: No valid route IDs found in column '{route_col}'. "
-                    "All rows have missing/invalid route IDs."
+                    "All rows have missing route IDs."
                 )
                 show_error_message(
                     "No Valid Routes",

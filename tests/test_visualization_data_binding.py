@@ -26,7 +26,7 @@ def test_routes_from_json_results_extracts_route_ids():
 
 def test_routes_from_original_data_uses_column_and_normalizes():
     df = pd.DataFrame({"ROUTE": [" A ", None, "null", "B"]})
-    assert routes_from_original_data(df, "ROUTE") == ["A", "B"]
+    assert routes_from_original_data(df, "ROUTE") == ["A", "null", "B"]
 
 
 def test_resolve_routes_prefers_json_over_original():

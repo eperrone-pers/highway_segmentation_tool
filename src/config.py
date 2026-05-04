@@ -15,7 +15,9 @@ from typing import Dict, Tuple, Any, List, Optional, Union, Type, TYPE_CHECKING
 from abc import ABC, abstractmethod
 import importlib
 
-from value_parsing import coerce_optional_numeric_text
+import math
+
+from value_parsing import parse_optional_float, parse_optional_int
 
 if TYPE_CHECKING:
     import tkinter as tk
@@ -87,6 +89,9 @@ class NumericParameter(ParameterDefinition):
         """Get numeric value from entry widget."""
         try:
             value = float(widget.get())
+            # Treat NaN as invalid input (fall back to default).
+            if math.isnan(value):
+                raise ValueError("NaN is not a valid numeric value")
             return int(value) if self.decimal_places == 0 else round(value, self.decimal_places)
         except ValueError:
             return self.default_value
@@ -104,6 +109,10 @@ class NumericParameter(ParameterDefinition):
         """Validate numeric parameter."""
         try:
             num_value = float(value)
+
+            # Treat NaN as invalid input.
+            if math.isnan(num_value):
+                return False, f"{self.display_name} must be a valid number"
             
             # Check bounds
             if self.min_value is not None and num_value < self.min_value:
@@ -144,12 +153,14 @@ class OptionalNumericParameter(ParameterDefinition):
     
     def get_widget_value(self, widget: tk.Entry) -> Union[int, float, None]:
         """Get numeric value from entry widget, supporting None."""
-        text = coerce_optional_numeric_text(widget.get())
-        if text is None:
-            return None
         try:
-            value = float(text)
-            return int(value) if self.decimal_places == 0 else round(value, self.decimal_places)
+            if self.decimal_places == 0:
+                return parse_optional_int(widget.get())
+
+            value = parse_optional_float(widget.get())
+            if value is None:
+                return None
+            return round(value, self.decimal_places)
         except ValueError:
             return self.default_value
     
@@ -171,6 +182,10 @@ class OptionalNumericParameter(ParameterDefinition):
             
         try:
             num_value = float(value)
+
+            # Treat NaN as invalid input.
+            if math.isnan(num_value):
+                return False, f"{self.display_name} must be a valid number or None"
             
             # Check bounds
             if self.min_value is not None and num_value < self.min_value:

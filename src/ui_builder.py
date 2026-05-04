@@ -11,7 +11,7 @@ from tkinter import ttk
 import sys
 from tkinter import messagebox
 from config import UIConfig, get_optimization_method_names, get_method_key_from_display_name
-from value_parsing import coerce_optional_numeric_text
+from value_parsing import parse_optional_float, parse_optional_int
 from logger import create_logger
 from route_utils import ROUTE_COLUMN_NONE_SENTINEL
 
@@ -614,17 +614,15 @@ class UIBuilder:
             return widget.get().strip()
 
         if isinstance(param_def, OptionalNumericParameter):
-            text = coerce_optional_numeric_text(widget.get())
-            if text is None:
-                return None
             try:
-                num = float(text)
-            except Exception:
+                if param_def.decimal_places == 0:
+                    return parse_optional_int(widget.get())
+
+                num = parse_optional_float(widget.get())
+                if num is None:
+                    return None
+            except ValueError:
                 raise ValueError(f"{param_def.display_name} must be a valid number or None")
-            if param_def.decimal_places == 0:
-                if not float(num).is_integer():
-                    raise ValueError(f"{param_def.display_name} must be an integer or None")
-                return int(num)
             return round(num, param_def.decimal_places)
 
         text = widget.get().strip()

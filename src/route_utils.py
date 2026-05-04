@@ -12,6 +12,7 @@ Important: This module intentionally avoids importing pandas/numpy/tkinter.
 
 from __future__ import annotations
 
+import math
 from typing import Any, Optional
 
 
@@ -19,26 +20,22 @@ from typing import Any, Optional
 # Centralized here so it is consistent across UI, controller, and visualization.
 ROUTE_COLUMN_NONE_SENTINEL = "None - treat as single route"
 
-# When scanning a route column, missing values are currently promoted to a
-# visible route bucket in the UI.
-MISSING_ROUTE_DISPLAY_LABEL = "Default"
-
 # Internal/sentinel route IDs that should never be treated as real routes.
 # Stored in lower-case for easy comparisons against normalized lower-case values.
-INTERNAL_ROUTE_IDS_TO_SKIP_LOWER = {"default", "_combined_data_"}
-
-
-_MISSING_ROUTE_STRINGS = {"nan", "none", "null"}
+INTERNAL_ROUTE_IDS_TO_SKIP_LOWER = {"_combined_data_"}
 
 
 def normalize_route_id(value: Any) -> Optional[str]:
     """Normalize a route identifier to a stable string form.
 
-    Rules (kept consistent with existing controller behavior):
+    Rules:
     - `None` -> None
-    - Empty/whitespace-only -> None
-    - Case-insensitive values in {"nan", "none", "null"} -> None
+    - NaN-like values (float/numpy nan, pandas missing) -> None
+    - Empty/whitespace-only strings -> None
     - Otherwise -> `str(value).strip()`
+
+    Important: literal strings like "nan", "null", or "none" are treated as
+    real route IDs if they appear in the input data.
 
     Args:
         value: Any route identifier (string, number, etc.).
@@ -49,11 +46,29 @@ def normalize_route_id(value: Any) -> Optional[str]:
     if value is None:
         return None
 
+    # Treat numeric NaN / missing sentinel values as missing.
+    # This preserves literal text values like "nan" (string) as data.
+    try:
+        if isinstance(value, (float, int)) and math.isnan(value):
+            return None
+    except Exception:
+        pass
+
+    # Catch numpy.nan and other NaN-like values (NaN != NaN).
+    try:
+        if value != value:  # noqa: PLR0124
+            return None
+    except Exception:
+        # Some missing sentinels (e.g. pandas.NA) raise on truthiness/comparison.
+        # Treat them as missing.
+        return None
+
     route_str = str(value).strip()
     if not route_str:
         return None
 
-    if route_str.lower() in _MISSING_ROUTE_STRINGS:
+    # pandas string dtype can surface missing values as the literal "<NA>"
+    if route_str == "<NA>":
         return None
 
     return route_str
