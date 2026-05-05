@@ -74,7 +74,7 @@ def test_with_real_data():
             crossover_rate=0.8,
             gap_threshold=0.5,
         )
-        print(f"✅ Initialized GA with real data")
+        print("✅ Initialized GA with real data")
         print(f"   Route length: {ga.milepoints[-1] - ga.milepoints[0]:.1f} miles")
         print(f"   Mandatory breakpoints: {len(ga.mandatory_breakpoints)} points")
         
@@ -83,7 +83,7 @@ def test_with_real_data():
         return
     
     # Test individual splitting method performance
-    print(f"\n🎯 Testing Optimized Splitting Method")
+    print("\n🎯 Testing Optimized Splitting Method")
     print("-" * 40)
     
     test_targets = [8, 12, 15, 20]  # Various segment counts to test
@@ -131,7 +131,7 @@ def test_with_real_data():
     
     if total_calls > 0:
         avg_per_call = total_time / total_calls
-        print(f"\n📊 Splitting Method Performance:")
+        print("\n📊 Splitting Method Performance:")
         print(f"   Total test calls: {total_calls}")
         print(f"   Average time per call: {avg_per_call*1000:.2f}ms")
         
@@ -145,7 +145,7 @@ def test_with_real_data():
             print(f"   ⚠️ Slowdown vs baseline: {slowdown:.1f}x slower")
     
     # Test full population generation
-    print(f"\n🏭 Full Population Generation Performance:")
+    print("\n🏭 Full Population Generation Performance:")
     print("-" * 45)
     
     try:
@@ -183,7 +183,7 @@ def test_with_real_data():
     except Exception as e:
         print(f"❌ Population generation error: {e}")
         
-    print(f"\n✅ Performance test completed successfully!")
+    print("\n✅ Performance test completed successfully!")
 
 if __name__ == "__main__":
     test_with_real_data()

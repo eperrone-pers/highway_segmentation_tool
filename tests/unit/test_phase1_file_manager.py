@@ -8,10 +8,8 @@ for the multi-route processing enhancement.
 import pytest
 import sys
 import os
-import pandas as pd
 import tempfile
-from unittest.mock import Mock, patch, MagicMock
-from pathlib import Path
+from unittest.mock import Mock, patch
 
 # Add src to path for imports
 current_file_dir = os.path.dirname(__file__)

@@ -11,15 +11,8 @@ import numpy as np
 import tempfile
 import shutil
 import os
-from unittest.mock import Mock, MagicMock
+from unittest.mock import Mock
 from pathlib import Path
-
-
-def pytest_configure(config):
-    config.addinivalue_line(
-        "markers",
-        "excel_export: Tests for Excel export functionality",
-    )
 
 
 @pytest.fixture(autouse=True)
@@ -48,7 +41,7 @@ sys.path.insert(0, str(src_dir))
 from route_utils import ROUTE_COLUMN_NONE_SENTINEL
 
 # Import RouteAnalysis and analyze_route_gaps for creating test fixtures
-from data_loader import RouteAnalysis, analyze_route_gaps
+from data_loader import analyze_route_gaps
 
 # Test data paths
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -506,6 +499,10 @@ def patch_optimization_config(monkeypatch):
 
 def pytest_configure(config):
     """Configure pytest with custom markers."""
+    config.addinivalue_line(
+        "markers",
+        "excel_export: Tests for Excel export functionality",
+    )
     config.addinivalue_line("markers", "unit: Unit tests")
     config.addinivalue_line("markers", "integration: Integration tests")
     config.addinivalue_line("markers", "ui: User interface tests")

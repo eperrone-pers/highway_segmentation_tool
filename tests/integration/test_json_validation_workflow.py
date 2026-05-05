@@ -11,7 +11,7 @@ import os
 import json
 import pandas as pd
 from pathlib import Path
-from unittest.mock import Mock, MagicMock
+from unittest.mock import Mock
 from uuid import uuid4
 
 # Add src to path for imports - portable approach

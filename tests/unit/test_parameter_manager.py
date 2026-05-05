@@ -8,9 +8,7 @@ for all optimization methods and parameter types.
 import pytest
 import sys
 import os
-from unittest.mock import Mock, patch, MagicMock
-import json
-import tempfile
+from unittest.mock import Mock
 
 # Add src to path for imports - portable approach
 current_file_dir = os.path.dirname(__file__)  # tests/unit
@@ -227,15 +225,6 @@ class TestParameterManager:
         
         pm = ParameterManager(mock_gui_app)
         
-        settings = {
-            'min_length': 2.0,
-            'max_length': 8.0,
-            'population_size': 75,
-            'num_generations': 150,
-            'mutation_rate': 0.15,
-            'crossover_rate': 0.85
-        }
-        
         # Note: apply_settings method doesn't exist in current implementation
         # This test would need to be updated to test actual functionality
         # For now, just test that parameter manager can be created
@@ -252,11 +241,6 @@ class TestParameterManager:
         pm = ParameterManager(mock_gui_app)
         
         # Settings with some missing values (but this test is about graceful handling)
-        settings = {
-            'population_size': 75,
-            'num_generations': 150
-            # Missing other parameters
-        }
         
         # Note: apply_settings method doesn't exist in current implementation
         # This test would need to be updated to test actual functionality

@@ -18,8 +18,6 @@ import sys
 import os
 import numpy as np
 import pandas as pd
-from unittest.mock import Mock, MagicMock, patch
-import tempfile
 
 # Add src to path for imports
 current_dir = os.path.dirname(__file__)
@@ -32,7 +30,7 @@ if src_path not in sys.path:
 try:
     from analysis.methods.aashto_cda import AashtoCdaMethod, aashto_cda, find_change_point
     from analysis.base import AnalysisResult
-    from data_loader import RouteAnalysis, analyze_route_gaps
+    from data_loader import analyze_route_gaps
 except ImportError as e:
     pytest.skip(f"Required AASHTO CDA modules not available: {e}", allow_module_level=True)
 

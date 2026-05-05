@@ -59,7 +59,7 @@ Version: 1.95+ (Enhanced Schema Validation)
 import json
 import sys
 from pathlib import Path
-from typing import List, Dict, Any, Tuple
+from typing import Dict, Any, Tuple
 
 try:
     from jsonschema import Draft202012Validator, ValidationError
@@ -276,7 +276,7 @@ def main():
     total_count = len(results)
     
     print("=" * 60)
-    print(f"📊 Validation Summary:")
+    print("📊 Validation Summary:")
     print(f"   Valid files:   {valid_count}/{total_count}")
     print(f"   Invalid files: {total_count - valid_count}/{total_count}")
     print()

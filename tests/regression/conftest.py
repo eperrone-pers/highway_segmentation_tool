@@ -44,9 +44,7 @@ Version: 1.95+ (Enhanced Regression Testing)
 
 import pytest
 import json
-import os
 import shutil
-import pandas as pd
 from pathlib import Path
 import sys
 
@@ -58,7 +56,31 @@ src_path = project_root / 'src'
 if str(src_path) not in sys.path:
     sys.path.insert(0, str(src_path))
 
-from config import OPTIMIZATION_METHODS
+
+def get_optimization_methods():
+    """Return the optimization method keys used by the regression suite.
+
+    Source of truth is the regression parameter template under
+    tests/regression/test_parameters_template.json.
+    """
+
+    try:
+        params_file = current_dir / "test_parameters_template.json"
+        with open(params_file, 'r') as f:
+            template = json.load(f)
+    except Exception:
+        # Conservative fallback: the suite always includes these baselines.
+        return ["single", "multi"]
+
+    method_specific = template.get("method_specific", {}) or {}
+    methods = ["single", "multi"] + sorted(
+        [m for m in method_specific.keys() if isinstance(m, str)]
+    )
+
+    # De-dupe while preserving order.
+    seen = set()
+    return [m for m in methods if not (m in seen or seen.add(m))]
+
 
 
 def pytest_collection_modifyitems(config, items):

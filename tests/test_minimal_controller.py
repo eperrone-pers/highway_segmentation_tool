@@ -108,7 +108,7 @@ def test_simple_controller_creation():
     print(f"Created mock app with {data_points} data points")
     
     # Create optimization controller
-    controller = OptimizationController(mock_app)
+    OptimizationController(mock_app)
     
     print("✅ Controller created successfully")
     

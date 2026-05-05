@@ -10,10 +10,6 @@ import sys
 import os
 import json
 import pandas as pd
-import tempfile
-import shutil
-from pathlib import Path
-from unittest.mock import Mock, patch
 
 # Add src to path for imports - portable approach
 current_file_dir = os.path.dirname(__file__)  # tests/unit

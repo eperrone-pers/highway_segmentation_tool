@@ -52,9 +52,7 @@ Version: 1.95+ (Performance and Documentation Enhanced)
 import pytest
 import sys
 import os
-import pandas as pd
 import numpy as np
-from unittest.mock import Mock
 
 # Add src to path for imports
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
@@ -492,7 +490,7 @@ class TestGeneticAlgorithmIntegration:
         
         # Test segment caching
         ga.enable_segment_cache_mode(True)
-        assert ga.enable_segment_caching == True
+        assert ga.enable_segment_caching
         
         chromosome = ga.generate_chromosome()
         

@@ -9,7 +9,6 @@ and chromosome reselection.
 import sys
 import os
 import pandas as pd
-import random
 import numpy as np
 
 # Add src to Python path
@@ -113,11 +112,11 @@ def test_mutation_retry_logic():
                 print(f"   ✅ No change: Kept original {original_segments} segments")
                 kept_original_count += 1
         else:
-            print(f"   ❌ Failed: Returned None after retries")
+            print("   ❌ Failed: Returned None after retries")
             failure_count += 1
     
     # Test edge cases
-    print(f"\n🔬 Edge Case Testing:")
+    print("\n🔬 Edge Case Testing:")
     
     # Test with chromosome that has no optional breakpoints
     mandatory_only = list(ga.mandatory_breakpoints)
@@ -128,17 +127,17 @@ def test_mutation_retry_logic():
             print(f"   ✅ Success: Added breakpoint(s) to get {len(mutated)-1} segments")
             success_count += 1
         else:
-            print(f"   ✅ No change: Kept mandatory-only structure")
+            print("   ✅ No change: Kept mandatory-only structure")
             kept_original_count += 1
     else:
-        print(f"   ❌ Failed: Returned None")
+        print("   ❌ Failed: Returned None")
         failure_count += 1
     
     # Print final statistics
     stats = ga._generation_stats
     total_attempts = stats['mutation_attempts']
     
-    print(f"\n📈 Mutation Retry Statistics:")
+    print("\n📈 Mutation Retry Statistics:")
     print(f"   Total attempts: {total_attempts}")
     print(f"   Successful mutations: {success_count}")
     print(f"   Kept original (valid but no change): {kept_original_count}")
@@ -155,8 +154,8 @@ def test_mutation_retry_logic():
             print(f"   Average retries per attempt: {avg_retries:.2f}")
     
     # Validate that successful mutations are valid
-    print(f"\n🔍 Validation Check:")
-    print(f"   Testing mutations on sample population...")
+    print("\n🔍 Validation Check:")
+    print("   Testing mutations on sample population...")
     
     valid_mutations = 0
     total_mutations = 0
@@ -173,9 +172,9 @@ def test_mutation_retry_logic():
         validity_rate = valid_mutations / total_mutations * 100
         print(f"   Valid mutations: {valid_mutations}/{total_mutations} ({validity_rate:.1f}%)")
     else:
-        print(f"   No successful mutations to validate")
+        print("   No successful mutations to validate")
     
-    print(f"\n✅ Mutation retry test completed!")
+    print("\n✅ Mutation retry test completed!")
 
     # Test passes if we had some successful mutations and all were valid
     assert (success_count > 0) and (total_mutations == 0 or validity_rate == 100.0), (

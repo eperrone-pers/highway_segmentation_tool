@@ -7,13 +7,12 @@ This validates the unified architecture before continuing with other optimizatio
 import os
 import sys
 import pandas as pd
-import numpy as np
 
 # Add src directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
 from analysis.methods.multi_objective import MultiObjectiveMethod
-from data_loader import filter_data_by_route, RouteAnalysis
+from data_loader import RouteAnalysis
 
 def test_unified_nsga2_breakpoint2():
     """Test unified NSGA-II implementation at Breakpoint 2."""
@@ -35,7 +34,7 @@ def test_unified_nsga2_breakpoint2():
         return
     
     # Prepare data with correct column names
-    print(f"\n2. Preparing data with route column 'RDB', x_column 'BDFO', y_column 'D60'")
+    print("\n2. Preparing data with route column 'RDB', x_column 'BDFO', y_column 'D60'")
     
     # Use original columns with column parameters
     data = df.copy()
@@ -44,7 +43,7 @@ def test_unified_nsga2_breakpoint2():
     print(f"   ✅ Using columns: x='{x_column}', y='{y_column}'")
     
     # Test 1: Multi-route processing (column-based)
-    print(f"\n3. TEST 1: Multi-route processing (column-based)")
+    print("\n3. TEST 1: Multi-route processing (column-based)")
     try:
         # Select first 2 routes for quick testing
         routes = sorted(data['RDB'].unique())[:2]
@@ -103,7 +102,7 @@ def test_unified_nsga2_breakpoint2():
             'route_results': route_results
         }
         
-        print(f"   ✅ Multi-route optimization completed!")
+        print("   ✅ Multi-route optimization completed!")
         print(f"   ✅ Routes processed: {len(results['routes_processed'])}")
         print(f"   ✅ Processing mode: {results['processing_mode']}")
         
@@ -118,7 +117,7 @@ def test_unified_nsga2_breakpoint2():
         return
     
     # Test 2: Single dataset processing (framework method for whole dataset)
-    print(f"\n4. TEST 2: Single dataset processing (framework)")
+    print("\n4. TEST 2: Single dataset processing (framework)")
     try:
         # Process entire dataset as single route using framework
         route_analysis_single = RouteAnalysis(
@@ -149,7 +148,7 @@ def test_unified_nsga2_breakpoint2():
             'routes_processed': ["test_dataset"] if analysis_result else []
         }
         
-        print(f"   ✅ Single-file optimization completed!")
+        print("   ✅ Single-file optimization completed!")
         print(f"   ✅ Processing mode: {results_single['processing_mode']}")
         print(f"   ✅ Routes processed: {len(results_single['routes_processed'])}")
         
@@ -157,7 +156,7 @@ def test_unified_nsga2_breakpoint2():
         print(f"   ❌ Single-file test failed: {e}")
         return
 
-    print(f"\n" + "=" * 60)
+    print("\n" + "=" * 60)
     print("🎉 BREAKPOINT 2 VALIDATION SUCCESSFUL!")
     print("✅ Unified NSGA-II architecture working correctly")
     print("✅ Multi-route processing implemented")
@@ -193,6 +192,6 @@ if __name__ == "__main__":
     if success:
         # Create small test file for future use
         create_small_test_file()
-        print(f"\n🚀 Ready to proceed with unified architecture implementation!")
+        print("\n🚀 Ready to proceed with unified architecture implementation!")
     else:
-        print(f"\n❌ Breakpoint 2 validation failed - needs debugging before proceeding")
+        print("\n❌ Breakpoint 2 validation failed - needs debugging before proceeding")

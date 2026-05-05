@@ -8,7 +8,6 @@ sys.path.append('src')
 import pandas as pd
 from analysis.utils.genetic_algorithm import HighwaySegmentGA
 from data_loader import analyze_route_gaps
-from config import optimization_config
 
 def test_uniform_population():
     """Test the uniform initial population generation algorithm"""
@@ -43,7 +42,7 @@ def test_uniform_population():
     segment_counts = [len(chrom) - 1 for chrom in population]
     segment_counts.sort()
     
-    print(f"\n=== RESULTS ANALYSIS ===")
+    print("\n=== RESULTS ANALYSIS ===")
     print(f"Population generated: {len(population)} solutions")
     print(f"Segment range: {min(segment_counts)} - {max(segment_counts)}")
     print(f"Average segments: {sum(segment_counts) / len(segment_counts):.1f}")
@@ -71,7 +70,7 @@ def test_uniform_population():
     high_segment_count = sum(1 for s in segment_counts if s >= 80)
     very_high_count = sum(1 for s in segment_counts if s >= 100)
     
-    print(f"\n=== SUCCESS METRICS ===")
+    print("\n=== SUCCESS METRICS ===")
     print(f"Solutions ≥80 segments: {high_segment_count} ({high_segment_count/len(population)*100:.1f}%)")
     print(f"Solutions ≥100 segments: {very_high_count} ({very_high_count/len(population)*100:.1f}%)")
     print(f"Maximum achieved: {max(segment_counts)} segments")

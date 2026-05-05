@@ -163,11 +163,11 @@ def main():
     print(f"Failed: {len(failed_tests)}")
     
     if failed_tests:
-        print(f"\n❌ Failed Tests:")
+        print("\n❌ Failed Tests:")
         for test_name in failed_tests:
             print(f"  • {test_name}")
         
-        print(f"\n🔍 Troubleshooting Tips:")
+        print("\n🔍 Troubleshooting Tips:")
         print("• Check that all AASHTO CDA files are properly created")
         print("• Verify src/analysis/methods/aashto_cda.py exists")
         print("• Ensure optimization_runners.py includes run_aashto_cda function")
@@ -175,16 +175,16 @@ def main():
         
         return 1
     else:
-        print(f"\n✅ All Phase 3 tests passed!")
+        print("\n✅ All Phase 3 tests passed!")
         
-        print(f"\n🎯 Phase 3 Validation Complete:")
+        print("\n🎯 Phase 3 Validation Complete:")
         print("• ✓ AASHTO CDA algorithm implementation validated")
         print("• ✓ Framework integration verified")
         print("• ✓ Configuration system integration confirmed") 
         print("• ✓ End-to-end workflow tested")
         print("• ✓ Performance characteristics validated")
         
-        print(f"\n🚀 Ready for Phase 4: Documentation and Finalization")
+        print("\n🚀 Ready for Phase 4: Documentation and Finalization")
         
         return 0
 

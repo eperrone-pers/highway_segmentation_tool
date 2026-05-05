@@ -54,3 +54,9 @@ timeout = 300
 
 # Coverage configuration (optional - can be enabled later)
 # addopts = ["--cov=src", "--cov-report=html", "--cov-report=term-missing"]
+
+
+[tool.ruff]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["E402"]

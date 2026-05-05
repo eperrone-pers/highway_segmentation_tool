@@ -8,11 +8,8 @@ to UI state management across all components.
 import pytest
 import sys
 import os
-import pandas as pd
 import tempfile
-import tkinter as tk
-from unittest.mock import Mock, patch, MagicMock
-from pathlib import Path
+from unittest.mock import Mock, patch
 
 from route_utils import ROUTE_COLUMN_NONE_SENTINEL
 
@@ -202,7 +199,6 @@ class TestPhase1CompleteWorkflow:
             complex_mock_app.route_column.get.return_value = "route"
             
             # Simulate route column change event
-            mock_event = Mock()
             file_manager.detect_available_routes()
             
             # Verify route detection was triggered
@@ -276,7 +272,6 @@ class TestPhase1CompleteWorkflow:
             complex_mock_app.route_column.get.return_value = ROUTE_COLUMN_NONE_SENTINEL
             
             # Step 3: Trigger route column change
-            mock_event = Mock()
             file_manager.detect_available_routes()
             
             # Verify route data was cleared for single route mode
@@ -315,7 +310,7 @@ I-75,Route-B,0.1,6.0"""
         try:
             # Initialize components
             file_manager = FileManager(complex_mock_app)
-            parameter_manager = ParameterManager(complex_mock_app)
+            ParameterManager(complex_mock_app)
             
             complex_mock_app.data_file_path.get.return_value = temp_path
             
@@ -327,7 +322,6 @@ I-75,Route-B,0.1,6.0"""
             # Step 2: Select first route column and set up file path
             complex_mock_app._data_file_path = temp_path
             complex_mock_app.route_column.get.return_value = "route"
-            mock_event = Mock()
             file_manager.detect_available_routes()
             
             first_routes = complex_mock_app.available_routes.copy()
@@ -360,7 +354,7 @@ class TestPhase1ErrorHandlingIntegration:
         """Test error handling when data file is missing."""
         # Initialize components
         file_manager = FileManager(complex_mock_app)
-        parameter_manager = ParameterManager(complex_mock_app)
+        ParameterManager(complex_mock_app)
         
         # Set invalid file path (fix Mock configuration for get_data_file_path)
         complex_mock_app._data_file_path = "/nonexistent/file.csv"  # Set the actual attribute the method reads
@@ -396,7 +390,7 @@ class TestPhase1ErrorHandlingIntegration:
         try:
             # Initialize components
             file_manager = FileManager(complex_mock_app)
-            parameter_manager = ParameterManager(complex_mock_app)
+            ParameterManager(complex_mock_app)
             
             complex_mock_app.data_file_path.get.return_value = temp_path
             
@@ -447,7 +441,7 @@ SR-123,0.5,"""
         try:
             # Initialize components
             file_manager = FileManager(complex_mock_app)
-            parameter_manager = ParameterManager(complex_mock_app)
+            ParameterManager(complex_mock_app)
             
             # Set up file path (both Mock return value and actual attribute)
             complex_mock_app._data_file_path = temp_path
