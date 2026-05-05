@@ -98,6 +98,7 @@ def compute_segment_average_lines(
     y_data: np.ndarray,
     breakpoints: Sequence[float],
     gap_segments: Optional[Iterable[dict]] = None,
+    label: str = "Segment Averages",
 ) -> List[SegmentAverageLine]:
     """Compute horizontal average lines for segments defined by breakpoints.
 
@@ -132,14 +133,14 @@ def compute_segment_average_lines(
             continue
 
         avg_y = float(np.mean(segment_y))
-        label = "Segment Averages" if not labeled else ""
+        line_label = label if not labeled else ""
         labeled = True
         lines.append(
             SegmentAverageLine(
                 start_x=float(start_bp),
                 end_x=float(end_bp),
                 avg_y=avg_y,
-                label=label,
+                label=line_label,
             )
         )
 

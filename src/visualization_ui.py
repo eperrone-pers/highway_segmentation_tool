@@ -23,7 +23,7 @@ Date: April 2026
 """
 
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
+from tkinter import ttk, filedialog, messagebox, colorchooser
 import pandas as pd
 import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
@@ -51,6 +51,9 @@ from visualization.pareto import prepare_pareto_series
 COLORS = default_colors()
 
 
+SECONDARY_NONE_SENTINEL = "(None)"
+
+
 class EnhancedVisualizationWindow:
     """Enhanced paned window visualization for optimization results."""
     
@@ -74,6 +77,8 @@ class EnhancedVisualizationWindow:
             raise ValueError(f"Invalid column configuration: {error_msg}")
         
         self.parent_app = parent_app
+        # Backward-compatible alias: existing visualization code uses self.app.*
+        self.app = parent_app
         self.json_results = json_results_data or {}
         self.original_data = original_data
         self.x_column = x_column
@@ -98,12 +103,27 @@ class EnhancedVisualizationWindow:
 
         # Zoom state (reset on route change)
         self._seg_x_zoom_enabled = False
+        self._seg_xzoom_var = tk.BooleanVar(value=False)
         self._seg_default_xlim = None
         self._seg_default_ylim = None
+        self._seg_default_ylim_secondary = None
         self._pareto_default_xlim = None
         self._pareto_default_ylim = None
         self._current_seg_x = None
         self._current_seg_y = None
+        self._current_seg_secondary_x = None
+        self._current_seg_secondary_y = None
+        self._last_seg_route_id = None
+
+        # Secondary Y-axis series state (one optional series)
+        self._secondary_y_col = None
+        self._secondary_color = COLORS.get('secondary_default', '#14B8A6')
+        self._secondary_points_alpha = 0.25
+        self._ax_right_secondary = None
+        self._route_column_name = None
+
+        # Debounce handle for secondary UI-driven redraws
+        self._secondary_redraw_after_id = None
         
         # Setup route data and selection
         self.setup_route_data()
@@ -157,18 +177,90 @@ class EnhancedVisualizationWindow:
         export_button = ttk.Button(control_frame, text="📊 Export to Excel", 
                                    command=self._export_to_excel)
         export_button.pack(side='left', padx=10)
+
+        # Secondary axis controls (single optional series)
+        secondary_controls = ttk.Frame(control_frame)
+        secondary_controls.pack(side='left', padx=(10, 0))
+
+        self.secondary_column_var = tk.StringVar(value=SECONDARY_NONE_SENTINEL)
+        self.secondary_color_var = tk.StringVar(value=self._secondary_color)
+
+        ttk.Label(secondary_controls, text="Secondary Y:").pack(side='left', padx=(0, 5))
+        self.secondary_column_combo = ttk.Combobox(
+            secondary_controls,
+            textvariable=self.secondary_column_var,
+            values=[SECONDARY_NONE_SENTINEL],
+            state='readonly',
+            width=22,
+        )
+        self.secondary_column_combo.pack(side='left', padx=(0, 6))
+        self.secondary_column_combo.bind('<<ComboboxSelected>>', lambda _e: self._schedule_secondary_redraw())
+
+        self.secondary_color_button = ttk.Button(
+            secondary_controls,
+            text="Pick Color",
+            command=self._choose_secondary_color,
+        )
+        self.secondary_color_button.pack(side='left', padx=(0, 6))
+
+        # Show actual selected color as a swatch (ttk widgets don't reliably support bg colors cross-platform)
+        self.secondary_color_swatch = tk.Label(
+            secondary_controls,
+            width=2,
+            relief='solid',
+            borderwidth=1,
+            bg=self.secondary_color_var.get(),
+            cursor='hand2',
+        )
+        self.secondary_color_swatch.pack(side='left', padx=(0, 10), pady=2)
+        self.secondary_color_swatch.bind('<Button-1>', lambda _e: self._choose_secondary_color())
+
+        ttk.Label(secondary_controls, text="Transparency:").pack(side='left', padx=(0, 4))
+        self.secondary_alpha_var = tk.DoubleVar(value=self._secondary_points_alpha)
+        self.secondary_alpha_scale = ttk.Scale(
+            secondary_controls,
+            from_=0.05,
+            to=0.90,
+            orient='horizontal',
+            variable=self.secondary_alpha_var,
+            command=self._on_secondary_alpha_changed,
+            length=90,
+        )
+        self.secondary_alpha_scale.pack(side='left', padx=(0, 4))
+        self.secondary_alpha_value_label = ttk.Label(secondary_controls, text=f"{self._secondary_points_alpha:.2f}")
+        self.secondary_alpha_value_label.pack(side='left', padx=(0, 8))
         
         # Show optimization info
         opt_info = self.get_optimization_summary()
-        info_label = ttk.Label(control_frame, text=opt_info)
-        info_label.pack(side='left', padx=20)
+        self.opt_info_label = ttk.Label(control_frame, text=opt_info)
+        self.opt_info_label.pack(side='left', padx=(10, 0))
         
         # Status on right
         self.status_label = ttk.Label(control_frame, text="📈 Results loaded")
         self.status_label.pack(side='right', padx=10)
         
-        # Main paned window container with user-resizable divider
-        main_paned = ttk.PanedWindow(self.window, orient='horizontal')
+        # Main paned window container with user-resizable divider.
+        # Use tk.PanedWindow (not ttk) because ttk themes on Windows often don't
+        # visually expose sash/handle customization.
+        main_paned = tk.PanedWindow(self.window, orient='horizontal')
+
+        # Make the divider (sash) more discoverable + reduce jerky redraw while dragging.
+        # - opaqueresize=False avoids continuous matplotlib redraw while dragging.
+        # - opaqueresize=False avoids continuous matplotlib redraw while dragging.
+        try:
+            main_paned.configure(
+                # Disable the default small square handle; we draw our own centered grip.
+                showhandle=False,
+                opaqueresize=False,
+                sashwidth=10,
+                sashpad=3,
+                sashrelief='raised',
+                cursor='sb_h_double_arrow',
+                # The sash background color comes from the paned window background.
+                bg=COLORS['original_edge'],
+            )
+        except Exception:
+            pass
         main_paned.pack(fill='both', expand=True, padx=10, pady=10)
         
         # Store reference for divider control
@@ -189,7 +281,10 @@ class EnhancedVisualizationWindow:
         self.is_multi_objective = is_multi_objective_method(analysis_method)
             
         if self.is_multi_objective:
-            main_paned.add(self.left_frame, weight=1)
+            try:
+                main_paned.add(self.left_frame, stretch='always')
+            except Exception:
+                main_paned.add(self.left_frame)
         
         # Create left figure (Pareto) with tight layout
         self.fig_left = Figure(figsize=(7, 6), dpi=100, tight_layout=True)
@@ -225,7 +320,44 @@ class EnhancedVisualizationWindow:
         
         # RIGHT PANE - Segmentation Graph  
         right_frame = ttk.LabelFrame(main_paned, text="📊 Highway Segmentation Analysis", padding=5)
-        main_paned.add(right_frame, weight=1)  # Pane for segmentation display
+        try:
+            main_paned.add(right_frame, stretch='always')
+        except Exception:
+            main_paned.add(right_frame)  # Pane for segmentation display
+
+        # Extra visual cue: centered grip (three dots) overlay on the sash.
+        # Drawn on a Canvas so it renders reliably on Windows fonts.
+        try:
+            self._sash_handle = tk.Canvas(
+                main_paned,
+                width=14,
+                height=34,
+                highlightthickness=0,
+                bd=0,
+                bg=COLORS['original_edge'],
+                cursor='sb_h_double_arrow',
+            )
+
+            dot_color = COLORS['text_secondary']
+            cx = 7
+            r = 2
+            for cy in (10, 17, 24):
+                self._sash_handle.create_oval(cx - r, cy - r, cx + r, cy + r, fill=dot_color, outline=dot_color)
+
+            def _sash_local_xy(event):
+                x = int(event.x_root - main_paned.winfo_rootx())
+                y = int(event.y_root - main_paned.winfo_rooty())
+                return x, y
+
+            self._sash_handle.bind('<ButtonPress-1>', lambda e: main_paned.sash_mark(0, *_sash_local_xy(e)))
+            self._sash_handle.bind('<B1-Motion>', lambda e: (main_paned.sash_dragto(0, *_sash_local_xy(e)), self._position_main_paned_sash_handle()))
+            self._sash_handle.bind('<ButtonRelease-1>', lambda _e: self._position_main_paned_sash_handle())
+
+            main_paned.bind('<Configure>', lambda _e: self._position_main_paned_sash_handle())
+            main_paned.bind('<B1-Motion>', lambda _e: self._position_main_paned_sash_handle())
+            main_paned.bind('<ButtonRelease-1>', lambda _e: self._position_main_paned_sash_handle())
+        except Exception:
+            self._sash_handle = None
         
         # Create right figure (Segmentation) with tight layout  
         self.fig_right = Figure(figsize=(7, 6), dpi=100, tight_layout=True)
@@ -288,17 +420,25 @@ class EnhancedVisualizationWindow:
         right_controls_container = ttk.Frame(right_bottom_bar)
         right_controls_container.pack(side='right')
 
-        self.seg_xzoom_button = ttk.Button(
+        # Standard cross-platform toggle: ttk.Checkbutton (checkbox-style)
+        self.seg_xzoom_button = ttk.Checkbutton(
             right_controls_container,
-            text="X Zoom (Segmentation)",
+            text="X Zoom",
+            variable=self._seg_xzoom_var,
             command=self.toggle_segmentation_x_zoom,
+            takefocus=False,
         )
+        # Prevent inheriting the sash resize cursor from parent widgets.
+        try:
+            self.seg_xzoom_button.configure(cursor='arrow')
+        except Exception:
+            pass
         self.seg_xzoom_button.pack(side='left', padx=(0, 6), pady=2)
 
         self.reset_seg_zoom_button = ttk.Button(
             right_controls_container,
             text="Reset Seg Zoom",
-            command=self.reset_segmentation_zoom,
+            command=self.reset_segmentation_x_zoom,
         )
         self.reset_seg_zoom_button.pack(side='left', padx=(0, 0), pady=2)
 
@@ -309,9 +449,41 @@ class EnhancedVisualizationWindow:
             direction='horizontal',
             useblit=True,
             interactive=True,
-            props=dict(alpha=0.20, facecolor=COLORS['original_edge']),
+            props=dict(
+                alpha=0.18,
+                facecolor=COLORS['original_edge'],
+                edgecolor=COLORS['text_secondary'],
+                linewidth=1.2,
+            ),
         )
         self._seg_span_selector.set_active(False)
+
+        # Modernize the selector look (subtle 3D/shadow). Best-effort.
+        try:
+            rect = getattr(self._seg_span_selector, 'rect', None)
+            if rect is not None:
+                rect.set_alpha(0.18)
+                rect.set_facecolor(COLORS['original_edge'])
+                rect.set_edgecolor(COLORS['text_secondary'])
+                rect.set_linewidth(1.2)
+
+                try:
+                    import matplotlib.patheffects as pe
+
+                    rect.set_path_effects(
+                        [
+                            pe.withSimplePatchShadow(
+                                offset=(1.2, -1.2),
+                                shadow_rgbFace=COLORS['grid'],
+                                alpha=0.35,
+                            ),
+                            pe.Normal(),
+                        ]
+                    )
+                except Exception:
+                    pass
+        except Exception:
+            pass
         
         # Status message frame for original data loading issues
         self.status_frame = ttk.Frame(self.window)
@@ -332,8 +504,67 @@ class EnhancedVisualizationWindow:
         
         # Load original data from input file info
         self.load_original_data()
+
+        # Populate secondary-axis dropdown options now that original data is loaded
+        self._refresh_secondary_column_options()
+
+        # Position the sash handle overlay once panes are laid out.
+        try:
+            self.window.after(0, self._position_main_paned_sash_handle)
+        except Exception:
+            pass
         
         _safe_print("Enhanced visualization interface ready")
+
+    def _position_main_paned_sash_handle(self) -> None:
+        """Position the sash grip overlay over the paned divider."""
+
+        try:
+            if not hasattr(self, 'main_paned'):
+                return
+            if not hasattr(self, '_sash_handle') or self._sash_handle is None:
+                return
+
+            panes = []
+            try:
+                panes = list(self.main_paned.panes())
+            except Exception:
+                panes = []
+
+            if not panes or len(panes) < 2:
+                try:
+                    self._sash_handle.place_forget()
+                except Exception:
+                    pass
+                return
+
+            if hasattr(self, 'left_frame') and str(self.left_frame) not in panes:
+                try:
+                    self._sash_handle.place_forget()
+                except Exception:
+                    pass
+                return
+
+            sx, _sy = self.main_paned.sash_coord(0)
+            try:
+                sash_w = int(self.main_paned.cget('sashwidth'))
+            except Exception:
+                sash_w = 10
+
+            h = int(self.main_paned.winfo_height() or 0)
+            if h <= 0:
+                return
+
+            self._sash_handle.update_idletasks()
+            lw = int(self._sash_handle.winfo_reqwidth() or 0)
+            lh = int(self._sash_handle.winfo_reqheight() or 0)
+
+            x = int(sx + (sash_w / 2) - (lw / 2))
+            y = int((h / 2) - (lh / 2))
+
+            self._sash_handle.place(x=x, y=y)
+        except Exception:
+            return
         
     def get_optimization_summary(self):
         """Get summary of optimization results using actual schema structure."""
@@ -393,6 +624,7 @@ class EnhancedVisualizationWindow:
                 # Get column names from JSON schema
                 route_processing = self.json_results.get('input_parameters', {}).get('route_processing', {})
                 route_column = route_processing.get('route_column')
+                self._route_column_name = route_column
 
                 self.original_data_by_route = group_original_data_by_route(
                     self.original_data,
@@ -405,6 +637,12 @@ class EnhancedVisualizationWindow:
                 try:
                     self.data_status_label.config(text="Loaded original data:", foreground='green')
                     self.data_path_var.set(self.loaded_original_data_path)
+                except Exception:
+                    pass
+
+                # If the UI is already built, refresh secondary column options.
+                try:
+                    self._refresh_secondary_column_options()
                 except Exception:
                     pass
                 return
@@ -426,6 +664,165 @@ class EnhancedVisualizationWindow:
 
         # Console output must remain ASCII-safe on Windows.
         _safe_print(f"[WARNING] Original data file not found: {missing_path_display or (data_file_name or 'Unknown file')}")
+
+        try:
+            self._refresh_secondary_column_options()
+        except Exception:
+            pass
+
+
+    def _infer_numeric_columns(self, df: pd.DataFrame) -> list[str]:
+        """Best-effort inference of numeric columns from a dtype=str dataframe."""
+
+        if df is None or df.empty:
+            return []
+
+        numeric_cols: list[str] = []
+        total = len(df)
+
+        # A column is considered numeric if numeric coercion yields a reasonable
+        # fraction of valid values. This is intentionally permissive because the
+        # CSV is loaded as dtype=str.
+        for col in df.columns:
+            try:
+                coerced = pd.to_numeric(df[col], errors='coerce')
+            except Exception:
+                continue
+
+            non_nan = int(coerced.notna().sum())
+            if non_nan <= 0:
+                continue
+
+            if total <= 0:
+                continue
+
+            ratio = non_nan / total
+            if ratio >= 0.60:
+                numeric_cols.append(str(col))
+
+        return numeric_cols
+
+
+    def _refresh_secondary_column_options(self) -> None:
+        """Refresh the secondary column dropdown from loaded original data."""
+
+        if not hasattr(self, 'secondary_column_combo'):
+            return
+
+        if self.original_data is None or getattr(self.original_data, 'empty', True):
+            self.secondary_column_combo.configure(values=[SECONDARY_NONE_SENTINEL])
+            self.secondary_column_var.set(SECONDARY_NONE_SENTINEL)
+            try:
+                self.secondary_column_combo.configure(state='disabled')
+            except Exception:
+                pass
+            return
+
+        numeric_cols = self._infer_numeric_columns(self.original_data)
+
+        excluded = {
+            str(self.x_column) if self.x_column else None,
+            str(self.y_column) if self.y_column else None,
+            str(self._route_column_name) if self._route_column_name else None,
+        }
+
+        candidates = [c for c in numeric_cols if c not in excluded]
+        candidates = sorted(set(candidates), key=lambda s: s.lower())
+
+        values = [SECONDARY_NONE_SENTINEL] + candidates
+        self.secondary_column_combo.configure(values=values)
+        try:
+            self.secondary_column_combo.configure(state='readonly')
+        except Exception:
+            pass
+
+        current = self.secondary_column_var.get() or SECONDARY_NONE_SENTINEL
+        if current not in values:
+            self.secondary_column_var.set(SECONDARY_NONE_SENTINEL)
+
+        # No explicit apply button; graph updates via live control changes.
+
+
+    def _choose_secondary_color(self) -> None:
+        """Open a color picker for the secondary series."""
+
+        initial = self.secondary_color_var.get() or self._secondary_color
+        chosen = colorchooser.askcolor(color=initial, parent=self.window)
+        if not chosen or not chosen[1]:
+            return
+
+        self.secondary_color_var.set(chosen[1])
+        try:
+            if hasattr(self, 'secondary_color_swatch'):
+                self.secondary_color_swatch.configure(bg=chosen[1])
+        except Exception:
+            pass
+
+        # Live update
+        self._schedule_secondary_redraw()
+
+
+    def _on_secondary_alpha_changed(self, _value: str) -> None:
+        """Handle alpha slider change (debounced redraw for responsiveness)."""
+
+        try:
+            alpha = float(self.secondary_alpha_var.get())
+        except Exception:
+            return
+
+        alpha = max(0.0, min(1.0, alpha))
+        try:
+            self.secondary_alpha_value_label.configure(text=f"{alpha:.2f}")
+        except Exception:
+            pass
+
+        self._schedule_secondary_redraw()
+
+
+    def _schedule_secondary_redraw(self) -> None:
+        """Debounce redraws from secondary controls to keep UI responsive."""
+
+        try:
+            if self._secondary_redraw_after_id is not None:
+                self.window.after_cancel(self._secondary_redraw_after_id)
+        except Exception:
+            pass
+
+        try:
+            self._secondary_redraw_after_id = self.window.after(200, self._apply_secondary_series)
+        except Exception:
+            self._secondary_redraw_after_id = None
+
+
+    def _apply_secondary_series(self) -> None:
+        """Apply the selected secondary column/color and refresh the segmentation plot."""
+
+        selected = (self.secondary_column_var.get() or SECONDARY_NONE_SENTINEL).strip()
+        if selected == SECONDARY_NONE_SENTINEL:
+            self._secondary_y_col = None
+        else:
+            self._secondary_y_col = selected
+
+        color = (self.secondary_color_var.get() or '').strip()
+        if color:
+            self._secondary_color = color
+
+        try:
+            alpha = float(getattr(self, 'secondary_alpha_var', None).get())
+            self._secondary_points_alpha = max(0.0, min(1.0, alpha))
+        except Exception:
+            # Keep last value
+            pass
+
+        try:
+            route_id = self.route_var.get()
+            self.update_segmentation_graph(route_id)
+            self.canvas_right.draw_idle()
+        except Exception as e:
+            try:
+                self.status_label.config(text=f"❌ Secondary plot update failed: {e}")
+            except Exception:
+                pass
         
     def on_route_keyrelease(self, event=None):
         """Handle type-ahead functionality."""
@@ -443,26 +840,121 @@ class EnhancedVisualizationWindow:
         # Reset zoom state on route change (user preference)
         self._seg_x_zoom_enabled = False
         try:
+            if hasattr(self, '_seg_xzoom_var'):
+                self._seg_xzoom_var.set(False)
+        except Exception:
+            pass
+        try:
             if hasattr(self, '_seg_span_selector'):
                 self._seg_span_selector.set_active(False)
-            if hasattr(self, 'seg_xzoom_button'):
-                self.seg_xzoom_button.config(text="X Zoom (Segmentation)")
+                # Clear any prior selection highlight
+                try:
+                    rect = getattr(self._seg_span_selector, 'rect', None)
+                    if rect is not None:
+                        rect.set_visible(False)
+                except Exception:
+                    pass
         except Exception:
             pass
         self.update_visualizations()
 
     def toggle_segmentation_x_zoom(self):
         """Toggle X-only zoom mode for the segmentation plot."""
-        self._seg_x_zoom_enabled = not self._seg_x_zoom_enabled
+        # When using a toggle-style control, treat the variable as source of truth.
+        try:
+            self._seg_x_zoom_enabled = bool(self._seg_xzoom_var.get())
+        except Exception:
+            self._seg_x_zoom_enabled = not self._seg_x_zoom_enabled
         try:
             if hasattr(self, '_seg_span_selector'):
                 self._seg_span_selector.set_active(self._seg_x_zoom_enabled)
-            if hasattr(self, 'seg_xzoom_button'):
-                self.seg_xzoom_button.config(
-                    text=("X Zoom: ON" if self._seg_x_zoom_enabled else "X Zoom (Segmentation)")
-                )
+
+                # If toggling OFF, reset zoom and remove selection highlight.
+                if not self._seg_x_zoom_enabled:
+                    self._clear_segmentation_xzoom_highlight(force_draw=False)
+
+                    # Reset to full view so paging/zoom highlight is cleared.
+                    try:
+                        self.reset_segmentation_zoom()
+                    except Exception:
+                        pass
+                else:
+                    # If toggling ON, allow selection rectangle to show when used.
+                    try:
+                        rect = getattr(self._seg_span_selector, 'rect', None)
+                        if rect is not None:
+                            rect.set_visible(True)
+                    except Exception:
+                        pass
+
         except Exception:
             pass
+
+    def _clear_segmentation_xzoom_highlight(self, *, force_draw: bool = True) -> None:
+        """Best-effort removal of the SpanSelector selection overlay.
+
+        With blitting enabled, the selection rectangle can sometimes appear to
+        "stick" unless we explicitly hide all selector artists and redraw.
+        """
+
+        try:
+            selector = getattr(self, '_seg_span_selector', None)
+            if selector is None:
+                return
+
+            # Common public attribute.
+            rect = getattr(selector, 'rect', None)
+            if rect is not None:
+                try:
+                    rect.set_visible(False)
+                except Exception:
+                    pass
+
+            # Newer matplotlib versions may store artists differently.
+            for attr_name in ('artists', '_artists', '_selection_artist', '_selection_patch'):
+                artist_obj = getattr(selector, attr_name, None)
+                if artist_obj is None:
+                    continue
+                try:
+                    if isinstance(artist_obj, (list, tuple)):
+                        for a in artist_obj:
+                            try:
+                                a.set_visible(False)
+                            except Exception:
+                                pass
+                    else:
+                        artist_obj.set_visible(False)
+                except Exception:
+                    pass
+
+            # Some interactive selectors add handles.
+            for attr_name in ('_handles', 'handles', '_edge_handles', '_center_handle'):
+                handles = getattr(selector, attr_name, None)
+                if handles is None:
+                    continue
+                try:
+                    if isinstance(handles, (list, tuple)):
+                        for h in handles:
+                            try:
+                                h.set_visible(False)
+                            except Exception:
+                                pass
+                    else:
+                        handles.set_visible(False)
+                except Exception:
+                    pass
+        except Exception:
+            return
+
+        if force_draw:
+            try:
+                # Force a full redraw so any blitted overlay is cleared.
+                self.canvas_right.draw()
+            except Exception:
+                try:
+                    self.canvas_right.draw_idle()
+                except Exception:
+                    pass
 
     def _on_segmentation_xspan_selected(self, xmin, xmax):
         """Handle a user-dragged X span on the segmentation axis."""
@@ -478,6 +970,7 @@ class EnhancedVisualizationWindow:
             self.ax_right.set_xlim(xmin, xmax)
 
             self._autoscale_segmentation_y_to_visible(xmin, xmax)
+            self._autoscale_secondary_y_to_visible(xmin, xmax)
 
             self.canvas_right.draw_idle()
             self._update_segmentation_paging_controls()
@@ -487,14 +980,83 @@ class EnhancedVisualizationWindow:
             except Exception:
                 pass
 
+    def reset_segmentation_x_zoom(self) -> None:
+        """Reset X-zoom in the same way as unchecking the X Zoom checkbox.
+
+        If X-zoom is currently enabled, we invoke the checkbox so the exact same
+        command path runs (SpanSelector state, highlight clearing, etc.). If it
+        is already disabled, fall back to a normal reset.
+        """
+
+        try:
+            is_enabled = bool(getattr(self, '_seg_xzoom_var', None) and self._seg_xzoom_var.get())
+        except Exception:
+            is_enabled = bool(getattr(self, '_seg_x_zoom_enabled', False))
+
+        if is_enabled:
+            # Use the widget invocation when possible to guarantee identical behavior.
+            try:
+                if hasattr(self, 'seg_xzoom_button'):
+                    self.seg_xzoom_button.invoke()
+                    return
+            except Exception:
+                pass
+
+            # Fallback: manually unset and run the toggle handler.
+            try:
+                if hasattr(self, '_seg_xzoom_var'):
+                    self._seg_xzoom_var.set(False)
+            except Exception:
+                pass
+            try:
+                self.toggle_segmentation_x_zoom()
+                return
+            except Exception:
+                pass
+
+        # If already off, keep "reset zoom" semantics.
+        self.reset_segmentation_zoom()
+
     def reset_segmentation_zoom(self):
         """Reset segmentation plot limits to the defaults for the current route."""
         try:
+            # Resetting zoom should also exit X-zoom mode and clear any selection highlight.
+            self._seg_x_zoom_enabled = False
+            try:
+                if hasattr(self, '_seg_xzoom_var'):
+                    self._seg_xzoom_var.set(False)
+            except Exception:
+                pass
+
+            try:
+                if hasattr(self, '_seg_span_selector'):
+                    self._seg_span_selector.set_active(False)
+                    self._clear_segmentation_xzoom_highlight(force_draw=False)
+            except Exception:
+                pass
+
             if self._seg_default_xlim is not None:
                 self.ax_right.set_xlim(*self._seg_default_xlim)
             if self._seg_default_ylim is not None:
                 self.ax_right.set_ylim(*self._seg_default_ylim)
-            self.canvas_right.draw_idle()
+            if getattr(self, '_ax_right_secondary', None) is not None and self._seg_default_ylim_secondary is not None:
+                try:
+                    self._ax_right_secondary.set_ylim(*self._seg_default_ylim_secondary)
+                except Exception:
+                    pass
+
+            # Keep the toggle label/appearance consistent.
+            try:
+                if hasattr(self, 'seg_xzoom_button'):
+                    self.seg_xzoom_button.configure(text="X Zoom")
+            except Exception:
+                pass
+
+            # Use a full draw to ensure any blitted selection overlay is cleared.
+            try:
+                self.canvas_right.draw()
+            except Exception:
+                self.canvas_right.draw_idle()
             self._update_segmentation_paging_controls()
         except Exception as e:
             try:
@@ -523,6 +1085,35 @@ class EnhancedVisualizationWindow:
                 return
 
             self.ax_right.set_ylim(*y_limits)
+        except Exception:
+            return
+
+    def _autoscale_secondary_y_to_visible(self, xmin: float, xmax: float) -> None:
+        """Autoscale secondary Y limits to points visible within [xmin, xmax]."""
+
+        try:
+            sec_ax = getattr(self, '_ax_right_secondary', None)
+            if sec_ax is None:
+                return
+            if self._current_seg_secondary_x is None or self._current_seg_secondary_y is None:
+                return
+
+            from visualization.autoscale import autoscale_y_limits, visible_y_values_in_x_window
+
+            y_vis = visible_y_values_in_x_window(
+                self._current_seg_secondary_x,
+                self._current_seg_secondary_y,
+                xmin=xmin,
+                xmax=xmax,
+            )
+            if y_vis is None:
+                return
+
+            y_limits = autoscale_y_limits(y_vis, pad_fraction=0.05, min_pad=1.0)
+            if y_limits is None:
+                return
+
+            sec_ax.set_ylim(*y_limits)
         except Exception:
             return
 
@@ -566,6 +1157,7 @@ class EnhancedVisualizationWindow:
             new_xmin, new_xmax = paged
             self.ax_right.set_xlim(new_xmin, new_xmax)
             self._autoscale_segmentation_y_to_visible(new_xmin, new_xmax)
+            self._autoscale_secondary_y_to_visible(new_xmin, new_xmax)
             self.canvas_right.draw_idle()
             self._update_segmentation_paging_controls()
         except Exception as e:
@@ -661,7 +1253,10 @@ class EnhancedVisualizationWindow:
                 # Single-objective: Hide Pareto pane (degenerate - just 1 point)
                 if hasattr(self, 'main_paned') and hasattr(self, 'left_frame'):
                     try:
-                        self.main_paned.remove(self.left_frame)
+                        if hasattr(self.main_paned, 'forget'):
+                            self.main_paned.forget(self.left_frame)
+                        else:
+                            self.main_paned.remove(self.left_frame)
                     except (tk.TclError, ValueError):
                         pass
                     _safe_print(f"[ROUTE {route_id}] Hidden Pareto pane for single-objective (degenerate case)")
@@ -934,15 +1529,48 @@ class EnhancedVisualizationWindow:
         
     def update_segmentation_graph(self, route_id):
         """Update RIGHT pane with segmentation graph for the SELECTED ROUTE only."""
+
+        # Normalize early so we can compare to the previous route and decide
+        # whether to preserve the current x-window (zoom/paging) on redraw.
+        from route_utils import normalize_route_id
+
+        route_id = normalize_route_id(route_id) or str(route_id).strip()
+
+        prev_xlim = None
+        try:
+            if getattr(self, '_last_seg_route_id', None) == route_id:
+                prev_xlim = self.ax_right.get_xlim()
+        except Exception:
+            prev_xlim = None
+
+        self._last_seg_route_id = route_id
+
+        # Remove any previous secondary axis to avoid stacking multiple twinx axes.
+        if getattr(self, '_ax_right_secondary', None) is not None:
+            try:
+                self._ax_right_secondary.remove()
+            except Exception:
+                pass
+            self._ax_right_secondary = None
+
+        # Clear cached secondary series for y-autoscale
+        self._current_seg_secondary_x = None
+        self._current_seg_secondary_y = None
+
         self.ax_right.clear()
+
+        # Ensure we start each redraw in autoscale mode so switching routes
+        # recomputes sane limits (especially after toolbar zoom / x-span zoom).
+        try:
+            self.ax_right.set_autoscale_on(True)
+        except Exception:
+            pass
         
         # Debug: Segmentation update (removed verbose logging)
         
         # Get original data and optimization results for this specific route
-        from route_utils import normalize_route_id
-
-        route_id = normalize_route_id(route_id) or str(route_id).strip()
         route_data = self.get_current_route_data(route_id)
+        raw_route_data = route_data
         route_results = self.get_route_results(route_id)
         
         if not route_results:
@@ -1095,18 +1723,29 @@ class EnhancedVisualizationWindow:
         # Only plot original points when numeric preparation succeeded.
         route_data = prepared_series.prepared_df
 
+        plotted_primary_points = False
+
         if (
             route_data is not None
             and not route_data.empty
             and prepared_series.x_data is not None
             and prepared_series.y_data is not None
         ):
+            plotted_primary_points = True
                 
-            # Plot with improved contrast colors (light gray for original data)
-            self.ax_right.scatter(route_data[x_col], route_data[y_col], 
-                               alpha=0.8, s=25, color=COLORS['original_data'], 
-                               edgecolors=COLORS['original_edge'], linewidth=0.5,
-                               label='Original Data Points', zorder=2)
+            # Plot original points using the same hue as the segment average line,
+            # but more transparent (consistent with secondary-series styling).
+            self.ax_right.scatter(
+                route_data[x_col],
+                route_data[y_col],
+                alpha=0.30,
+                s=25,
+                color=COLORS['segment_avg'],
+                edgecolors='none',
+                linewidth=0.0,
+                label='Original Data Points',
+                zorder=2,
+            )
             
             x_data = prepared_series.x_data
             y_data = prepared_series.y_data
@@ -1170,6 +1809,94 @@ class EnhancedVisualizationWindow:
                         solid_capstyle='butt',
                         label=line.label,
                     )
+
+            # Optional secondary Y-axis series
+            secondary_col = getattr(self, '_secondary_y_col', None)
+            if secondary_col:
+                try:
+                    secondary_prepared = prepare_numeric_xy_series(raw_route_data, x_col=x_col, y_col=secondary_col)
+                    if secondary_prepared.prepared_df is not None and secondary_prepared.x_data is not None and secondary_prepared.y_data is not None:
+                        sec_ax = self.ax_right.twinx()
+                        self._ax_right_secondary = sec_ax
+
+                        # Layering note:
+                        # With twinx(), matplotlib may draw the secondary axes above the primary
+                        # artists. But if we push the entire secondary axes behind the primary
+                        # axes and keep the primary patch visible, the primary background can
+                        # hide the secondary artists.
+                        #
+                        # Solution: keep primary axes above secondary, but make the primary
+                        # patch transparent so secondary artists remain visible.
+                        try:
+                            sec_ax.set_zorder(0)
+                            self.ax_right.set_zorder(1)
+                            self.ax_right.patch.set_visible(False)
+                            sec_ax.patch.set_visible(False)
+                        except Exception:
+                            pass
+
+                        secondary_color = getattr(self, '_secondary_color', COLORS.get('secondary_default', '#14B8A6'))
+                        secondary_alpha = float(getattr(self, '_secondary_points_alpha', 0.25) or 0.25)
+
+                        # Cache current secondary series for zoom/paging y-autoscale
+                        self._current_seg_secondary_x = secondary_prepared.x_data
+                        self._current_seg_secondary_y = secondary_prepared.y_data
+
+                        sec_ax.scatter(
+                            secondary_prepared.prepared_df[x_col],
+                            secondary_prepared.prepared_df[secondary_col],
+                            alpha=secondary_alpha,
+                            s=45,
+                            color=secondary_color,
+                            edgecolors='none',
+                            label=f"{secondary_col} (Secondary)",
+                            zorder=1,
+                        )
+
+                        from visualization.segmentation_data import compute_segment_average_lines
+
+                        sec_avg_lines = compute_segment_average_lines(
+                            x_data=secondary_prepared.x_data,
+                            y_data=secondary_prepared.y_data,
+                            breakpoints=breakpoints,
+                            gap_segments=gap_segments,
+                            label=f"{secondary_col} Segment Avg",
+                        )
+
+                        for line in sec_avg_lines:
+                            sec_ax.plot(
+                                [line.start_x, line.end_x],
+                                [line.avg_y, line.avg_y],
+                                color=secondary_color,
+                                linewidth=2.5,
+                                alpha=0.9,
+                                zorder=2,
+                                solid_capstyle='butt',
+                                label=line.label,
+                            )
+
+                        # Force secondary axis to recompute its y-limits for this route.
+                        try:
+                            sec_ax.set_autoscale_on(True)
+                            sec_ax.autoscale(enable=True, axis='y', tight=False)
+                            sec_ax.autoscale_view(scalex=False, scaley=True)
+                        except Exception:
+                            pass
+
+                        from visualization.graph_styling import pretty_axis_label
+
+                        sec_ax.set_ylabel(pretty_axis_label(secondary_col, default='Secondary Y'))
+                        try:
+                            sec_ax.tick_params(axis='y', labelcolor=secondary_color)
+                            sec_ax.spines['right'].set_color(secondary_color)
+                            sec_ax.yaxis.label.set_color(secondary_color)
+                        except Exception:
+                            pass
+                except Exception as e:
+                    try:
+                        self.app.log_message(f"WARNING: Secondary series plot failed: {e}")
+                    except Exception:
+                        pass
                                              
         else:
             # No original points available for this route; still show breakpoints from JSON.
@@ -1217,20 +1944,81 @@ class EnhancedVisualizationWindow:
         
         # Add legend (remove duplicates)
         handles, labels = self.ax_right.get_legend_handles_labels()
+        if getattr(self, '_ax_right_secondary', None) is not None:
+            try:
+                sec_handles, sec_labels = self._ax_right_secondary.get_legend_handles_labels()
+                handles = list(handles) + list(sec_handles)
+                labels = list(labels) + list(sec_labels)
+            except Exception:
+                pass
         from visualization.graph_styling import dedupe_legend_entries
 
         deduped_labels, deduped_handles = dedupe_legend_entries(labels, handles)
         if deduped_labels:
             self.ax_right.legend(deduped_handles, deduped_labels, loc='best', framealpha=0.9)
 
+        # Deterministic full-view y-limits (avoid "sticky" limits when switching routes).
+        full_primary_ylim = None
+        if plotted_primary_points and self._current_seg_y is not None:
+            try:
+                from visualization.autoscale import autoscale_y_limits
+
+                full_primary_ylim = autoscale_y_limits(self._current_seg_y, pad_fraction=0.05, min_pad=1.0)
+                if full_primary_ylim is not None:
+                    self.ax_right.set_ylim(*full_primary_ylim)
+            except Exception:
+                full_primary_ylim = None
+
+        full_secondary_ylim = None
+        if getattr(self, '_ax_right_secondary', None) is not None and self._current_seg_secondary_y is not None:
+            try:
+                from visualization.autoscale import autoscale_y_limits
+
+                full_secondary_ylim = autoscale_y_limits(self._current_seg_secondary_y, pad_fraction=0.05, min_pad=1.0)
+                if full_secondary_ylim is not None:
+                    self._ax_right_secondary.set_ylim(*full_secondary_ylim)
+            except Exception:
+                full_secondary_ylim = None
+
+        # Restore the previous x-window for same-route redraws (secondary control updates)
+        # and rescale y-limits to the visible data.
+        if prev_xlim is not None and plotted_primary_points:
+            try:
+                self.ax_right.set_xlim(*prev_xlim)
+                xmin, xmax = self.ax_right.get_xlim()
+                self._autoscale_segmentation_y_to_visible(xmin, xmax)
+                self._autoscale_secondary_y_to_visible(xmin, xmax)
+            except Exception:
+                pass
+
         # Cache default segmentation limits for reset.
         # Only update defaults when X-zoom is currently OFF (so reset returns to full view).
         from visualization.zoom_decisions import should_cache_default_limits
 
         if should_cache_default_limits(x_zoom_enabled=self._seg_x_zoom_enabled):
+            # Cache defaults only when we're in a full-view state.
             try:
-                self._seg_default_xlim = self.ax_right.get_xlim()
-                self._seg_default_ylim = self.ax_right.get_ylim()
+                if plotted_primary_points and self._current_seg_x is not None and self._current_seg_x.size > 0:
+                    full_xlim = (float(np.min(self._current_seg_x)), float(np.max(self._current_seg_x)))
+                else:
+                    full_xlim = None
+
+                cur_xlim = self.ax_right.get_xlim()
+                if full_xlim is None:
+                    # Best-effort fallback
+                    self._seg_default_xlim = cur_xlim
+                    self._seg_default_ylim = self.ax_right.get_ylim()
+                    self._seg_default_ylim_secondary = (
+                        self._ax_right_secondary.get_ylim() if getattr(self, '_ax_right_secondary', None) is not None else None
+                    )
+                else:
+                    from visualization.zoom_decisions import should_show_segmentation_paging_arrows
+
+                    zoomed = should_show_segmentation_paging_arrows(full_xlim=full_xlim, cur_xlim=cur_xlim)
+                    if not zoomed:
+                        self._seg_default_xlim = full_xlim
+                        self._seg_default_ylim = full_primary_ylim or self.ax_right.get_ylim()
+                        self._seg_default_ylim_secondary = full_secondary_ylim
             except Exception:
                 pass
 

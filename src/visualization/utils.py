@@ -30,4 +30,6 @@ def default_colors() -> Dict[str, str]:
         'pareto_border': '#191970',      # Midnight blue
         'grid': '#E5E5E5',              # Very light gray
         'text_secondary': '#696969',     # Dim gray
+        # Secondary-axis series (non-primary, pleasing defaults)
+        'secondary_default': '#14B8A6',  # Teal
     }

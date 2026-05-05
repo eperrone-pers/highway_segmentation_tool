@@ -67,7 +67,7 @@ class HighwaySegmentationGUI:
     def __init__(self, root):
         """Initialize the main application with specialized managers."""
         self.root = root
-        self.root.title("Highway Segmentation - REFACTORED ARCHITECTURE")
+        self.root.title("Highway Segmentation")
         self.root.geometry(f"{ui_config.window_width}x{ui_config.window_height}")
         
         # Set working directory to application directory for consistent file operations
