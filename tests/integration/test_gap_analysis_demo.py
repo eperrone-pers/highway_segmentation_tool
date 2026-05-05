@@ -36,7 +36,7 @@ def test_gap_analysis():
             gap_threshold=0.5,
         )
         
-        print(f"\n=== ANALYSIS COMPLETE ===")
+        print("\n=== ANALYSIS COMPLETE ===")
         print(f"Route: {analysis.route_id}")
         print(f"Detected Gaps: {len(analysis.gap_segments)}")
         
@@ -50,7 +50,7 @@ def test_gap_analysis():
         print(f"\nValid X Values: {len(analysis.valid_x_values)}")
         print(f"  Range: {min(analysis.valid_x_values):.3f} to {max(analysis.valid_x_values):.3f}")
         
-        print(f"\nRoute Statistics:")
+        print("\nRoute Statistics:")
         for key, value in analysis.route_stats.items():
             if isinstance(value, float):
                 print(f"  {key}: {value:.3f}")

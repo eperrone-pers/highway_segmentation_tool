@@ -17,7 +17,7 @@ import os
 # Add src directory to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from data_loader import analyze_route_gaps, RouteAnalysis, _merge_adjacent_gaps, _validate_route_endpoints
+from data_loader import analyze_route_gaps, _merge_adjacent_gaps, _validate_route_endpoints
 
 
 class TestGapDetection:

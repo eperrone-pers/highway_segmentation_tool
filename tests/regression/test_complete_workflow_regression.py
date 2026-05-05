@@ -107,9 +107,6 @@ import pandas as pd
 from pathlib import Path
 import sys
 import os
-import tempfile
-from unittest.mock import Mock, MagicMock
-import tkinter as tk
 from dataclasses import dataclass
 from typing import Any, Optional, Dict, List
 
@@ -169,7 +166,7 @@ def _get_dataset_config(dataset_key: str) -> Dict[str, Any]:
     return data_confs[dataset_key]
 
 try:
-    from jsonschema import validate, ValidationError, Draft202012Validator
+    from jsonschema import ValidationError, Draft202012Validator
     SCHEMA_VALIDATION_AVAILABLE = True
 except ImportError:
     SCHEMA_VALIDATION_AVAILABLE = False
@@ -687,7 +684,7 @@ def validate_json_structure(json_data, method_key):
 def validate_json_against_schema(json_data, method_key):
     """Validate JSON data against the official highway segmentation schema."""
     if not SCHEMA_VALIDATION_AVAILABLE:
-        print(f"⚠️  Schema validation skipped (jsonschema not available)")
+        print("⚠️  Schema validation skipped (jsonschema not available)")
         return True
         
     # Load the schema from src directory
@@ -715,7 +712,7 @@ def validate_json_against_schema(json_data, method_key):
             column_count = input_file_info.get('column_info', {}).get('total_columns', 0)
             if column_count == 2:
                 print(f"✅ Schema validation: {column_count}-column dataset passes schema requirement (minimum 2 columns)")
-                print(f"   This is expected for pure x,y coordinate datasets")
+                print("   This is expected for pure x,y coordinate datasets")
                 return True
         
         error_path = ' -> '.join(str(p) for p in e.absolute_path) if e.absolute_path else 'root'
@@ -944,7 +941,7 @@ class TestCompleteWorkflowRegression:
         print(f"✅ Mock GUI app setup complete: {len(mock_app.data.route_data)} data points loaded")
 
         # Step 2: Use PRODUCTION OptimizationController (same as GUI "Optimization" button)
-        print(f"\n🚀 Using PRODUCTION OptimizationController (same as GUI button)...")
+        print("\n🚀 Using PRODUCTION OptimizationController (same as GUI button)...")
         controller = OptimizationController(mock_app)
         
         # Run the EXACT same method that GUI "Optimization" button calls
@@ -955,10 +952,10 @@ class TestCompleteWorkflowRegression:
             # If optimization fails, provide detailed error info
             pytest.fail(f"Production optimization failed for {method_key} with {dataset}: {str(e)}")
         
-        print(f"✅ Production optimization completed successfully")
+        print("✅ Production optimization completed successfully")
         
         # Step 3: Verify production output files were created
-        print(f"\n📁 Looking for JSON output from production code...")
+        print("\n📁 Looking for JSON output from production code...")
         
         # Look in multiple locations where production code might save files
         search_paths = [
@@ -989,10 +986,10 @@ class TestCompleteWorkflowRegression:
             import shutil
             shutil.copy2(actual_json_path, json_file)
             shutil.copy2(actual_json_path, persistent_json)
-            print(f"✅ JSON output copied to test locations")
+            print("✅ JSON output copied to test locations")
         
         # Step 4: Validate JSON structure and schema compliance (using production output)
-        print(f"\n📋 Validating production JSON output...")
+        print("\n📋 Validating production JSON output...")
         with open(json_file, 'r') as f:
             json_data = json.load(f)
         
@@ -1002,10 +999,10 @@ class TestCompleteWorkflowRegression:
         # Schema validation
         validate_json_against_schema(json_data, method_key)
         
-        print(f"✅ JSON validation passed")
+        print("✅ JSON validation passed")
         
         # Step 5: Export to Excel using production exporter
-        print(f"\n📊 Exporting to Excel using production exporter...")
+        print("\n📊 Exporting to Excel using production exporter...")
         exporter = HighwaySegmentationExcelExporter(json_data, str(data_file))
         excel_success, _ = exporter.export_to_excel(str(excel_file))
         
@@ -1015,7 +1012,7 @@ class TestCompleteWorkflowRegression:
         
         assert excel_success, f"Excel export failed for {method_key}"
         assert persistent_excel_success, f"Persistent Excel export failed for {method_key}"
-        print(f"✅ Excel export completed successfully")
+        print("✅ Excel export completed successfully")
         
         # Step 6: Final validation
         assert json_file.exists() and json_file.stat().st_size > 1000, "JSON file too small"
@@ -1089,7 +1086,7 @@ class TestSchemaValidation:
         """Check if jsonschema library is available"""
         try:
             from jsonschema import Draft202012Validator
-            return True
+            return Draft202012Validator is not None
         except ImportError:
             return False
     

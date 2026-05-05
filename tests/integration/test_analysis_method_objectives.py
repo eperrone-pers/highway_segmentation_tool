@@ -15,8 +15,6 @@ import sys
 import os
 import numpy as np
 import pandas as pd
-from unittest.mock import Mock, MagicMock, patch
-import tempfile
 
 # Add src to path for imports
 current_dir = os.path.dirname(__file__)
@@ -30,7 +28,6 @@ try:
     from analysis.methods.single_objective import SingleObjectiveMethod
     from analysis.methods.multi_objective import MultiObjectiveMethod
     from analysis.methods.constrained import ConstrainedMethod
-    from analysis.utils.genetic_algorithm import HighwaySegmentGA
     from data_loader import analyze_route_gaps
 except ImportError as e:
     pytest.skip(f"Required analysis modules not available: {e}", allow_module_level=True)
@@ -297,7 +294,7 @@ class TestMultiObjectiveMethodCorrectness(TestAnalysisMethodObjectiveUsage):
         lengths = [obj[1] for obj in objectives]
         
         assert all(d < 0 for d in deviations), "All deviation objectives should be negative"  
-        assert all(l > 0 for l in lengths), "All length objectives should be positive"
+        assert all(length_value > 0 for length_value in lengths), "All length objectives should be positive"
         
         # Should have some diversity in objective values (not all identical)
         dev_range = max(deviations) - min(deviations)  
@@ -486,8 +483,8 @@ class TestIntegratedObjectiveConsistency(TestAnalysisMethodObjectiveUsage):
             
             # Additional method-specific checks
             if method_name == 'multi_objective':
-                assert len(objective_values) == 2, f"Multi-objective should have 2 objectives"
-                assert objective_values[1] > 0, f"Multi-objective second objective should be positive"
+                assert len(objective_values) == 2, "Multi-objective should have 2 objectives"
+                assert objective_values[1] > 0, "Multi-objective second objective should be positive"
             else:
                 assert len(objective_values) >= 1, f"{method_name} should have at least 1 objective"
 

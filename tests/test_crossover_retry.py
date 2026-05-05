@@ -9,7 +9,6 @@ and parent reselection.
 import sys
 import os
 import pandas as pd
-import random
 import numpy as np
 
 # Add src to Python path
@@ -72,7 +71,6 @@ def test_crossover_retry_logic():
     
     success_count = 0
     failure_count = 0
-    total_retries = 0
     
     # Reset statistics
     ga._generation_stats.update({
@@ -110,12 +108,12 @@ def test_crossover_retry_logic():
             print(f"   ✅ Success: Child 1 = {len(child1)-1} segments, Child 2 = {len(child2)-1} segments")
             success_count += 1
         else:
-            print(f"   ❌ Failed: Returned None after retries")
+            print("   ❌ Failed: Returned None after retries")
             failure_count += 1
     
     # Print final statistics
     stats = ga._generation_stats
-    print(f"\n📈 Crossover Retry Statistics:")
+    print("\n📈 Crossover Retry Statistics:")
     print(f"   Total attempts: {stats['crossover_attempts']}")
     print(f"   Successful crossovers: {success_count}")
     print(f"   Failed crossovers: {failure_count}")  
@@ -131,7 +129,7 @@ def test_crossover_retry_logic():
             print(f"   Average retries per attempt: {avg_retries:.2f}")
     
     # Validate that successful children are valid
-    print(f"\n🔍 Validation Check:")
+    print("\n🔍 Validation Check:")
     valid_children = 0
     total_children = success_count * 2  # 2 children per successful crossover
     
@@ -148,7 +146,7 @@ def test_crossover_retry_logic():
     print(f"   Valid children: {valid_children}/{total_children}")
     print(f"   Children validity rate: {valid_children/max(1,total_children)*100:.1f}%")
     
-    print(f"\n✅ Crossover retry test completed!")
+    print("\n✅ Crossover retry test completed!")
 
     assert success_count > 0, "Expected at least one crossover to succeed"
 

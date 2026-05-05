@@ -8,7 +8,7 @@ change handling for the multi-route processing enhancement.
 import pytest
 import sys
 import os
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock
 
 # Add src to path for imports
 current_file_dir = os.path.dirname(__file__)
@@ -121,22 +121,6 @@ class TestParameterManagerRouteProcessing:
         assert is_valid is True
         assert errors == []
     
-    @pytest.mark.unit 
-    @pytest.mark.skip(reason="Legacy assertion about calling route_column.get() is outdated; will be replaced")
-    def test_validate_parameters_route_column_but_no_routes_selected(self, parameter_manager):
-        """Test parameter validation when route column is selected but no routes selected."""
-        # Set up mock app state
-        parameter_manager.app.route_column.get.return_value = "route"
-        parameter_manager.app.available_routes = ['US-35', 'I-75']
-        parameter_manager.app.selected_routes = []  # No routes selected
-        
-        # Execute - this should be handled by the validation logic
-        # The specific behavior may depend on implementation
-        parameter_manager.validate_parameters()
-        
-        # Verify that validation was attempted
-        parameter_manager.app.route_column.get.assert_called()
-    
     @pytest.mark.unit
     def test_validate_parameters_no_route_column_single_route_mode(self, parameter_manager):
         """Test parameter validation in single route mode (no route column)."""
@@ -161,58 +145,6 @@ class TestParameterManagerRouteProcessing:
         assert errors == []
     
     # === ROUTE COLUMN CHANGE HANDLING TESTS ===
-    
-    @pytest.mark.unit
-    @pytest.mark.skip(reason="on_route_column_change method not implemented in ParameterManager")
-    def test_on_route_column_change_with_valid_column(self, parameter_manager):
-        """Test route column change handling with valid route column."""
-        # Create mock event
-        mock_event = Mock()
-        
-        # Set up app state
-        parameter_manager.app.route_column.get.return_value = "route"
-        
-        # Execute
-        parameter_manager.on_route_column_change(mock_event)
-        
-        # Verify route detection was triggered
-        parameter_manager.app.file_manager.detect_available_routes.assert_called_once()
-        parameter_manager.app.log_message.assert_called()
-    
-    @pytest.mark.unit
-    @pytest.mark.skip(reason="on_route_column_change method not implemented in ParameterManager")
-    def test_on_route_column_change_to_single_route_mode(self, parameter_manager):
-        """Test route column change to single route mode."""
-        # Create mock event
-        mock_event = Mock()
-        
-        # Set up app state for single route mode
-        parameter_manager.app.route_column.get.return_value = ROUTE_COLUMN_NONE_SENTINEL
-        
-        # Execute
-        parameter_manager.on_route_column_change(mock_event)
-        
-        # Verify routes were cleared but route detection still called
-        parameter_manager.app.file_manager.detect_available_routes.assert_called_once()
-        parameter_manager.app.log_message.assert_called()
-    
-    @pytest.mark.unit
-    @pytest.mark.skip(reason="on_route_column_change method not implemented in ParameterManager")
-    def test_on_route_column_change_clears_previous_routes(self, parameter_manager):
-        """Test that route column change clears previous route selections."""
-        # Set up initial state with selected routes
-        parameter_manager.app.selected_routes = ['US-35', 'I-75']
-        parameter_manager.app.available_routes = ['US-35', 'I-75', 'SR-123']
-        
-        # Create mock event
-        mock_event = Mock()
-        parameter_manager.app.route_column.get.return_value = "new_route_column"
-        
-        # Execute
-        parameter_manager.on_route_column_change(mock_event)
-        
-        # Verify route detection was called (which should update routes)
-        parameter_manager.app.file_manager.detect_available_routes.assert_called_once()
     
     # === PARAMETER RESET TESTS ===
     
@@ -255,47 +187,6 @@ class TestRouteSettingsPersistence:
     def parameter_manager_with_settings(self, mock_app_for_settings):
         """Create ParameterManager for settings testing."""
         return ParameterManager(mock_app_for_settings)
-    
-    @pytest.mark.unit
-    @pytest.mark.skip(reason="ParameterManager.save_parameters/load_parameters are not implemented in current architecture")
-    def test_save_parameters_includes_route_settings(self, parameter_manager_with_settings):
-        """Test that save parameters includes route-related settings."""
-        # Set up route-related state
-        parameter_manager_with_settings.app.route_column.get.return_value = "route"
-        
-        # Mock file operations
-        mock_settings = {}
-        
-        # This would be implementation-specific based on how save_parameters works
-        # The test verifies the method attempts to save route settings
-        try:
-            parameter_manager_with_settings.save_parameters("/test/path")
-        except (AttributeError, FileNotFoundError):
-            # Expected if method doesn't exist or file path is invalid
-            # The important part is that route settings are considered
-            pass
-        
-        # Skipped
-    
-    @pytest.mark.unit
-    @pytest.mark.skip(reason="ParameterManager.save_parameters/load_parameters are not implemented in current architecture")
-    def test_load_parameters_restores_route_settings(self, parameter_manager_with_settings):
-        """Test that load parameters restores route-related settings."""
-        # Mock settings data that would include route information
-        mock_settings = {
-            'route_column': 'route',
-            'selected_routes': ['US-35', 'I-75']
-        }
-        
-        # This would be implementation-specific based on how load_parameters works
-        try:
-            parameter_manager_with_settings.load_parameters("/test/path")
-        except (AttributeError, FileNotFoundError):
-            # Expected if method doesn't exist or file path is invalid
-            pass
-        
-        # The test structure shows intent to restore route settings
-        # Actual implementation would set route_column and selected_routes
 
 
 # === ERROR HANDLING TESTS ===
@@ -316,22 +207,6 @@ class TestRouteParameterErrorHandling:
         app.route_info_label = Mock()
         
         return ParameterManager(app)
-    
-    @pytest.mark.unit
-    @pytest.mark.skip(reason="on_route_column_change method not implemented in ParameterManager")
-    def test_route_column_change_handles_detection_error(self, parameter_manager_with_errors):
-        """Test route column change handles route detection errors gracefully."""
-        # Set up file manager to raise exception
-        parameter_manager_with_errors.app.file_manager.detect_available_routes.side_effect = Exception("Test error")
-        parameter_manager_with_errors.app.route_column.get.return_value = "route"
-        
-        mock_event = Mock()
-        
-        # Execute - should not raise exception
-        parameter_manager_with_errors.on_route_column_change(mock_event)
-        
-        # Verify error was handled (logged)
-        parameter_manager_with_errors.app.log_message.assert_called()
     
     @pytest.mark.unit
     def test_validation_handles_missing_route_attributes(self, parameter_manager_with_errors):

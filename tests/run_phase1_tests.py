@@ -5,7 +5,6 @@ This script runs all Phase 1 tests with appropriate configuration
 and provides detailed reporting of test results.
 """
 
-import os
 import sys
 import subprocess
 from pathlib import Path
@@ -44,8 +43,6 @@ def main():
     }
     
     # Run tests for each category
-    total_passed = 0
-    total_failed = 0
     failed_categories = []
     
     for test_file in phase1_tests:

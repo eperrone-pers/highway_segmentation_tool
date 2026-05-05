@@ -13,11 +13,11 @@ def quick_test_all_methods():
     print("🧪 QUICK CONTROLLER METHOD AVAILABILITY TEST")
     print("="*50)
     
-    print(f"Available optimization methods:")
+    print("Available optimization methods:")
     for i, method in enumerate(OPTIMIZATION_METHODS, 1):
         print(f"  {i}. '{method.display_name}' -> key: '{method.method_key}'")
     
-    print(f"\nTesting method key resolution:")
+    print("\nTesting method key resolution:")
     test_methods = [
         'Single-Objective GA',
         'Multi-Objective NSGA-II', 
@@ -33,13 +33,13 @@ def quick_test_all_methods():
         except Exception as e:
             print(f"  ❌ '{method_name}' -> ERROR: {e}")
     
-    print(f"\n📊 RESULTS:")
+    print("\n📊 RESULTS:")
     if success_count == 3:
-        print(f"🎉 ALL 3 METHODS AVAILABLE FOR CONTROLLER!")
-        print(f"✅ Single-Objective GA: Ready")
-        print(f"✅ Multi-Objective NSGA-II: Ready")  
-        print(f"✅ Constrained Single-Objective: Ready")
-        print(f"✅ Controller can work with all optimization methods")
+        print("🎉 ALL 3 METHODS AVAILABLE FOR CONTROLLER!")
+        print("✅ Single-Objective GA: Ready")
+        print("✅ Multi-Objective NSGA-II: Ready")  
+        print("✅ Constrained Single-Objective: Ready")
+        print("✅ Controller can work with all optimization methods")
         return True
     else:
         print(f"⚠️  Only {success_count}/3 methods available")

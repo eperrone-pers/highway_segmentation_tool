@@ -66,7 +66,7 @@ def create_mock_app_for_method(method_key):
     
     # Mock file manager
     mock_app.file_manager = Mock()
-    mock_app.file_manager.get_data_file_path.return_value = f"test_{method_name.lower().replace(' ', '_')}_data.csv"
+    mock_app.file_manager.get_data_file_path.return_value = f"test_{method_key.lower().replace(' ', '_')}_data.csv"
     mock_app.file_manager.display_results_file = Mock()
     
     # Mock parameter manager - METHOD-SPECIFIC CONFIGURATION
@@ -172,7 +172,7 @@ def test_controller_with_all_methods():
                 'total_messages': len(messages)
             }
             
-            print(f"📈 Validation Results:")
+            print("📈 Validation Results:")
             print(f"   ✓ Method-specific messages: {len(method_messages)}")
             print(f"   ✓ Unified processing messages: {len(unified_messages)}")
             print(f"   ✓ Route processing messages: {len(route_messages)}")
@@ -230,14 +230,14 @@ def test_controller_with_all_methods():
         for method in failed_methods:
             print(f"   • {method}: {results[method].get('error', 'Unknown error')}")
     
-    print(f"\n📊 OVERALL STATUS:")
+    print("\n📊 OVERALL STATUS:")
     if len(successful_methods) == 3:
-        print(f"🎉 ALL THREE OPTIMIZATION METHODS WORKING WITH CONTROLLER!")
-        print(f"✅ Single-Objective GA: Controller integration complete")
-        print(f"✅ Multi-Objective NSGA-II: Controller integration complete") 
-        print(f"✅ Constrained Single-Objective: Controller integration complete")
-        print(f"✅ Unified multi-route architecture fully integrated")
-        print(f"✅ Controller ready for production use with all methods")
+        print("🎉 ALL THREE OPTIMIZATION METHODS WORKING WITH CONTROLLER!")
+        print("✅ Single-Objective GA: Controller integration complete")
+        print("✅ Multi-Objective NSGA-II: Controller integration complete") 
+        print("✅ Constrained Single-Objective: Controller integration complete")
+        print("✅ Unified multi-route architecture fully integrated")
+        print("✅ Controller ready for production use with all methods")
         print("="*80)
     else:
         print(f"⚠️  Controller integration incomplete: {len(successful_methods)}/3 methods working")

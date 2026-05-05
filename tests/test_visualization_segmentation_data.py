@@ -56,3 +56,20 @@ def test_compute_segment_average_lines_excludes_gap_overlaps():
     assert [(ln.start_x, ln.end_x) for ln in lines] == [(0.0, 5.0)]
     assert lines[0].avg_y == 1.0
     assert lines[0].label == "Segment Averages"
+
+
+def test_compute_segment_average_lines_custom_label_applies_to_first_line_only():
+    x = np.array([0.0, 1.0, 2.0, 6.0, 7.0, 10.0])
+    y = np.array([0.0, 1.0, 2.0, 6.0, 7.0, 10.0])
+
+    lines = compute_segment_average_lines(
+        x_data=x,
+        y_data=y,
+        breakpoints=[0.0, 5.0, 10.0],
+        gap_segments=[],
+        label="Secondary Segment Avg",
+    )
+
+    assert len(lines) == 2
+    assert lines[0].label == "Secondary Segment Avg"
+    assert lines[1].label == ""

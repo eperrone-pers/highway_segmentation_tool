@@ -36,7 +36,7 @@ def test_unified_single_objective_substep14():
     print(f"   ✅ Using columns: x='{x_column}', y='{y_column}'")
     
     # Test 1: Multi-route processing
-    print(f"\n2. TEST 1: Multi-route Single-Objective processing")
+    print("\n2. TEST 1: Multi-route Single-Objective processing")
     single_method = SingleObjectiveMethod()
     try:
         # Get available routes and select them explicitly
@@ -94,7 +94,7 @@ def test_unified_single_objective_substep14():
             'route_results': route_results
         }
         
-        print(f"   ✅ Multi-route Single-Objective completed!")
+        print("   ✅ Multi-route Single-Objective completed!")
         print(f"   ✅ Routes processed: {len(results['routes_processed'])}")
         print(f"   ✅ Processing mode: {results['processing_mode']}")
         
@@ -110,7 +110,7 @@ def test_unified_single_objective_substep14():
         return
     
     # Test 2: Single route processing (framework method for whole dataset)
-    print(f"\n3. TEST 2: Single-dataset Single-Objective processing")
+    print("\n3. TEST 2: Single-dataset Single-Objective processing")
     try:
         # Process entire dataset as single route using framework
         route_analysis_single = RouteAnalysis(
@@ -141,7 +141,7 @@ def test_unified_single_objective_substep14():
             'routes_processed': ["test_dataset"] if analysis_result else []
         }
         
-        print(f"   ✅ Single-dataset Single-Objective completed!")
+        print("   ✅ Single-dataset Single-Objective completed!")
         print(f"   ✅ Processing mode: {results_single['processing_mode']}")
         print(f"   ✅ Routes processed: {len(results_single['routes_processed'])}")
         
@@ -149,7 +149,7 @@ def test_unified_single_objective_substep14():
         print(f"   ❌ Single-dataset test failed: {e}")
         return
     
-    print(f"\n" + "=" * 60)
+    print("\n" + "=" * 60)
     print("🎉 SUB-STEP 1.4 VALIDATION SUCCESSFUL!")
     print("✅ Unified Single-Objective architecture working correctly")
     print("✅ Multi-route processing functional")
@@ -163,6 +163,6 @@ if __name__ == "__main__":
     success = test_unified_single_objective_substep14()
     
     if success:
-        print(f"\n🚀 Sub-step 1.4 complete - ready for Sub-step 1.5!")
+        print("\n🚀 Sub-step 1.4 complete - ready for Sub-step 1.5!")
     else:
-        print(f"\n❌ Sub-step 1.4 validation failed - needs debugging")
+        print("\n❌ Sub-step 1.4 validation failed - needs debugging")

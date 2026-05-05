@@ -6,7 +6,6 @@ import sys
 sys.path.append('src')
 
 import pandas as pd
-import random
 from analysis.utils.genetic_algorithm import HighwaySegmentGA
 from data_loader import analyze_route_gaps
 
@@ -89,9 +88,9 @@ def test_high_segment_generation():
 
 if __name__ == "__main__":
     max_achieved = _run_high_segment_generation_diagnostic()
-    print(f"\n=== SUMMARY ===")
+    print("\n=== SUMMARY ===")
     print(f"Maximum segments achieved: {max_achieved}")
-    print(f"Target (theoretical max): 126")
+    print("Target (theoretical max): 126")
     
     if max_achieved < 80:
         print("❌ PROBLEM: Not generating high-segment solutions")
