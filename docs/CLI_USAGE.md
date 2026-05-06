@@ -3,10 +3,12 @@
 This repository supports running analyses headlessly (no GUI) using a **run spec JSON**.
 
 A run spec can be:
-- generated from the GUI via **Copy command line for this analysis**, or
+
+- generated from the GUI via **Copy CLI command**, or
 - written/edited manually.
 
 The run spec schema is defined in:
+
 - `src/highway_segmentation_run_spec_schema.json`
 
 ## Install (developer-friendly)
@@ -31,6 +33,7 @@ highway-seg validate-spec --spec path/to/your.run_spec.json
 ```
 
 Expected output:
+
 - `OK`
 
 ## Run an analysis from a run spec
@@ -40,6 +43,18 @@ highway-seg run --spec path/to/your.run_spec.json
 ```
 
 This writes the results JSON to the `output.output_json_path` location defined inside the run spec.
+
+Note: the GUI's **Copy CLI command** currently copies a command of the form:
+
+```bash
+python src/cli.py run --spec "path/to/your.run_spec.json"
+```
+
+If you've installed the package (see above), you can equivalently run:
+
+```bash
+highway-seg run --spec path/to/your.run_spec.json
+```
 
 ## Notes
 
