@@ -1019,11 +1019,11 @@ So, to include a new method in both GUI and CLI regressions:
 }
 ```
 
-2. Keep the parameters in this block **minimal and fast**.
+1. Keep the parameters in this block **minimal and fast**.
      - Regression runs should complete quickly and reliably.
      - Prefer smaller populations/generation counts (or deterministic settings) if applicable.
 
-3. Make sure the method is registered in `src/config.py` (in `OPTIMIZATION_METHODS`) with the same `method_key`.
+2. Make sure the method is registered in `src/config.py` (in `OPTIMIZATION_METHODS`) with the same `method_key`.
 
 ### C.2 GUI regression test (production path)
 
@@ -1065,7 +1065,7 @@ Notes:
 
 - It compares **shape only** (keys/types), not values.
 - The filename is prefixed with `zz_` so it runs after the two suites that generate artifacts.
-    - This matters because regression outputs are cleaned once per pytest session.
+  - This matters because regression outputs are cleaned once per pytest session.
 
 ### C.5 One command to validate everything together
 
@@ -1080,22 +1080,22 @@ Because regression outputs are cleaned once per pytest session, run these in a *
 If your method fails regression tests, typical causes are:
 
 - **Parameter validation mismatch**
-    - The template uses param names that don’t exist in your method config.
-    - Fix: align `tests/regression/test_parameters_template.json` with your method’s `ParameterDefinition` names.
+  - The template uses param names that don’t exist in your method config.
+  - Fix: align `tests/regression/test_parameters_template.json` with your method’s `ParameterDefinition` names.
 
 - **Schema failures**
-    - Your `AnalysisResult` output is missing required structure.
-    - Fix: always return `AnalysisResult(all_solutions=[...])` and include a solution with at least:
-        - `chromosome` (sorted breakpoints)
-        - `fitness` / `objective_values` (even if placeholders for deterministic methods)
+  - Your `AnalysisResult` output is missing required structure.
+  - Fix: always return `AnalysisResult(all_solutions=[...])` and include a solution with at least:
+    - `chromosome` (sorted breakpoints)
+    - `fitness` / `objective_values` (even if placeholders for deterministic methods)
 
 - **CLI vs GUI structural differences**
-    - This usually means the CLI and GUI pipelines are feeding different-shaped solution dicts into the results writer.
-    - Fix: ensure both pathways provide solutions with consistent fields (and rely on the shared JSON writer to build derived sections like `segmentation` and `segment_details`).
+  - This usually means the CLI and GUI pipelines are feeding different-shaped solution dicts into the results writer.
+  - Fix: ensure both pathways provide solutions with consistent fields (and rely on the shared JSON writer to build derived sections like `segmentation` and `segment_details`).
 
 - **Windows file locking during cleanup**
-    - Excel/OneDrive can lock files under `tests/regression/outputs/excel`.
-    - Fix: close any open spreadsheets and rerun.
+  - Excel/OneDrive can lock files under `tests/regression/outputs/excel`.
+  - Fix: close any open spreadsheets and rerun.
 
 ### C.7 Optional: validate regression artifacts after a run
 

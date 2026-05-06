@@ -47,7 +47,7 @@ The Highway Segmentation Analysis application provides advanced statistical and 
 2. **Install Dependencies**: Run `pip install -r requirements.txt` from the project directory
 3. **Optional (Recommended for CLI)**: Run `pip install -e .` to enable the `highway-seg` command
 4. **Launch Application**: Execute `python src/run.py`
-4. **Verify Installation**: The GUI should open and show the main window with the **Optimization Log** tab
+5. **Verify Installation**: The GUI should open and show the main window with the **Optimization Log** tab
 
 ### Quick Start
 

@@ -1,4 +1,5 @@
 # Highway Segmentation - JSON Results Format Specification
+
 **Version**: 1.1.0  
 **Date**: April 13, 2026  
 **Status**: Phase 1 Implementation - Simplified Essential Features
@@ -14,6 +15,7 @@ The **run spec JSON** is a *different* JSON file than the results JSON:
 - Run spec JSON: what the CLI consumes to run an analysis headlessly.
 
 For the run spec format, see:
+
 - `src/highway_segmentation_run_spec_schema.json`
 - `docs/CLI_USAGE.md`
 
@@ -22,6 +24,7 @@ For the run spec format, see:
 This document specifies the JSON format for Highway Segmentation analysis results. The format is designed for immediate implementation with essential features, while preserving extensibility for future enhancements.
 
 ### **Design Goals - Phase 1**
+
 - **Essential Data Capture**: Core optimization results and basic metadata
 - **Analysis Summary (Aggregated Across Routes)**: Simple totals/counts computed across `route_results`  
 - **Data Traceability**: Column mapping and route processing context
@@ -29,9 +32,10 @@ This document specifies the JSON format for Highway Segmentation analysis result
 - **Simple Implementation**: Focus on immediate value with clean upgrade path
 
 ### **Future Enhancements** *(Commented in schema)*
+
 - Complete reproducibility with detailed environment tracking
 - Structured warning and diagnostic system
-- Advanced performance metrics and convergence tracking 
+- Advanced performance metrics and convergence tracking
 - Unique analysis ID generation and cross-analysis tracking
 
 ## 📋 **Implementation Scope - Phase 1**
@@ -39,25 +43,30 @@ This document specifies the JSON format for Highway Segmentation analysis result
 ### **Essential Features** *(Implemented Now)*
 
 **Analysis Context:**
+
 - Analysis timestamp and method identification
 - Basic software version (application name and version)
 - Analysis status (completed, failed, partial, interrupted)
 
 **Analysis Summary (Aggregated Across Routes):**
+
 - `total_processing_time`: Complete analysis runtime in seconds
 - `total_routes_processed`: Number of routes successfully analyzed  
 - `total_length_processed`: Sum of all route lengths analyzed (miles/km)
 
 Notes:
+
 - These values are written to `analysis_metadata.analysis_summary`.
 - For multi-route runs they aggregate across routes; for single-route runs they are still present (the “aggregation” is just the single route).
 
 **Data Traceability:**
+
 - Column mapping (`x_column`, `y_column`, optional `route_column`)
 - Input file metadata (name, size, row count)
 - Total routes available vs processed
 
 **Route Processing Context:**
+
 - `route_filtering_applied`: Whether route selection was used
 - `total_routes_in_source`: Routes available in input data
 - Route processing configuration and selected route list
@@ -65,36 +74,43 @@ Notes:
 ### **Input Parameters** (*Complete Reproducibility*)
 
 **Method Configuration:**
+
 - Analysis method key and human-readable display name
 - Method description from configuration system
 
 **Core Method Parameters:**
+
 - All algorithm parameters defined by the selected optimization method
 - Validation ranges, data types, and UI visibility controlled by method configuration
 - Hidden parameters included for reproducibility but not exposed in UI
 
 **Extensible Method-Specific Parameters:**
-- Complete parameter set for the chosen optimization method 
+
+- Complete parameter set for the chosen optimization method
 - Algorithm parameters: population_size, num_generations, mutation_rate, crossover_rate, etc.
 - Segmentation parameters: min_length, max_length, gap_threshold
 - Method-specific parameters: target_avg_length, penalty_weight (for constrained methods)
 - All parameters defined by the selected optimization method configuration
 
 **Route Processing Configuration:**
+
 - Route mode (single_route vs multi_route)
 - Column mappings (x_column, y_column, route_column)
 - Selected routes array for processing
 
 **System Configuration:**
+
 - There is no separate `system_config` block in the results JSON.
 - Any “system-ish” knobs (e.g., cache clearing, performance stats toggles) are recorded under `input_parameters.method_parameters` when they are part of the method parameter set.
 
 ### **Route-Specific Data** (*Per Route Processing*)
 
 **Route Identification:**
+
 - Route ID (string)
 
 **Input Data Analysis:**
+
 ```json
 {
   "data_summary": {
@@ -119,6 +135,7 @@ Notes:
 **IMPORTANT**: All output `breakpoints` arrays **must include all mandatory breakpoints** from the gap analysis, plus any additional breakpoints added by the optimization algorithm. Mandatory breakpoints cannot be removed by the optimization process.
 
 *Single-Objective (1 pareto point):*
+
 ```json
 {
   "pareto_points": [{
@@ -150,6 +167,7 @@ Notes:
 ```
 
 *Multi-Objective (multiple pareto points):*
+
 ```json
 {
   "pareto_points": [
@@ -531,22 +549,26 @@ Constrained/single-objective methods typically emit a single point; multi-object
 ## 🔧 **Key Design Decisions**
 
 ### **Unified Pareto Architecture**
+
 - **All methods use pareto_points array** (single-objective = 1 point, multi-objective = multiple points)
 - **Segmentation data embedded directly** in each pareto point (no separate arrays or cross-references)
 - **Extensible constraint information** for specialized optimization methods
 
 ### **Complete Reproducibility Framework**
+
 - **All input parameters preserved** as `method_parameters` (note: `null` values are omitted)
 - **File metadata enables verification** of input data integrity
 - **Processing context allows exact replication** of analysis conditions
 
 ### **Analysis-Wide Insights**
+
 - **Summary statistics at top level** (total time, routes, length processed)
 - **Individual route statistics preserved** separately for detailed analysis
 - **Performance metrics captured** for optimization and debugging purposes
 - **No comparative analysis** between routes in standard output (as requested)
 
 ### **Extensibility Mechanisms**
+
 - **Unified method_parameters structure** supports any current or future optimization method
 - **Hidden parameter support** allows internal algorithm settings without UI clutter
 - **Configuration-driven validation** ensures parameter integrity based on method schema
@@ -555,6 +577,7 @@ Constrained/single-objective methods typically emit a single point; multi-object
 - **Structured warning/error reporting** supports diverse diagnostic needs
 
 ### **Data Integrity Guarantees**
+
 - **Strong typing with validation ranges** (e.g., population_size: 10-10000)
 - **Required vs optional fields clearly defined** for critical vs supplementary data
 - **Enum validation for controlled vocabularies** (e.g., status fields, route_mode)
@@ -566,6 +589,7 @@ Constrained/single-objective methods typically emit a single point; multi-object
 ## 🎯 **Implementation Guidance**
 
 ### **Phase 2 Integration Points**
+
 1. **Unified Results Structure**: Direct mapping from JSON schema to Python dataclasses
 2. **StandardResultsWriter**: Use this schema as output format specification
 3. **Validation Framework**: Implement JSON Schema validation for data integrity
@@ -575,6 +599,7 @@ Constrained/single-objective methods typically emit a single point; multi-object
 ### **Configuration System Integration**
 
 **Method Configuration with Hidden Parameters:**
+
 ```python
 # Enhanced ParameterDefinition with UI visibility control
 @dataclass
@@ -613,6 +638,7 @@ GENETIC_ALGORITHM_METHOD = OptimizationMethod(
 ```
 
 **Benefits of Hidden Parameters:**
+
 - **Clean UI**: Only essential parameters shown to users
 - **Complete Reproducibility**: All parameters saved in results JSON
 - **Algorithm Flexibility**: Internal tuning parameters preserved
@@ -621,6 +647,7 @@ GENETIC_ALGORITHM_METHOD = OptimizationMethod(
 ### **Extensibility Patterns**
 
 **Adding New Analysis Methods:**
+
 ```python
 # Single-Objective method parameters
 "method_parameters": {
@@ -663,6 +690,7 @@ GENETIC_ALGORITHM_METHOD = OptimizationMethod(
 ```
 
 **Method-Specific Results Extension:**
+
 ```python
 # Methods can add specialized results within method_parameters or custom fields
 "method_parameters": {
@@ -678,12 +706,14 @@ GENETIC_ALGORITHM_METHOD = OptimizationMethod(
 ### **Third-Party Integration**
 
 **External Tool Consumption:**
+
 - Standard JSON Schema format with validation rules
 - Predictable field names and data structures  
 - Complete analysis context for external processing
 - Extensible warning/error reporting for diagnostics
 
 **Data Export/Import:**
+
 - JSON format enables easy serialization/deserialization
 - Schema validation ensures data integrity during transfers
 - Complete reproducibility context for analysis replication
@@ -694,18 +724,21 @@ GENETIC_ALGORITHM_METHOD = OptimizationMethod(
 ## ✅ **Validation & Testing**
 
 ### **Schema Validation Requirements**
+
 - All JSON output must validate against this schema
 - Required fields must be present and properly typed
 - Value ranges must be respected (non-negative lengths, valid percentages)
 - Referential integrity must be maintained (segmentation ↔ pareto point links)
 
 ### **Sample JSON Files** (*To Be Created*)
+
 - Single-objective analysis with 1 route
 - Multi-objective analysis with pareto front  
 - Multi-route processing with 3+ routes
 - Constrained optimization with constraint details
 
 ### **Migration Strategy**
+
 - Current CSV results can be imported to JSON format
 - JSON Schema versioning supports future format evolution
 - Fallback CSV export maintained for user compatibility
@@ -728,6 +761,7 @@ GENETIC_ALGORITHM_METHOD = OptimizationMethod(
 ## **Recent Updates** *(v1.1.0 - April 13, 2026)*
 
 **Schema Enhancements:**
+
 - Added `method_specific_analysis_stats` section for extensible method-specific performance metrics
 - Enhanced segment details with statistical measures: `data_point_count`, `y_value_min/max/avg/std`
 - Added route processing context fields: `route_filtering_applied`, `total_routes_in_source`, `total_routes_processed`
