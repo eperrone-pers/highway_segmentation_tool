@@ -69,6 +69,7 @@ pip install -e .
 ```
 
 Notes:
+
 - `pip install -e .` installs this repo in editable mode and creates the convenience commands `highway-seg` (CLI) and `highway-seg-gui` (GUI).
 
 ### 3) Run the regression gate (must be green)
@@ -111,6 +112,7 @@ The GUI provides an intuitive way to configure all parameters:
 Defaults are defined in `src/config.py` and vary by selected method.
 
 Notes:
+
 - Only a small set of controls are truly global (file selection, route/x/y columns, and gap threshold).
 - All other optimization knobs (GA, constrained, AASHTO CDA, etc.) are configured per-method in the Method Parameters table.
 
