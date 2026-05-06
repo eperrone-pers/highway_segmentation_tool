@@ -3,13 +3,27 @@
 **Date**: April 13, 2026  
 **Status**: Phase 1 Implementation - Simplified Essential Features
 
+> **Authoritative source**: `src/highway_segmentation_results_schema.json`.
+> This document is a human-readable guide and should match that schema.
+
+## Related: Run Spec JSON (CLI)
+
+The **run spec JSON** is a *different* JSON file than the results JSON:
+
+- Results JSON (this document): what gets written to `Results/*.json` after an analysis finishes.
+- Run spec JSON: what the CLI consumes to run an analysis headlessly.
+
+For the run spec format, see:
+- `src/highway_segmentation_run_spec_schema.json`
+- `docs/CLI_USAGE.md`
+
 ## 🎯 **Overview**
 
 This document specifies the JSON format for Highway Segmentation analysis results. The format is designed for immediate implementation with essential features, while preserving extensibility for future enhancements.
 
 ### **Design Goals - Phase 1**
 - **Essential Data Capture**: Core optimization results and basic metadata
-- **Cross-Route Aggregation**: Summary statistics for multi-route analysis  
+- **Analysis Summary (Aggregated Across Routes)**: Simple totals/counts computed across `route_results`  
 - **Data Traceability**: Column mapping and route processing context
 - **Extensible Architecture**: Framework ready for future feature additions
 - **Simple Implementation**: Focus on immediate value with clean upgrade path
@@ -29,10 +43,14 @@ This document specifies the JSON format for Highway Segmentation analysis result
 - Basic software version (application name and version)
 - Analysis status (completed, failed, partial, interrupted)
 
-**Cross-Route Aggregation:**
+**Analysis Summary (Aggregated Across Routes):**
 - `total_processing_time`: Complete analysis runtime in seconds
 - `total_routes_processed`: Number of routes successfully analyzed  
 - `total_length_processed`: Sum of all route lengths analyzed (miles/km)
+
+Notes:
+- These values are written to `analysis_metadata.analysis_summary`.
+- For multi-route runs they aggregate across routes; for single-route runs they are still present (the “aggregation” is just the single route).
 
 **Data Traceability:**
 - Column mapping (`x_column`, `y_column`, optional `route_column`)
@@ -68,41 +86,30 @@ This document specifies the JSON format for Highway Segmentation analysis result
 - Selected routes array for processing
 
 **System Configuration:**
-- Cache settings, random seeds for reproducibility
-- Algorithm constants and UI settings
-- All configuration dataclass values
+- There is no separate `system_config` block in the results JSON.
+- Any “system-ish” knobs (e.g., cache clearing, performance stats toggles) are recorded under `input_parameters.method_parameters` when they are part of the method parameter set.
 
 ### **Route-Specific Data** (*Per Route Processing*)
 
 **Route Identification:**
-- Route ID, display name, processing order
-- Optional route-specific notes
+- Route ID (string)
 
 **Input Data Analysis:**
 ```json
 {
   "data_summary": {
-    "total_data_points": 1247,
-    "data_range": {"x_min": 0.0, "x_max": 25.3, "y_min": 0.5, "y_max": 8.2},
-    "data_quality": {"valid_points": 1247, "invalid_points": 0, "duplicate_points": 3}
+    "total_data_points": 1573,
+    "data_range": {"x_min": 0.0, "x_max": 15.697, "y_min": 0.0, "y_max": 3.0737}
   },
   "gap_analysis": {
-    "gap_segments": [
-      {"start": 5.2, "end": 7.1, "length": 1.9},
-      {"start": 12.4, "end": 13.6, "length": 1.2}
-    ],
-    "total_gaps": 2, "total_gap_length": 3.1, "largest_gap": 1.9,
-    "gap_threshold_used": 0.5,
-    "breakpoint_consolidation": {
-      "original_breakpoints": [0.0, 5.0, 5.2, 5.3, 7.1, 7.2, 12.4, 13.6, 15.6, 16.8, 25.3],
-      "removed_breakpoints": [5.0, 5.3, 7.2],
-      "consolidation_reason": "gap_threshold_processing"
-    }
+    "total_gaps": 0,
+    "gap_segments": [],
+    "total_gap_length": 0
   },
   "mandatory_segments": {
-    "mandatory_breakpoints": [0.0, 5.2, 7.1, 15.6, 16.8, 25.3],
-    "analyzable_segments": [{"start": 0.0, "end": 5.2, "length": 5.2, "type": "data"}],
-    "total_analyzable_length": 22.2
+    "mandatory_breakpoints": [0.0, 15.697],
+    "analyzable_segments": [{"start": 0.0, "end": 15.697, "length": 15.697, "type": "data"}],
+    "total_analyzable_length": 15.697
   }
 }
 ```
@@ -120,7 +127,23 @@ This document specifies the JSON format for Highway Segmentation analysis result
     "segmentation": {
       "breakpoints": [0.0, 3.2, 5.2, 7.1, 8.1, 15.4, 15.6, 16.8, 25.3],
       "segment_lengths": [3.2, 2.0, 1.9, 1.0, 7.3, 0.2, 1.2, 8.5],
-      "segment_count": 8
+      "segment_count": 8,
+      "total_length": 25.3,
+      "average_segment_length": 3.1625,
+      "segment_details": [
+        {
+          "segment_index": 0,
+          "start": 0.0,
+          "end": 3.2,
+          "length": 3.2,
+          "is_mandatory": true,
+          "data_point_count": 312,
+          "y_value_min": 0.0,
+          "y_value_max": 3.0737,
+          "y_value_avg": 0.5635,
+          "y_value_std": 0.3897
+        }
+      ]
     }
   }]
 }
@@ -152,22 +175,8 @@ This document specifies the JSON format for Highway Segmentation analysis result
 }
 ```
 
-*Constrained (1 point with method-specific results):*
-```json
-{
-  "pareto_points": [{
-    "point_id": 0,
-    "objective_values": [2.31],
-    "segmentation": {
-      "breakpoints": [0.0, 2.1, 5.2, 7.1, 9.3, 15.6, 16.8, 18.9, 25.3],
-      "segment_lengths": [2.1, 3.1, 1.9, 2.2, 6.3, 1.2, 2.1, 6.4],
-      "segment_count": 8
-    }
-  }]
-}
-```
-
 All processing results follow the unified pareto_points structure regardless of optimization method used.
+Constrained/single-objective methods typically emit a single point; multi-objective methods emit multiple points.
 
 ---
 
@@ -198,26 +207,23 @@ All processing results follow the unified pareto_points structure regardless of 
 ```json
 "analysis_metadata": {
   "type": "object",
-  "required": ["analysis_id", "timestamp", "software_version", "analysis_method", "analysis_status"],
+  "required": ["timestamp", "analysis_method", "analysis_status", "input_file_info", "analysis_summary"],
   "properties": {
     "analysis_id": {
       "type": "string",
-      "pattern": "^highway_seg_[0-9]{8}_[0-9]{6}$",
-      "description": "highway_seg_YYYYMMDD_HHMMSS"
+      "description": "Optional: Analysis identifier for tracking purposes"
     },
     "timestamp": {"type": "string", "format": "date-time"},
     "software_version": {
       "type": "object",
       "properties": {
         "application": {"type": "string", "default": "Highway Segmentation"},
-        "version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
-        "build_date": {"type": "string", "format": "date"},
-        "python_version": {"type": "string"}
+        "version": {"type": "string", "description": "Application version"}
       }
     },
     "analysis_method": {
-      "type": "string", 
-      "enum": ["single_objective", "multi_objective", "constrained"]
+      "type": "string",
+      "description": "Optimization method key used for analysis (extensible - supports any configured method)"
     },
     "analysis_status": {
       "type": "string",
@@ -225,7 +231,7 @@ All processing results follow the unified pareto_points structure regardless of 
     },
     "input_file_info": {
       "type": "object",
-      "required": ["file_name", "total_data_rows"],
+      "required": ["data_file_name", "total_data_rows", "total_routes_available", "column_info"],
       "properties": {
         "data_file_path": {"type": "string"},
         "data_file_name": {"type": "string"},
@@ -237,7 +243,7 @@ All processing results follow the unified pareto_points structure regardless of 
           "type": "object",
           "required": ["total_columns", "x_column", "y_column"],
           "properties": {
-            "total_columns": {"type": "integer", "minimum": 3},
+            "total_columns": {"type": "integer", "minimum": 2},
             "x_column": {"type": "string"},
             "y_column": {"type": "string"},
             "route_column": {"type": ["string", "null"]}
@@ -247,7 +253,7 @@ All processing results follow the unified pareto_points structure regardless of 
     },
     "analysis_summary": {
       "type": "object",
-      "required": ["total_processing_time", "total_routes_processed"],
+      "required": ["total_processing_time", "total_routes_processed", "total_length_processed"],
       "properties": {
         "total_processing_time": {"type": "number", "minimum": 0},
         "total_routes_processed": {"type": "integer", "minimum": 1},
@@ -345,15 +351,6 @@ All processing results follow the unified pareto_points structure regardless of 
         "route_filtering_applied": {"type": "boolean"},
         "total_routes_in_source": {"type": "integer", "minimum": 1},
         "total_routes_processed": {"type": "integer", "minimum": 1}
-      }
-    },
-    "system_config": {
-      "type": "object",
-      "properties": {
-        "cache_clear_interval": {"type": "integer", "minimum": 1},
-        "random_seed": {"type": ["integer", "null"]},
-        "algorithm_constants": {"type": "object"},
-        "ui_settings": {"type": "object"}
       }
     }
   }
@@ -539,8 +536,7 @@ All processing results follow the unified pareto_points structure regardless of 
 - **Extensible constraint information** for specialized optimization methods
 
 ### **Complete Reproducibility Framework**
-- **All input parameters preserved** with exact data types and validation ranges
-- **System configuration captured** including random seeds and algorithm constants  
+- **All input parameters preserved** as `method_parameters` (note: `null` values are omitted)
 - **File metadata enables verification** of input data integrity
 - **Processing context allows exact replication** of analysis conditions
 
@@ -561,7 +557,8 @@ All processing results follow the unified pareto_points structure regardless of 
 ### **Data Integrity Guarantees**
 - **Strong typing with validation ranges** (e.g., population_size: 10-10000)
 - **Required vs optional fields clearly defined** for critical vs supplementary data
-- **Enum validation for controlled vocabularies** (status fields, analysis methods)
+- **Enum validation for controlled vocabularies** (e.g., status fields, route_mode)
+- **Extensible method keys**: `analysis_metadata.analysis_method` is a free string (method key), not an enum
 - **Referential integrity** (segmentation data directly contained within pareto points)
 
 ---

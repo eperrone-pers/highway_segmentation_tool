@@ -7,11 +7,10 @@ Validates JSON result files against the official schema specification.
 import json
 import sys
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Dict, Any, Optional
 
 try:
-    import jsonschema
-    from jsonschema import validate, ValidationError, Draft202012Validator
+    from jsonschema import ValidationError, Draft202012Validator
 except ImportError:
     print("ERROR: jsonschema package not installed")
     print("Install with: pip install jsonschema")
@@ -31,7 +30,7 @@ def load_schema(schema_path: Path) -> Dict[str, Any]:
         sys.exit(1)
 
 
-def load_json_file(file_path: Path) -> Dict[str, Any]:
+def load_json_file(file_path: Path) -> Optional[Dict[str, Any]]:
     """Load JSON data from file."""
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
@@ -57,7 +56,7 @@ def validate_json_against_schema(json_data: Dict[str, Any], schema: Dict[str, An
         print(f"   Error: {e.message}")
         print(f"   Path: {' -> '.join(str(p) for p in e.absolute_path) if e.absolute_path else 'root'}")
         if e.context:
-            print(f"   Additional errors:")
+            print("   Additional errors:")
             for ctx_error in e.context:
                 print(f"     - {ctx_error.message}")
         return False
@@ -86,7 +85,7 @@ def main():
     # Load schema
     print(f"Loading schema: {schema_path}")
     schema = load_schema(schema_path)
-    print(f"✅ Schema loaded successfully")
+    print("✅ Schema loaded successfully")
     print()
     
     # Validate each sample file

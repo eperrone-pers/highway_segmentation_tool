@@ -45,7 +45,8 @@ The Highway Segmentation Analysis application provides advanced statistical and 
 
 1. **Extract Application**: Unzip all files to your desired installation directory
 2. **Install Dependencies**: Run `pip install -r requirements.txt` from the project directory
-3. **Launch Application**: Execute `python src/gui_main.py` or run the provided batch/shell script
+3. **Optional (Recommended for CLI)**: Run `pip install -e .` to enable the `highway-seg` command
+4. **Launch Application**: Execute `python src/run.py`
 4. **Verify Installation**: The GUI should open and show the main window with the **Optimization Log** tab
 
 ### Quick Start
@@ -101,6 +102,7 @@ The interface is split into a left configuration pane and a right execution/resu
 - **🚀 Start Optimization**: Validates inputs, loads data if needed, then runs the selected method.
 - **⏹ Stop**: Requests a graceful stop (the run halts after the current step/generation).
 - **📊 Load & Plot Results**: Open an existing results JSON and launch the enhanced visualization window.
+- **Copy command line for this analysis**: Creates a run spec JSON and copies a runnable CLI command to your clipboard.
 - **❓ Help**: Opens a Documentation dialog with buttons to open the User Guide and any available method-specific docs in your browser.
 - **❌ Exit**: Exits the application (saving settings).
 

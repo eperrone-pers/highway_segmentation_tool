@@ -1,3 +1,58 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "highway-segmentation-tool"
+version = "0.1.0"
+description = "Highway segmentation tool (GUI + CLI run spec runner)"
+readme = "README.md"
+requires-python = ">=3.9"
+dynamic = ["dependencies", "optional-dependencies"]
+
+[project.scripts]
+highway-seg = "cli:main"
+
+[project.gui-scripts]
+highway-seg-gui = "run:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+py-modules = [
+    "analysis_utilities",
+    "cli",
+    "cli_runner",
+    "config",
+    "data_loader",
+    "dependency_check",
+    "docs_browser",
+    "excel_export",
+    "extensible_results_manager",
+    "file_manager",
+    "gui_main",
+    "json_results_manager",
+    "logger",
+    "optimization_controller",
+    "parameter_manager",
+    "route_filter_dialog",
+    "route_utils",
+    "run",
+    "run_spec",
+    "settings_manager",
+    "ui_builder",
+    "value_parsing",
+    "visualization_ui",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}
+
+[tool.setuptools.dynamic.optional-dependencies]
+dev = {file = ["requirements-dev.txt"]}
+
 [tool.pytest.ini_options]
 # Pytest configuration for Highway Segmentation GA Phase 1 tests
 

@@ -16,6 +16,7 @@ from tkinter import ttk, messagebox
 import os
 import sys
 import logging
+import json
 from datetime import datetime
 from typing import List, Optional
 
@@ -28,6 +29,7 @@ from settings_manager import SettingsManager
 from config import UIConfig, AlgorithmConstants, ConstrainedOptimizationConfig
 from route_utils import ROUTE_COLUMN_NONE_SENTINEL, normalize_route_column_selection
 from docs_browser import open_markdown_path_in_browser
+from run_spec import build_command_for_run_spec, build_run_spec, default_run_spec_path_for_output
 
 # Create config instances
 ui_config = UIConfig()
@@ -231,6 +233,7 @@ class HighwaySegmentationGUI:
         
         # Build required sections in the fixed (non-scrollable) left pane
         current_row = 0
+        current_row = self.ui_builder.create_cli_command_section(required_frame, current_row)
         current_row = self.ui_builder.create_file_operations_section(required_frame, current_row)
         # parameters_section removed - now using dynamic parameters in method_section
         current_row = self.ui_builder.create_method_section(required_frame, current_row)
@@ -614,6 +617,128 @@ class HighwaySegmentationGUI:
     def stop_optimization(self):
         """Stop optimization - delegates to OptimizationController."""
         return self.optimization_controller.stop_optimization()
+
+    def copy_command_line_for_analysis(self) -> None:
+        """Export a run-spec JSON for the current UI state and copy a CLI command to clipboard."""
+        try:
+            # Validate minimum inputs
+            data_file_path = self.file_manager.get_data_file_path() if hasattr(self, 'file_manager') else ''
+            if not data_file_path:
+                messagebox.showerror("Data Required", "Please select a data file before exporting a command line.")
+                return
+
+            x_column = self.x_column.get() if hasattr(self, 'x_column') else ''
+            y_column = self.y_column.get() if hasattr(self, 'y_column') else ''
+            if not x_column or not y_column:
+                messagebox.showerror("Columns Required", "Please select both X and Y columns before exporting a command line.")
+                return
+
+            try:
+                gap_threshold = float(self.gap_threshold.get())
+            except Exception:
+                messagebox.showerror("Gap Threshold Required", "Gap threshold is missing or invalid.")
+                return
+
+            # Get method + merged method parameters (defaults + UI overrides)
+            params = self.parameter_manager.get_optimization_parameters()
+            method_key = params.get('optimization_method')
+            if not method_key:
+                messagebox.showerror("Method Required", "Optimization method is missing or invalid.")
+                return
+
+            method_parameters = {
+                k: v
+                for k, v in params.items()
+                if k not in ('optimization_method', 'custom_save_name')
+            }
+
+            # Route configuration
+            route_column_raw = self.route_column.get() if hasattr(self, 'route_column') else None
+            route_column = normalize_route_column_selection(route_column_raw)
+
+            selected_routes = None
+            if route_column is not None:
+                sr = getattr(self, 'selected_routes', None)
+                if isinstance(sr, (list, tuple)) and sr:
+                    selected_routes = [str(r) for r in sr]
+
+            # Output JSON path: prefer explicit save location, else default to project Results/
+            save_file_path = self.file_manager.get_save_file_path() if hasattr(self, 'file_manager') else ''
+            if save_file_path:
+                output_json_path = save_file_path
+            else:
+                project_root = os.path.dirname(os.path.dirname(__file__))
+                name = (self.custom_save_name.get() if hasattr(self, 'custom_save_name') else 'highway_segmentation')
+                name = str(name).strip() or 'highway_segmentation'
+                if not name.lower().endswith('.json'):
+                    name = name + '.json'
+                output_json_path = os.path.join(project_root, 'Results', name)
+
+            spec_path = default_run_spec_path_for_output(output_json_path)
+
+            def _json_safe(value):
+                if value is None:
+                    return None
+                if isinstance(value, (str, int, float, bool)):
+                    return value
+                if isinstance(value, (list, tuple)):
+                    return [_json_safe(v) for v in value]
+                if isinstance(value, dict):
+                    return {str(k): _json_safe(v) for k, v in value.items()}
+                try:
+                    if hasattr(value, 'item'):
+                        return _json_safe(value.item())
+                except Exception:
+                    pass
+                return str(value)
+
+            # Keep types stable for build_run_spec() while sanitizing values.
+            selected_routes_safe = selected_routes if selected_routes is None else [str(r) for r in selected_routes]
+            method_parameters_safe = {str(k): _json_safe(v) for k, v in method_parameters.items()}
+
+            spec = build_run_spec(
+                data_file_path=str(data_file_path),
+                x_column=str(x_column),
+                y_column=str(y_column),
+                gap_threshold=float(gap_threshold),
+                route_column=route_column,
+                selected_routes=selected_routes_safe,
+                method_key=str(method_key),
+                method_parameters=method_parameters_safe,
+                output_json_path=str(output_json_path),
+                overwrite=True,
+                application_version=str(getattr(self, 'app_version', 'dev')),
+            )
+
+            os.makedirs(os.path.dirname(str(spec_path)), exist_ok=True)
+            with open(spec_path, 'w', encoding='utf-8') as f:
+                json.dump(spec, f, indent=2, ensure_ascii=False)
+
+            cmd = build_command_for_run_spec(str(spec_path))
+
+            # Copy to clipboard using Tk
+            self.root.clipboard_clear()
+            self.root.clipboard_append(cmd)
+            try:
+                self.root.update_idletasks()
+            except Exception:
+                pass
+
+            self.log_message(f"Run spec written: {spec_path}")
+            self.log_message("Copied command line to clipboard")
+
+            messagebox.showinfo(
+                "Command Copied",
+                "A command line to run this analysis has been copied to your clipboard.\n\n"
+                f"Run spec: {spec_path}\n\n"
+                f"Command:\n{cmd}",
+            )
+
+        except Exception as e:
+            if hasattr(self, 'handle_error'):
+                self.handle_error("Could not copy command line", e, severity="error", show_messagebox=True)
+            else:
+                messagebox.showerror("Error", f"Could not copy command line:\n{e}")
     
     def show_help(self):
         """Open documentation in the user's browser (preferred UX).

@@ -188,7 +188,21 @@ class UIBuilder:
         
         ttk.Button(save_frame, text="Browse...", 
                   command=self.app.browse_save_location).grid(row=0, column=1)
-        
+
+        return row + 1
+
+    def create_cli_command_section(self, parent, row):
+        """Create the CLI command copy button above File Operations."""
+        cli_frame = ttk.Frame(parent)
+        cli_frame.grid(row=row, column=0, sticky="ew", pady=(0, 3))
+        cli_frame.columnconfigure(0, weight=1)
+
+        ttk.Button(
+            cli_frame,
+            text="Copy CLI command",
+            command=self.app.copy_command_line_for_analysis,
+        ).grid(row=0, column=0, sticky="ew")
+
         return row + 1
     
     # create_parameters_section method removed - now using dynamic parameter generation
@@ -846,7 +860,7 @@ class UIBuilder:
         # Results button
         ttk.Button(actions_frame, text="📊 Load & Plot Results", 
                   command=self.app.load_and_plot_results).grid(row=0, column=2, padx=(0, 5))
-        
+
         # Help button
         ttk.Button(actions_frame, text="❓ Help", 
                   command=self.app.show_help).grid(row=0, column=3, padx=(0, 5))

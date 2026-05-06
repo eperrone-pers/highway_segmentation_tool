@@ -22,6 +22,20 @@ python src/run.py
 
 Launches the GUI interface directly.
 
+### Option 3: Headless CLI (Run Spec)
+
+You can run an analysis without the GUI using a **run spec JSON**.
+
+- In the GUI, click **Copy command line for this analysis** to generate a run spec and copy a runnable command.
+- Or run directly:
+
+```bash
+highway-seg validate-spec --spec path/to/your.run_spec.json
+highway-seg run --spec path/to/your.run_spec.json
+```
+
+See `docs/CLI_USAGE.md` for details.
+
 ### Option 2: Direct GUI Launch
 
 ```bash
@@ -50,7 +64,12 @@ source .venv/bin/activate
 
 ```bash
 pip install -r requirements.txt
+pip install -r requirements-dev.txt
+pip install -e .
 ```
+
+Notes:
+- `pip install -e .` installs this repo in editable mode and creates the convenience commands `highway-seg` (CLI) and `highway-seg-gui` (GUI).
 
 ### 3) Run the regression gate (must be green)
 

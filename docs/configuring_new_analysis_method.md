@@ -1,6 +1,6 @@
 # Configuring a New Analysis Method (Extensible Architecture Guide)
 
-Audience: Python developers extending the Highway Segmentation GA application.
+Audience: Python developers extending the Highway Segmentation Tool application.
 
 This document describes **how to connect a new analysis method to the system** so that:
 
@@ -976,4 +976,131 @@ class <NewMethodClass>(AnalysisMethodBase):
             input_parameters=input_parameters,
             data_summary=data_summary,
         )
+```
+
+---
+
+## Appendix C — Adding regression tests for a new method (GUI + CLI)
+
+This repo already has a regression-testing framework that exercises methods end-to-end via:
+
+1. **GUI / production controller path** (uses `OptimizationController` + consolidated save)
+2. **CLI run-spec path** (uses `cli.main([...])` + `run_spec` + `cli_runner`)
+3. **Structure parity check** (ensures CLI and GUI JSON outputs have the same nested key/type shape)
+
+The key design goal is:
+
+- It’s OK if **values differ** for nondeterministic methods.
+- We want the **results JSON structure** to stay consistent (schema-compliant and equivalent between GUI and CLI).
+
+### C.1 Where to add a new method to the regression matrix
+
+The regression test matrix (methods + datasets + baseline params) is driven by:
+
+- `tests/regression/test_parameters_template.json`
+
+The regression suite discovers methods like this:
+
+- Always includes baseline methods: `single` and `multi`
+- Adds **any additional `method_key`** that appears under `method_specific` in the template
+
+So, to include a new method in both GUI and CLI regressions:
+
+1. Add a new block under `method_specific`:
+
+```json
+{
+    "method_specific": {
+        "your_method_key": {
+            "some_param": 123,
+            "another_param": true
+        }
+    }
+}
+```
+
+2. Keep the parameters in this block **minimal and fast**.
+     - Regression runs should complete quickly and reliably.
+     - Prefer smaller populations/generation counts (or deterministic settings) if applicable.
+
+3. Make sure the method is registered in `src/config.py` (in `OPTIMIZATION_METHODS`) with the same `method_key`.
+
+### C.2 GUI regression test (production path)
+
+The GUI regression suite runs end-to-end through production code paths:
+
+- `tests/regression/test_complete_workflow_regression.py`
+
+This test:
+
+- Loads test data
+- Calls the production optimization controller for each method+dataset
+- Writes results using `ExtensibleJsonResultsManager`
+- Validates output structure and schema compliance
+
+When your method is included in the template (see C.1), it will be picked up automatically.
+
+### C.3 CLI regression test (run-spec path)
+
+The CLI regression suite runs the same method+dataset matrix through the CLI pipeline:
+
+- `tests/regression/test_cli_workflow_regression.py`
+
+This test:
+
+- Builds a run-spec from `tests/regression/test_parameters_template.json`
+- Calls `cli.main(["run", "--spec", ...])` (no subprocess)
+- Validates the output JSON against the schema
+- Persists artifacts under `tests/regression/outputs/json/` with a `cli_` filename prefix
+
+When your method is included in the template (see C.1), it will be picked up automatically.
+
+### C.4 CLI vs GUI JSON structure parity test
+
+There is an additional regression check to ensure the CLI and GUI results are structurally equivalent:
+
+- `tests/regression/test_zz_cli_gui_structure_equivalence.py`
+
+Notes:
+
+- It compares **shape only** (keys/types), not values.
+- The filename is prefixed with `zz_` so it runs after the two suites that generate artifacts.
+    - This matters because regression outputs are cleaned once per pytest session.
+
+### C.5 One command to validate everything together
+
+Because regression outputs are cleaned once per pytest session, run these in a *single* pytest invocation:
+
+```powershell
+& .venv\Scripts\python.exe -m pytest -q tests\regression\test_complete_workflow_regression.py tests\regression\test_cli_workflow_regression.py tests\regression\test_zz_cli_gui_structure_equivalence.py
+```
+
+### C.6 Troubleshooting tips (common failures)
+
+If your method fails regression tests, typical causes are:
+
+- **Parameter validation mismatch**
+    - The template uses param names that don’t exist in your method config.
+    - Fix: align `tests/regression/test_parameters_template.json` with your method’s `ParameterDefinition` names.
+
+- **Schema failures**
+    - Your `AnalysisResult` output is missing required structure.
+    - Fix: always return `AnalysisResult(all_solutions=[...])` and include a solution with at least:
+        - `chromosome` (sorted breakpoints)
+        - `fitness` / `objective_values` (even if placeholders for deterministic methods)
+
+- **CLI vs GUI structural differences**
+    - This usually means the CLI and GUI pipelines are feeding different-shaped solution dicts into the results writer.
+    - Fix: ensure both pathways provide solutions with consistent fields (and rely on the shared JSON writer to build derived sections like `segmentation` and `segment_details`).
+
+- **Windows file locking during cleanup**
+    - Excel/OneDrive can lock files under `tests/regression/outputs/excel`.
+    - Fix: close any open spreadsheets and rerun.
+
+### C.7 Optional: validate regression artifacts after a run
+
+You can validate all JSON outputs under `tests/regression/outputs/json` with:
+
+```powershell
+& .venv\Scripts\python.exe tests\regression\validate_regression_outputs.py
 ```

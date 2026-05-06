@@ -88,8 +88,8 @@
               "properties": {
                 "total_columns": {
                   "type": "integer",
-                  "minimum": 3,
-                  "description": "Total columns in dataset"
+                  "minimum": 2,
+                  "description": "Total columns in dataset (2 for single-route x/y datasets; 3+ when a route column is present)"
                 },
                 "x_column": {
                   "type": "string",
