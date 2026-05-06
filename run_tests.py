@@ -18,6 +18,7 @@ import sys
 import os
 import subprocess
 import argparse
+import importlib.util
 from pathlib import Path
 
 # Ensure we're in the project root
@@ -45,7 +46,7 @@ def run_command(cmd, description=""):
             sys.exit(1)
             
     except FileNotFoundError:
-        print(f"Error: Command not found. Make sure pytest is installed.")
+        print("Error: Command not found. Make sure pytest is installed.")
         print("Run: pip install -r requirements.txt")
         sys.exit(1)
 
@@ -125,9 +126,7 @@ def main():
 
 if __name__ == "__main__":
     # Check if pytest is available
-    try:
-        import pytest
-    except ImportError:
+    if importlib.util.find_spec("pytest") is None:
         print("Error: pytest not found. Please install requirements:")
         print("pip install -r requirements.txt")
         sys.exit(1)

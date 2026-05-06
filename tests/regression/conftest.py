@@ -47,6 +47,7 @@ import json
 import shutil
 from pathlib import Path
 import sys
+import time
 
 # Add src to path for imports  
 current_dir = Path(__file__).parent
@@ -161,13 +162,34 @@ def _clean_regression_outputs_once(outputs_dir):
     """Clean regression outputs once per session.
 
     The regression suite writes artifacts under tests/regression/outputs/.
-    When running a subset (e.g., `pytest -m regression`), stale artifacts from
-    prior runs can survive and cause schema validation failures (e.g., invalid
-    JSON due to partial/previous writes).
+    We want a clean slate each run so stale artifacts cannot cause failures.
 
-    Cleaning once per session keeps runs deterministic while still leaving the
-    freshly-generated artifacts on disk for inspection.
+    Windows note:
+    Excel/OneDrive/AV can temporarily lock .xlsx files. We retry deletes a few
+    times before failing with a clear message.
     """
+
+    def _unlink_with_retries(path: Path, attempts: int = 15, delay_seconds: float = 0.2) -> None:
+        last_err: Exception | None = None
+        for _ in range(attempts):
+            try:
+                path.unlink()
+                return
+            except (PermissionError, OSError) as e:
+                last_err = e
+                time.sleep(delay_seconds)
+        raise last_err  # type: ignore[misc]
+
+    def _rmtree_with_retries(path: Path, attempts: int = 15, delay_seconds: float = 0.2) -> None:
+        last_err: Exception | None = None
+        for _ in range(attempts):
+            try:
+                shutil.rmtree(path)
+                return
+            except (PermissionError, OSError) as e:
+                last_err = e
+                time.sleep(delay_seconds)
+        raise last_err  # type: ignore[misc]
 
     def _clear_dir_contents(path: Path) -> None:
         path.mkdir(parents=True, exist_ok=True)
@@ -175,12 +197,10 @@ def _clean_regression_outputs_once(outputs_dir):
         for child in path.iterdir():
             try:
                 if child.is_dir():
-                    shutil.rmtree(child)
+                    _rmtree_with_retries(child)
                 else:
-                    child.unlink()
-            except PermissionError:
-                locked.append(str(child))
-            except OSError:
+                    _unlink_with_retries(child)
+            except (PermissionError, OSError):
                 locked.append(str(child))
 
         if locked:

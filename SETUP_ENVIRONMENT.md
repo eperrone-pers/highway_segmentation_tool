@@ -23,6 +23,9 @@ pip install -r requirements.txt
 
 # Optional: install development-only tools (linting/formatting)
 pip install -r requirements-dev.txt
+
+# Install the repository in editable mode (creates entrypoints)
+pip install -e .
 ```
 
 ### 3. Verify Installation
@@ -42,10 +45,11 @@ python -m pytest tests/test_simple_controller.py -v
 
 ```bash
 # Run GUI application
-python src/gui_main.py
-
-# Run command line version
 python src/run.py
+
+# Run headless CLI (run spec)
+highway-seg validate-spec --spec path/to/your.run_spec.json
+highway-seg run --spec path/to/your.run_spec.json
 ```
 
 ## Python Version Requirements

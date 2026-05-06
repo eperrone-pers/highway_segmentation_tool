@@ -4,13 +4,14 @@ Comprehensive regression tests that validate the complete workflow for all optim
 
 ## Overview
 
-This test suite runs **8 total tests** covering all combinations of:
-- **4 Methods**: `single`, `multi`, `constrained`, `aashto_cda`  
-- **2 Datasets**: `single_route` (test_data_single_route.csv), `multi_route` (TestMultiRoute.csv)
+This test suite runs an end-to-end regression matrix covering:
+
+- **Methods**: always includes `single` and `multi`, plus any additional `method_key` entries present under `method_specific` in `tests/regression/test_parameters_template.json`.
+- **Datasets**: `single_route` (test_data_single_route.csv) and `multi_route` (TestMultiRoute.csv)
 
 ## Test Structure
 
-```
+```text
 tests/regression/
 ├── test_complete_workflow_regression.py    # Main test file (8 parametrized tests)
 ├── test_parameters_template.json          # Standardized test parameters
@@ -29,6 +30,7 @@ For each method/dataset combination:
 2. **Configure Parameters**: Apply method-specific standardized parameters  
 3. **Run Optimization**: Execute complete optimization workflow
 4. **Save JSON**: Save results to `outputs/json/regression_{method}_{dataset}.json`
+    - CLI regression tests also write separate artifacts as `outputs/json/cli_regression_{method}_{dataset}.json`
 5. **Validate Schema**: Check JSON against schema specification
 6. **Export Excel**: Create Excel file in `outputs/excel/regression_{method}_{dataset}.xlsx`
 7. **Validate Export**: Verify Excel content matches JSON data
@@ -37,22 +39,26 @@ For each method/dataset combination:
 ## Running the Tests
 
 ### Run All Regression Tests
+
 ```bash
 cd tests/regression
 pytest test_complete_workflow_regression.py -v
 ```
 
 ### Run Specific Method
+
 ```bash
 pytest test_complete_workflow_regression.py -k "single" -v
 ```
 
 ### Run Specific Dataset
+
 ```bash
 pytest test_complete_workflow_regression.py -k "multi_route" -v  
 ```
 
 ### Run Single Test Case
+
 ```bash
 pytest test_complete_workflow_regression.py -k "single and single_route" -v
 ```
@@ -60,11 +66,13 @@ pytest test_complete_workflow_regression.py -k "single and single_route" -v
 ## Test Data Configuration
 
 ### Single Route Data (test_data_single_route.csv)
+
 - **X Column**: `milepoint`  
 - **Y Column**: `structural_strength_ind`
 - **Route Column**: `null` (no route separation)
 
 ### Multi Route Data (TestMultiRoute.csv)  
+
 - **X Column**: `BDFO`
 - **Y Column**: `D60`
 - **Route Column**: `RDB`
@@ -73,27 +81,27 @@ pytest test_complete_workflow_regression.py -k "single and single_route" -v
 
 After successful test run, you'll find:
 
-```
+```text
 outputs/
 ├── json/
-│   ├── regression_single_single_route.json
-│   ├── regression_single_multi_route.json
-│   ├── regression_multi_single_route.json
-│   ├── regression_multi_multi_route.json
-│   ├── regression_constrained_single_route.json
-│   ├── regression_constrained_multi_route.json
-│   ├── regression_aashto_cda_single_route.json
-│   └── regression_aashto_cda_multi_route.json
+│   ├── regression_{method}_{dataset}.json
+│   ├── cli_regression_{method}_{dataset}.json
+│   └── ... (one pair per method×dataset)
 └── excel/
-    ├── regression_single_single_route.xlsx
-    ├── regression_single_multi_route.xlsx
-    ├── regression_multi_single_route.xlsx
-    ├── regression_multi_multi_route.xlsx
-    ├── regression_constrained_single_route.xlsx
-    ├── regression_constrained_multi_route.xlsx
-    ├── regression_aashto_cda_single_route.xlsx
-    └── regression_aashto_cda_multi_route.xlsx
+        ├── regression_{method}_{dataset}.xlsx
+        └── ... (GUI regression suite exports Excel)
 ```
+
+Notes:
+
+- The **GUI regression suite** writes JSON (`outputs/json/regression_{method}_{dataset}.json`) and Excel (`outputs/excel/regression_{method}_{dataset}.xlsx`).
+- The **CLI regression suite** writes JSON (`outputs/json/cli_regression_{method}_{dataset}.json`).
+
+Examples (names will vary with the active method matrix):
+
+- `outputs/json/regression_single_single_route.json`
+- `outputs/json/cli_regression_single_single_route.json`
+- `outputs/excel/regression_single_single_route.xlsx`
 
 ## Using as Regression Detection
 
@@ -109,6 +117,7 @@ This test suite is designed to catch:
 ## Test Parameters
 
 Standardized parameters optimized for:
+
 - ✅ **Speed**: Reduced population/generations for faster testing
 - ✅ **Reliability**: Conservative settings that should always work
 - ✅ **Coverage**: All method-specific parameters included
@@ -130,6 +139,7 @@ See `test_parameters_template.json` for full configuration.
 ### Debug Mode
 
 To keep test artifacts for inspection, comment out cleanup in `conftest.py`:
+
 ```python
 # Optional: Clean up after test (comment out to keep artifacts for inspection)  
 # if outputs_dir.exists():
@@ -139,6 +149,7 @@ To keep test artifacts for inspection, comment out cleanup in `conftest.py`:
 ## Integration with CI/CD
 
 This test suite is perfect for:
+
 - **Pre-commit hooks**: Validate changes don't break core functionality
 - **Pull request validation**: Ensure new features don't introduce regressions  
 - **Release verification**: Confirm all workflows work before deployment
@@ -149,18 +160,21 @@ This test suite is perfect for:
 The regression test suite includes comprehensive documentation across all components:
 
 ### Module Documentation
+
 - **`__init__.py`**: Package overview, test matrix, and integration guidelines
 - **`test_complete_workflow_regression.py`**: Detailed workflow architecture and test design philosophy
 - **`conftest.py`**: Fixture documentation and validation framework explanation
 - **`validate_regression_outputs.py`**: Schema validation utility with comprehensive error reporting
 
 ### Class and Method Documentation
+
 - **MockGUIApp**: Complete production-equivalent GUI application mock
 - **Test Classes**: Detailed test methodology and validation criteria
 - **Fixture Functions**: Parameter loading, data configuration, and validation utilities
 - **Validation Functions**: JSON/Excel consistency checking and schema compliance
 
 ### Testing Methodology
+
 - **Production Equivalence**: Same code paths as GUI application
 - **Comprehensive Coverage**: All method/dataset combinations validated
 - **Error Handling**: Detailed diagnostics and troubleshooting guidance

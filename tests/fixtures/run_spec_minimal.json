@@ -1,0 +1,25 @@
+{
+  "$schema": "https://mottmac.com/schemas/highway-segmentation/run-spec/v1.0.0",
+  "spec_version": "1.0.0",
+  "created_at": "2026-05-06T12:00:00Z",
+  "software_version": {
+    "application": "Highway Segmentation",
+    "version": "dev"
+  },
+  "input": {
+    "data_file_path": "data/test_data_single_route.csv",
+    "x_column": "mile",
+    "y_column": "value",
+    "gap_threshold": 0.5,
+    "route_column": null,
+    "selected_routes": null
+  },
+  "method": {
+    "method_key": "multi",
+    "method_parameters": {}
+  },
+  "output": {
+    "output_json_path": "Results/out.json",
+    "overwrite": true
+  }
+}

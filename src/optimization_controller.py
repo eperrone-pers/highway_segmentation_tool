@@ -657,7 +657,15 @@ class OptimizationController:
                 # For multi-objective, ensure we preserve the full Pareto front
                 if method_key == 'multi' and route_result.get('all_solutions'):
                     # Multi-objective: use the full Pareto front as all_solutions
-                    all_solutions = route_result.get('all_solutions')
+                    all_solutions = []
+                    for sol in (route_result.get('all_solutions') or []):
+                        if isinstance(sol, dict):
+                            sol_copy = dict(sol)
+                            if 'chromosome' in sol_copy:
+                                sol_copy.pop('segmentation', None)
+                            all_solutions.append(sol_copy)
+                        else:
+                            all_solutions.append(sol)
                 else:
                     # Single-objective/constrained: use single best solution format
                     all_solutions = [{
