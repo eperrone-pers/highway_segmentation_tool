@@ -1,6 +1,6 @@
 # Highway Segmentation Tool
 
-This tool provides a framework for segmenting routes based on attribute data and then displaying the results graphically. The framework allows Python developers to add their own segmentation algorithms and then display the segmentation results on screen.  As of nwo there are 4 segmentation methods included in the framework.
+This tool provides a framework for segmenting routes based on attribute data and then displaying the results graphically. The framework allows Python developers to add their own segmentation algorithms and then display the segmentation results on screen. As of now, there are 6 segmentation methods included in the framework.
 
 ## Features
 
@@ -8,7 +8,9 @@ This tool provides a framework for segmenting routes based on attribute data and
   - Single-objective GA: Looks for segmentation that minimizes variation in a pavement measure to the average measure across all segments for a given route.
   - NSGA-II multi-objective segmentation: Performs a multi-objective analysis that minimizes variation of an attribute compared to average within each chosen segment while also trying to maximize the average segment length along a route.
   - Constrained single-objective GA: Target-length optimization using penalty-based fitness that tries to achieve a selected target average length while minimizing deviation.
-  - Enhanced AASHTO Cumulative Difference Approach (CDA) for Pavement Data Segmentation Method (Katicha, S., Flintsch, G. (2025), "Enhanced AASHTO Cumulative Difference Approach (CDA) for Pavement Data Segmentation" Transportation Research Record, Accepted.)
+  - Constrained GA (Deb Feasibility): Constrained single-objective GA using Deb feasibility rules (constraint domination) for multi-objective constraint handling instead of penalty weights.
+  - Enhanced AASHTO Cumulative Difference Approach (CDA) for Pavement Data Segmentation Method: Statistical change-point detection (Katicha, S., Flintsch, G. (2025), "Enhanced AASHTO Cumulative Difference Approach (CDA) for Pavement Data Segmentation" Transportation Research Record, Accepted.)
+  - PELT Segmentation (ruptures): Deterministic change-point detection using PELT (Pruned Exact Linear Time). Penalty parameter controls sensitivity; supports optional smoothing and minimum segment length constraints.
 
 ## Quick Start
 
@@ -119,14 +121,17 @@ Notes:
 | Parameter | Default | Applies To | Description |
 | --- | --- | --- | --- |
 | Gap Threshold | 0.5 miles | All methods | Data gaps ≥ this create mandatory breakpoints |
-| Min Segment Length | 0.5 miles | GA-based methods | Minimum allowed segment length |
+| Min Segment Length | 0.5 miles | GA-based & PELT methods | Minimum allowed segment length |
 | Max Segment Length | 10 miles | GA-based methods | Maximum allowed segment length |
 | Population Size | 100 | GA-based methods | Number of individuals per generation |
 | Generations (single-objective GA) | 200 | `single` | Generations for the single-objective GA |
 | Generations (NSGA-II multi-objective) | 100 | `multi` | Generations for the multi-objective NSGA-II |
-| Generations (constrained) | 150 | `constrained` | Generations for constrained optimization |
-| Target Avg Length | 2.0 miles | `constrained` | Target average segment length |
+| Generations (constrained) | 150 | `constrained` and `constrained_deb` | Generations for constrained optimization |
+| Target Avg Length | 2.0 miles | `constrained` and `constrained_deb` | Target average segment length |
 | Alpha | 0.05 | `aashto_cda` | Significance level for CDA change-point detection |
+| Penalty | 12.0 | `pelt_segmentation` | PELT sensitivity knob (higher=fewer breakpoints) |
+| Smoothing Window | None | `pelt_segmentation` | Optional smoothing window in miles for noise reduction |
+| Cost Model | L2 | `pelt_segmentation` | PELT cost function (L2=mean shifts, L1=robust, RBF=kernel) |
 
 ## Data Format
 
