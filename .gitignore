@@ -71,6 +71,7 @@ Thumbs.db
 Results/
 data/
 deliverables/
+local_notes/
 src/app_settings.json
 *.log
 *.csv.bak
