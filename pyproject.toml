@@ -7,6 +7,7 @@ name = "highway-segmentation-tool"
 version = "0.1.0"
 description = "Highway segmentation tool (GUI + CLI run spec runner)"
 readme = "README.md"
+license = {file = "LICENSE"}
 requires-python = ">=3.9"
 dynamic = ["dependencies", "optional-dependencies"]
 
