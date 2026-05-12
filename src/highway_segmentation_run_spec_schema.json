@@ -67,15 +67,23 @@
         },
 
         "route_column": {
-          "type": ["string", "null"],
-          "minLength": 1,
-          "description": "Optional route ID column name. If null/omitted, treat the dataset as a single route"
+          "description": "Optional route ID column name. If null/omitted, treat the dataset as a single route",
+          "anyOf": [
+            {"type": "string", "minLength": 1},
+            {"type": "null"}
+          ]
         },
 
         "selected_routes": {
           "type": ["array", "null"],
           "items": { "type": "string", "minLength": 1 },
           "description": "Optional explicit list of routes to process. If null/omitted, process all routes"
+        },
+
+        "must_break_columns": {
+          "type": ["array", "null"],
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Optional list of attribute columns that force a mandatory breakpoint when their value changes. If null/omitted, no attribute must-breaks are applied."
         }
       }
     },

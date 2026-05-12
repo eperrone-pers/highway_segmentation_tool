@@ -33,6 +33,7 @@ py-modules = [
     "gui_main",
     "json_results_manager",
     "logger",
+    "multi_select_dialog",
     "optimization_controller",
     "parameter_manager",
     "route_filter_dialog",

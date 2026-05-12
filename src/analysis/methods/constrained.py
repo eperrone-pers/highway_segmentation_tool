@@ -402,6 +402,16 @@ class ConstrainedMethod(AnalysisMethodBase):
                 'total_gap_length': ga.route_analysis.route_stats.get('gap_total_length', 0.0) if hasattr(ga, 'route_analysis') and ga.route_analysis else 0.0
             }
         }
+
+        # Optional: attribute-based must-break metadata for visualization/reporting
+        try:
+            from data_loader import build_attribute_break_analysis
+
+            attr_block = build_attribute_break_analysis(ga.route_analysis)
+            if attr_block:
+                data_summary['attribute_break_analysis'] = attr_block
+        except Exception:
+            pass
         
         # Final results reporting
         log("\\n=== CONSTRAINED SINGLE-OBJECTIVE RESULTS ===")

@@ -80,6 +80,9 @@ The interface is split into a left configuration pane and a right execution/resu
   - In multi-route mode, rows with missing route IDs (blank/empty) are excluded from analysis and this is logged.
     If all rows are missing/invalid for the selected route column, the run is blocked with an error.
 - **Gap Threshold (miles)**: Framework parameter used by all methods; gaps larger than this force mandatory breakpoints.
+- **Must-Break Columns (Optional)**: Select one or more additional input columns whose *value changes* must force a breakpoint.
+  - Example use cases: pavement type/class, lane count, functional class.
+  - These breaks are treated as **mandatory** (the analysis cannot span across a change).
 - **Reset to Defaults**: Resets parameters back to their defaults.
 - **Results File (Required)**:
   - Left field sets the base results filename.
@@ -118,6 +121,7 @@ When you load results (or when a run completes), the enhanced visualization wind
 - A **Route** selector for multi-route results
 - A segmentation plot (right pane)
 - A Pareto front plot (left pane) for multi-objective methods
+- A **Break Attributes Diagram** (optional): a compact lane view that shows the values of the selected must-break columns along the x-axis
 - **📊 Export to Excel** to export the loaded results
 
 ---
@@ -425,19 +429,25 @@ Final result: 49 segments from 49 breakpoints
 
 ### Breakpoint Types and Visualization
 
-**🔴 Red Breakpoints (Mandatory)**:
+**Mandatory Breakpoints (forced boundaries)**:
 
-- **Origin**: Data gaps exceeding the Gap Threshold
-- **Purpose**: Prevent segments from spanning data discontinuities  
-- **Properties**: Cannot be moved by optimization algorithms
-- **Identification**: Appear at exact boundaries of data gaps
+- **Origin**:
+  - **Gap breaks**: data gaps exceeding the Gap Threshold
+  - **Attribute breaks**: value changes in selected *Must-Break Columns*
+- **Purpose**: Prevent segments from spanning discontinuities or forbidden attribute changes
+- **Properties**: Cannot be moved/removed by optimization algorithms
 
-**🟢 Green Breakpoints (Optimized)**:
+**Optimized Breakpoints (algorithm-selected)**:
 
 - **Origin**: Placed by analysis algorithms for optimal segmentation
 - **Purpose**: Define boundaries that minimize within-segment variation
 - **Properties**: Algorithm-determined locations for best segmentation quality
 - **Identification**: Positioned at statistically/algorithmically optimal points
+
+**Break Attributes Diagram (optional)**:
+
+- If you selected Must-Break Columns for the run, the visualization can show a per-attribute “lane” diagram at the top of the segmentation plot.
+- Hovering a lane box shows the attribute name and value for that x-range.
 
 ### Key Result Metrics
 

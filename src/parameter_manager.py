@@ -84,7 +84,7 @@ class ParameterManager:
 
                 # Column selector parameters: if we know the loaded headers, ensure the selection exists.
                 try:
-                    from config import ColumnSelectParameter
+                    from config import ColumnSelectParameter, MultiColumnSelectParameter
 
                     if isinstance(param_def, ColumnSelectParameter):
                         selected = params.get(param_def.name)
@@ -95,6 +95,21 @@ class ParameterManager:
                             errors.append(
                                 f"{param_def.display_name} must be a column from the loaded data file"
                             )
+
+                    if isinstance(param_def, MultiColumnSelectParameter):
+                        selected_list = params.get(param_def.name)
+                        if selected_list is None:
+                            selected_list = []
+
+                        available = getattr(self.app, 'available_columns', None)
+                        if isinstance(available, list) and available:
+                            if isinstance(selected_list, list):
+                                for col_name in selected_list:
+                                    col = "" if col_name is None else str(col_name).strip()
+                                    if col and col not in available:
+                                        errors.append(
+                                            f"{param_def.display_name} must contain columns from the loaded data file"
+                                        )
                 except Exception:
                     # Non-fatal: fall back to method-level validation.
                     pass
@@ -165,6 +180,15 @@ class ParameterManager:
                 self.app.gap_threshold.set(0.5)
             except Exception:
                 pass
+
+        # Reset framework-level must-break columns
+        try:
+            if hasattr(self.app, 'must_break_columns'):
+                self.app.must_break_columns = []
+            if hasattr(self.app, '_update_must_break_columns_display'):
+                self.app._update_must_break_columns_display()
+        except Exception:
+            pass
 
         # Clear per-method dynamic parameter overrides so defaults apply again
         try:

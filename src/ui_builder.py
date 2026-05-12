@@ -159,27 +159,40 @@ class UIBuilder:
         self.app.gap_threshold_entry = ttk.Entry(file_ops_frame, textvariable=self.app.gap_threshold, 
                                                 width=10)
         self.app.gap_threshold_entry.grid(row=4, column=1, sticky="w", padx=ui_config.standard_padding_x)
+
+        # Must-break attribute columns (framework-level)
+        ttk.Label(file_ops_frame, text="Must Break Column List:").grid(row=5, column=0, sticky="w")
+        must_break_frame = ttk.Frame(file_ops_frame)
+        must_break_frame.grid(row=5, column=1, sticky="w", padx=ui_config.standard_padding_x)
+
+        self.app.must_break_columns_summary = ttk.Label(must_break_frame, text="None", foreground="blue")
+        self.app.must_break_columns_summary.grid(row=0, column=0, sticky="w")
+        ttk.Button(
+            must_break_frame,
+            text="Select...",
+            command=self.app.open_must_break_columns_dialog,
+        ).grid(row=0, column=1, padx=(8, 0))
         
         # === SEPARATOR ===
         separator = ttk.Separator(file_ops_frame, orient='horizontal')
-        separator.grid(row=5, column=0, columnspan=3, sticky="ew", pady=(8, 5))  # Reduced from (15, 10)
+        separator.grid(row=6, column=0, columnspan=3, sticky="ew", pady=(8, 5))  # Reduced from (15, 10)
         
         # === RESULTS SAVING SECTION ===
         # Info about auto-save
         info_label = ttk.Label(file_ops_frame, text="Parameters auto-save when optimization starts and on exit.", 
                               font=("Arial", 8), foreground="gray")
-        info_label.grid(row=6, column=0, columnspan=3, sticky="w", pady=(0, 3))  # Reduced from (0, 5)
+        info_label.grid(row=7, column=0, columnspan=3, sticky="w", pady=(0, 3))  # Reduced from (0, 5)
         
         # Reset button
         ttk.Button(file_ops_frame, text="Reset to Defaults", 
-                  command=self.app.reset_parameters).grid(row=7, column=0, sticky="w", pady=(0, 5))  # Reduced from (0, 10)
+                  command=self.app.reset_parameters).grid(row=8, column=0, sticky="w", pady=(0, 5))  # Reduced from (0, 10)
         
         # Results save location
-        ttk.Label(file_ops_frame, text="Results File (Required):").grid(row=8, column=0, sticky="w", pady=(3, 0))  # Reduced from (5, 0)
+        ttk.Label(file_ops_frame, text="Results File (Required):").grid(row=9, column=0, sticky="w", pady=(3, 0))  # Reduced from (5, 0)
         
         # Save location selection frame
         save_frame = ttk.Frame(file_ops_frame)
-        save_frame.grid(row=9, column=0, columnspan=3, sticky="ew", pady=(3, 0))  # Reduced from (5, 0)
+        save_frame.grid(row=10, column=0, columnspan=3, sticky="ew", pady=(3, 0))  # Reduced from (5, 0)
         save_frame.columnconfigure(0, weight=1)
         
         self.app.save_name_entry = ttk.Entry(save_frame, textvariable=self.app.custom_save_name, 
@@ -380,7 +393,14 @@ class UIBuilder:
         per_method[param_name] = value
 
     def _format_param_value(self, param_def, value) -> str:
-        from config import NumericParameter, OptionalNumericParameter, SelectParameter, BoolParameter, ColumnSelectParameter
+        from config import (
+            NumericParameter,
+            OptionalNumericParameter,
+            SelectParameter,
+            BoolParameter,
+            ColumnSelectParameter,
+            MultiColumnSelectParameter,
+        )
 
         if isinstance(param_def, OptionalNumericParameter) and value is None:
             return param_def.none_text
@@ -393,6 +413,11 @@ class UIBuilder:
             return str(value)
         if isinstance(param_def, ColumnSelectParameter):
             return "" if value is None else str(value)
+        if isinstance(param_def, MultiColumnSelectParameter):
+            if not isinstance(value, list):
+                return "None"
+            cleaned = [str(v).strip() for v in value if str(v).strip()]
+            return "None" if len(cleaned) == 0 else f"{len(cleaned)} selected"
         if isinstance(param_def, NumericParameter):
             try:
                 if param_def.decimal_places == 0:
@@ -460,7 +485,7 @@ class UIBuilder:
             return
 
         # Bool: toggle immediately
-        from config import BoolParameter, SelectParameter, OptionalNumericParameter, ColumnSelectParameter
+        from config import BoolParameter, SelectParameter, OptionalNumericParameter, ColumnSelectParameter, MultiColumnSelectParameter
         current_value = self._get_dynamic_params_for_method(method_key).get(param_name, param_def.default_value)
         if isinstance(param_def, BoolParameter):
             new_value = not bool(current_value)
@@ -476,6 +501,53 @@ class UIBuilder:
             except Exception:
                 pass
             return
+
+        # Multi-column selector: open a modal dialog (no inline editor).
+        if isinstance(param_def, MultiColumnSelectParameter):
+            try:
+                from multi_select_dialog import MultiSelectDialog
+
+                available_columns = getattr(self.app, 'available_columns', None)
+                items = available_columns if isinstance(available_columns, list) else []
+
+                preselected = current_value if isinstance(current_value, list) else []
+                selected = MultiSelectDialog.ask(
+                    self.app.root if hasattr(self.app, 'root') else tree,
+                    title=f"Select {param_def.display_name}",
+                    items=items,
+                    selected=preselected,
+                    prompt="Select one or more columns:",
+                )
+
+                if selected is None:
+                    return
+
+                ok, msg = param_def.validate_value(selected)
+                if not ok:
+                    messagebox.showerror("Parameter Validation Error", msg or "Invalid value")
+                    return
+
+                # Enforce membership when headers are known.
+                if isinstance(items, list) and items:
+                    for col_name in selected:
+                        if col_name not in items:
+                            messagebox.showerror(
+                                "Parameter Validation Error",
+                                f"{param_def.display_name} must contain columns from the loaded data file",
+                            )
+                            return
+
+                self._set_dynamic_param_value(method_key, param_name, selected)
+                tree.item(param_name, values=(param_def.display_name, self._format_param_value(param_def, selected)))
+                try:
+                    if hasattr(self.app, 'on_parameter_change'):
+                        self.app.on_parameter_change()
+                except Exception:
+                    pass
+                return
+            except Exception as e:
+                messagebox.showerror("Parameter Editor Error", str(e))
+                return
 
         # Start an in-place editor
         self._cancel_dynamic_param_cell_edit()

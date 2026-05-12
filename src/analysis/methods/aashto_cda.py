@@ -52,6 +52,11 @@ from ..base import AnalysisMethodBase, AnalysisResult
 from ..utils.segment_metrics import average_length_excluding_gap_segments
 from config import get_optimization_method
 
+try:
+    from data_loader import build_attribute_break_analysis
+except Exception:  # pragma: no cover
+    build_attribute_break_analysis = None
+
 
 def aashto_cda(y: np.ndarray, 
                alpha: float = 0.05, 
@@ -611,6 +616,43 @@ class AashtoCdaMethod(AnalysisMethodBase):
                 breakpoints_list,
                 getattr(route_analysis, 'gap_segments', []),
             )
+
+            data_summary = {
+                'total_data_points': len(route_analysis.route_data),
+                'data_range': {
+                    'x_min': route_analysis.data_range['x_min'],
+                    'x_max': route_analysis.data_range['x_max'],
+                    'y_min': route_analysis.data_range['y_min'],
+                    'y_max': route_analysis.data_range['y_max']
+                },
+                # Transform RouteAnalysis gap data to JSON format
+                'gap_analysis': {
+                    'total_gaps': len(route_analysis.gap_segments),
+                    'gap_segments': [
+                        {
+                            'start': gap[0],
+                            'end': gap[1],
+                            'length': gap[1] - gap[0]
+                        } for gap in route_analysis.gap_segments
+                    ],
+                    'total_gap_length': sum(gap[1] - gap[0] for gap in route_analysis.gap_segments)
+                },
+                'mandatory_segments': {
+                    'mandatory_breakpoints': sorted(list(route_analysis.mandatory_breakpoints)),
+                    'analyzable_segments': self._create_analyzable_segments(route_analysis),
+                    'total_analyzable_length': route_analysis.route_stats.get('total_analyzable_length', 0.0)
+                }
+            }
+
+            # Optional: attribute-based must-break metadata for visualization/reporting
+            try:
+                if build_attribute_break_analysis is not None:
+                    attr_block = build_attribute_break_analysis(route_analysis)
+                    if attr_block:
+                        data_summary['attribute_break_analysis'] = attr_block
+            except Exception:
+                pass
+
             return AnalysisResult(
                 method_name=self.method_name,
                 method_key=self.method_key,
@@ -641,32 +683,7 @@ class AashtoCdaMethod(AnalysisMethodBase):
                     'min_section_difference': min_section_difference,
                     'gap_threshold': gap_threshold  # Framework parameter for export consistency
                 },
-                data_summary={
-                    'total_data_points': len(route_analysis.route_data),
-                    'data_range': {
-                        'x_min': route_analysis.data_range['x_min'],
-                        'x_max': route_analysis.data_range['x_max'], 
-                        'y_min': route_analysis.data_range['y_min'],
-                        'y_max': route_analysis.data_range['y_max']
-                    },
-                    # Transform RouteAnalysis gap data to JSON format
-                    'gap_analysis': {
-                        'total_gaps': len(route_analysis.gap_segments),
-                        'gap_segments': [
-                            {
-                                'start': gap[0],
-                                'end': gap[1], 
-                                'length': gap[1] - gap[0]
-                            } for gap in route_analysis.gap_segments
-                        ],
-                        'total_gap_length': sum(gap[1] - gap[0] for gap in route_analysis.gap_segments)
-                    },
-                    'mandatory_segments': {
-                        'mandatory_breakpoints': sorted(list(route_analysis.mandatory_breakpoints)),
-                        'analyzable_segments': self._create_analyzable_segments(route_analysis),
-                        'total_analyzable_length': route_analysis.route_stats.get('total_analyzable_length', 0.0)
-                    }
-                }
+                data_summary=data_summary
             )
             
         except Exception as e:

@@ -44,6 +44,7 @@ def build_run_spec(
     x_column: str,
     y_column: str,
     gap_threshold: float,
+    must_break_columns: Optional[List[str]] = None,
     method_key: str,
     method_parameters: Dict[str, Any],
     output_json_path: str,
@@ -72,6 +73,7 @@ def build_run_spec(
             "gap_threshold": float(gap_threshold),
             "route_column": route_column,
             "selected_routes": selected_routes,
+            "must_break_columns": must_break_columns,
         },
         "method": {
             "method_key": method_key,

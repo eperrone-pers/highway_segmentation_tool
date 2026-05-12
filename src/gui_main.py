@@ -174,6 +174,10 @@ class HighwaySegmentationGUI:
         
         # Framework parameters (like x/y columns)
         self.gap_threshold = tk.DoubleVar(value=0.5)  # Framework-level parameter
+
+        # Framework-level must-break attribute columns (selected from loaded headers)
+        # Stored as a plain Python list and persisted under settings.ui_state.must_break_columns.
+        self.must_break_columns: List[str] = []
         
         self.available_columns = []
         
@@ -579,6 +583,53 @@ class HighwaySegmentationGUI:
             except Exception:
                 # Fallback if messagebox also fails
                 self.log_message(f"Critical error: {error_msg}")
+
+    def _update_must_break_columns_display(self) -> None:
+        label = getattr(self, 'must_break_columns_summary', None)
+        if label is None:
+            return
+
+        cols = getattr(self, 'must_break_columns', None)
+        if not isinstance(cols, list):
+            cols = []
+
+        cleaned = [str(v).strip() for v in cols if str(v).strip()]
+        label.config(text="None" if len(cleaned) == 0 else f"{len(cleaned)} selected")
+
+    def open_must_break_columns_dialog(self) -> None:
+        """Open multi-select dialog to choose attribute columns that force mandatory breakpoints."""
+
+        available = getattr(self, 'available_columns', None)
+        if not isinstance(available, list) or not available:
+            messagebox.showwarning(
+                "Load Data First",
+                "Please select a data file first so column headers are available.",
+            )
+            return
+
+        try:
+            from multi_select_dialog import MultiSelectDialog
+
+            preselected = getattr(self, 'must_break_columns', [])
+            if not isinstance(preselected, list):
+                preselected = []
+
+            selected = MultiSelectDialog.ask(
+                self.root,
+                title="Must Break Column List",
+                items=available,
+                selected=preselected,
+                prompt="Select columns that force a mandatory breakpoint when their value changes:",
+            )
+
+            if selected is None:
+                return
+
+            self.must_break_columns = [str(v).strip() for v in selected if str(v).strip()]
+            self._update_must_break_columns_display()
+            self.on_parameter_change()
+        except Exception as e:
+            self.handle_error("Failed to open must-break column selector", e, severity="error", show_messagebox=True)
     
     def _update_route_info_display(self):
         """Update the route info label to show selected route count."""
@@ -696,11 +747,18 @@ class HighwaySegmentationGUI:
             selected_routes_safe = selected_routes if selected_routes is None else [str(r) for r in selected_routes]
             method_parameters_safe = {str(k): _json_safe(v) for k, v in method_parameters.items()}
 
+            must_break_raw = getattr(self, 'must_break_columns', None)
+            must_break_columns_safe = None
+            if isinstance(must_break_raw, (list, tuple)):
+                cleaned = [str(c).strip() for c in must_break_raw if str(c).strip()]
+                must_break_columns_safe = cleaned
+
             spec = build_run_spec(
                 data_file_path=str(data_file_path),
                 x_column=str(x_column),
                 y_column=str(y_column),
                 gap_threshold=float(gap_threshold),
+                must_break_columns=must_break_columns_safe,
                 route_column=route_column,
                 selected_routes=selected_routes_safe,
                 method_key=str(method_key),
@@ -1019,6 +1077,25 @@ class HighwaySegmentationGUI:
         if 'route_column' in ui_state and hasattr(self, 'route_column'):
             self.route_column.set(ui_state['route_column'])
 
+        # Restore must-break columns (backward compatible default: [])
+        try:
+            raw = ui_state.get('must_break_columns', [])
+            if raw is None:
+                raw = []
+            if isinstance(raw, list):
+                self.must_break_columns = [str(v).strip() for v in raw if str(v).strip()]
+            else:
+                self.must_break_columns = []
+        except Exception:
+            self.must_break_columns = []
+
+        # Update UI summary label if present
+        try:
+            if hasattr(self, '_update_must_break_columns_display'):
+                self._update_must_break_columns_display()
+        except Exception:
+            pass
+
         # Restore route selection
         if 'selected_routes' in ui_state:
             self.selected_routes = ui_state['selected_routes'].copy()
@@ -1333,6 +1410,18 @@ class HighwaySegmentationGUI:
                 self.settings['ui_state']['gap_threshold'] = self.gap_threshold.get()
             if hasattr(self, 'route_column'):
                 self.settings['ui_state']['route_column'] = self.route_column.get()
+
+            # Save must-break columns (list[str])
+            try:
+                cols = getattr(self, 'must_break_columns', [])
+                if cols is None:
+                    cols = []
+                if isinstance(cols, list):
+                    self.settings['ui_state']['must_break_columns'] = [str(v).strip() for v in cols if str(v).strip()]
+                else:
+                    self.settings['ui_state']['must_break_columns'] = []
+            except Exception:
+                self.settings['ui_state']['must_break_columns'] = []
             
             # Save route selection
             if hasattr(self, 'selected_routes'):

@@ -37,6 +37,137 @@ def extract_mandatory_breakpoints(route_results: Optional[Dict[str, Any]]) -> Se
     return set(mandatory_breakpoints)
 
 
+def extract_gap_boundary_breakpoints(route_results: Optional[Dict[str, Any]]) -> Set[float]:
+    """Extract gap boundary breakpoints (gap start/end) from a route_results dict.
+
+    Expected JSON path:
+    - route_results.input_data_analysis.gap_analysis.gap_segments[{start,end}]
+
+    Missing or malformed values return an empty set.
+    """
+
+    if not route_results:
+        return set()
+
+    input_analysis = route_results.get("input_data_analysis")
+    if not isinstance(input_analysis, dict):
+        return set()
+
+    gap_analysis = input_analysis.get("gap_analysis")
+    if not isinstance(gap_analysis, dict):
+        return set()
+
+    gap_segments = gap_analysis.get("gap_segments") or []
+    if not isinstance(gap_segments, list):
+        return set()
+
+    out: Set[float] = set()
+    for seg in gap_segments:
+        if not isinstance(seg, dict):
+            continue
+        for key in ("start", "end"):
+            try:
+                out.add(float(seg.get(key)))
+            except (TypeError, ValueError):
+                continue
+
+    return out
+
+
+def extract_attribute_breakpoints(route_results: Optional[Dict[str, Any]]) -> Set[float]:
+    """Extract attribute-change breakpoint positions from a route_results dict.
+
+    Expected JSON path (optional):
+    - route_results.input_data_analysis.attribute_break_analysis.breakpoints
+    - route_results.input_data_analysis.attribute_break_analysis.break_events[{x,...}]
+
+    Missing or malformed values return an empty set.
+    """
+
+    if not route_results:
+        return set()
+
+    input_analysis = route_results.get("input_data_analysis")
+    if not isinstance(input_analysis, dict):
+        return set()
+
+    attr = input_analysis.get("attribute_break_analysis")
+    if not isinstance(attr, dict):
+        return set()
+
+    out: Set[float] = set()
+
+    breakpoints = attr.get("breakpoints")
+    if isinstance(breakpoints, list):
+        for bp in breakpoints:
+            try:
+                out.add(float(bp))
+            except (TypeError, ValueError):
+                continue
+
+    events = attr.get("break_events")
+    if isinstance(events, list):
+        for e in events:
+            if not isinstance(e, dict):
+                continue
+            try:
+                out.add(float(e.get("x")))
+            except (TypeError, ValueError):
+                continue
+
+    return out
+
+
+def extract_attribute_break_signatures(route_results: Optional[Dict[str, Any]]) -> Dict[float, str]:
+    """Extract a mapping of attribute-break x-position -> signature label.
+
+    Expected JSON path (optional):
+    - route_results.input_data_analysis.attribute_break_analysis.break_events[{x,signature,changed_columns}]
+
+    Uses `signature` when present; otherwise falls back to a joined changed_columns.
+    Missing or malformed values return an empty dict.
+    """
+
+    if not route_results:
+        return {}
+
+    input_analysis = route_results.get("input_data_analysis")
+    if not isinstance(input_analysis, dict):
+        return {}
+
+    attr = input_analysis.get("attribute_break_analysis")
+    if not isinstance(attr, dict):
+        return {}
+
+    events = attr.get("break_events")
+    if not isinstance(events, list):
+        return {}
+
+    out: Dict[float, str] = {}
+    for e in events:
+        if not isinstance(e, dict):
+            continue
+
+        try:
+            x = float(e.get("x"))
+        except (TypeError, ValueError):
+            continue
+
+        sig = e.get("signature")
+        if sig is None:
+            changed = e.get("changed_columns")
+            if isinstance(changed, list):
+                sig = ", ".join([str(c).strip() for c in changed if str(c).strip()])
+
+        sig = str(sig).strip() if sig is not None else ""
+        if not sig:
+            continue
+
+        out[x] = sig
+
+    return out
+
+
 def add_endpoints_to_mandatory_breakpoints(
     mandatory_breakpoints: Iterable[Any],
     route_start: Optional[float],
@@ -59,7 +190,7 @@ def add_endpoints_to_mandatory_breakpoints(
 @dataclass(frozen=True)
 class BreakpointLineSpec:
     x: float
-    kind: str  # 'mandatory' | 'analysis'
+    kind: str  # 'mandatory'|'analysis' or 'mandatory_gap'|'mandatory_attribute'|'mandatory_other'|'analysis'
     label: str
 
 
@@ -67,7 +198,11 @@ def compute_breakpoint_line_specs(
     breakpoints: Sequence[Any],
     mandatory_breakpoints: Iterable[Any],
     *,
+    gap_breakpoints: Optional[Iterable[Any]] = None,
+    attribute_breakpoints: Optional[Iterable[Any]] = None,
     mandatory_label: str = "Mandatory Breakpoints",
+    gap_label: str = "Mandatory (Gaps)",
+    attribute_label: str = "Mandatory (Attributes)",
     analysis_label: str = "Analysis Breakpoints",
 ) -> List[BreakpointLineSpec]:
     """Return line specs for rendering breakpoint vlines.
@@ -84,8 +219,28 @@ def compute_breakpoint_line_specs(
         except (TypeError, ValueError):
             continue
 
+    # Backward compatibility: if no cause information is provided, keep the
+    # original two-kind behavior.
+    use_causes = (gap_breakpoints is not None) or (attribute_breakpoints is not None)
+
+    gap_numeric: Set[float] = set()
+    attr_numeric: Set[float] = set()
+    if use_causes:
+        for gbp in (gap_breakpoints or []):
+            try:
+                gap_numeric.add(float(gbp))
+            except (TypeError, ValueError):
+                continue
+        for abp in (attribute_breakpoints or []):
+            try:
+                attr_numeric.add(float(abp))
+            except (TypeError, ValueError):
+                continue
+
     specs: List[BreakpointLineSpec] = []
     mandatory_labeled = False
+    gap_labeled = False
+    attribute_labeled = False
     analysis_labeled = False
 
     for bp in breakpoints or []:
@@ -97,14 +252,36 @@ def compute_breakpoint_line_specs(
 
         is_mandatory = (bp in mandatory_raw) or (bp_x in mandatory_numeric)
 
-        if is_mandatory:
-            label = mandatory_label if not mandatory_labeled else ""
-            mandatory_labeled = True
-            specs.append(BreakpointLineSpec(x=bp_x, kind="mandatory", label=label))
-        else:
+        if not is_mandatory:
             label = analysis_label if not analysis_labeled else ""
             analysis_labeled = True
             specs.append(BreakpointLineSpec(x=bp_x, kind="analysis", label=label))
+            continue
+
+        if not use_causes:
+            label = mandatory_label if not mandatory_labeled else ""
+            mandatory_labeled = True
+            specs.append(BreakpointLineSpec(x=bp_x, kind="mandatory", label=label))
+            continue
+
+        # With cause info: classify mandatory breakpoints.
+        if bp_x in gap_numeric:
+            label = gap_label if not gap_labeled else ""
+            gap_labeled = True
+            specs.append(BreakpointLineSpec(x=bp_x, kind="mandatory_gap", label=label))
+        elif bp_x in attr_numeric:
+            label = attribute_label if not attribute_labeled else ""
+            attribute_labeled = True
+            specs.append(BreakpointLineSpec(x=bp_x, kind="mandatory_attribute", label=label))
+        else:
+            # Keep endpoints/other mandatory lines unlabeled unless there are
+            # no cause-specific labels available.
+            if (not gap_numeric) and (not attr_numeric):
+                label = mandatory_label if not mandatory_labeled else ""
+                mandatory_labeled = True
+            else:
+                label = ""
+            specs.append(BreakpointLineSpec(x=bp_x, kind="mandatory_other", label=label))
 
     return specs
 

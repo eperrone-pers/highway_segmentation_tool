@@ -34,7 +34,21 @@ import json
 import os
 from pathlib import Path
 from datetime import datetime
+import warnings
 from matplotlib.ticker import MaxNLocator
+from matplotlib.patches import Rectangle
+from matplotlib import transforms
+from matplotlib import colors as mcolors
+import bisect
+
+
+# Matplotlib may emit this warning during draw/zoom when layout can't satisfy all decorations.
+# It's noisy (not fatal) and can be triggered by draw paths outside our control (e.g. toolbar).
+warnings.filterwarnings(
+    "ignore",
+    message=r"Tight layout not applied.*",
+    category=UserWarning,
+)
 
 from route_utils import normalize_route_column_selection
 from visualization.utils import safe_print as _safe_print, default_colors
@@ -56,6 +70,15 @@ SECONDARY_NONE_SENTINEL = "(None)"
 
 class EnhancedVisualizationWindow:
     """Enhanced paned window visualization for optimization results."""
+
+    def _contrast_text_color(self, fill_rgba) -> str:
+        """Return a readable text color for a filled patch (white on dark, dark on light)."""
+        try:
+            r, g, b, _a = fill_rgba
+            lum = 0.2126 * float(r) + 0.7152 * float(g) + 0.0722 * float(b)
+            return "white" if lum < 0.55 else COLORS.get('pareto_border', COLORS['text_secondary'])
+        except Exception:
+            return COLORS.get('pareto_border', COLORS['text_secondary'])
     
     def __init__(self, parent_app, json_results_data=None, original_data=None, 
                  x_column=None, y_column=None):
@@ -104,6 +127,7 @@ class EnhancedVisualizationWindow:
         # Zoom state (reset on route change)
         self._seg_x_zoom_enabled = False
         self._seg_xzoom_var = tk.BooleanVar(value=False)
+        self._show_break_lanes_var = tk.BooleanVar(value=True)
         self._seg_default_xlim = None
         self._seg_default_ylim = None
         self._seg_default_ylim_secondary = None
@@ -124,6 +148,9 @@ class EnhancedVisualizationWindow:
 
         # Debounce handle for secondary UI-driven redraws
         self._secondary_redraw_after_id = None
+
+        # Noise suppression: avoid repeating console messages on redraw.
+        self._pareto_hidden_logged = False
         
         # Setup route data and selection
         self.setup_route_data()
@@ -286,8 +313,8 @@ class EnhancedVisualizationWindow:
             except Exception:
                 main_paned.add(self.left_frame)
         
-        # Create left figure (Pareto) with tight layout
-        self.fig_left = Figure(figsize=(7, 6), dpi=100, tight_layout=True)
+        # Create left figure (Pareto) without tight_layout to avoid console warnings
+        self.fig_left = Figure(figsize=(7, 6), dpi=100, tight_layout=False)
         self.ax_left = self.fig_left.add_subplot(111)
         
         # Canvas and toolbar for left pane
@@ -360,7 +387,7 @@ class EnhancedVisualizationWindow:
             self._sash_handle = None
         
         # Create right figure (Segmentation) with tight layout  
-        self.fig_right = Figure(figsize=(7, 6), dpi=100, tight_layout=True)
+        self.fig_right = Figure(figsize=(7, 6), dpi=100, tight_layout=False)
         self.ax_right = self.fig_right.add_subplot(111)
 
         # Keep paging controls in sync with any toolbar-driven x-limit changes.
@@ -383,6 +410,26 @@ class EnhancedVisualizationWindow:
         # IMPORTANT: canvas widget must be parented to seg_plot_container because we use
         # grid inside seg_plot_container. right_frame itself uses pack.
         self.canvas_right = FigureCanvasTkAgg(self.fig_right, seg_plot_container)
+
+        # Break-lanes interaction state (tooltip + label visibility after draw)
+        self._break_lane_hitboxes = []  # list[tuple[Rectangle, str, str]] -> (patch, column_name, value)
+        self._break_lane_labels = []  # list[tuple[text_artist, start_x, end_x]]
+        self._break_lane_lane_labels = []  # list[tuple[text_artist, start_x, end_x, y_axes, pad_data]]
+        self._break_lane_hover_after_id = None
+        self._break_lane_hover_pending = None  # (active_key, col_name, value, x_root, y_root)
+        self._break_lane_hover_active_patch = None
+        self._break_lane_tooltip_win = None
+        self._break_lane_tooltip_label = None
+
+        # Hook events once (safe even if tooltip creation fails)
+        try:
+            self._break_lane_motion_cid = self.canvas_right.mpl_connect('motion_notify_event', self._on_segmentation_mouse_move)
+            self._break_lane_leave_cid = self.canvas_right.mpl_connect('figure_leave_event', self._hide_break_lane_tooltip)
+            self._break_lane_draw_cid = self.canvas_right.mpl_connect('draw_event', self._on_segmentation_draw)
+        except Exception:
+            self._break_lane_motion_cid = None
+            self._break_lane_leave_cid = None
+            self._break_lane_draw_cid = None
 
         self.seg_page_left_button = ttk.Button(
             seg_plot_container,
@@ -441,6 +488,24 @@ class EnhancedVisualizationWindow:
             command=self.reset_segmentation_x_zoom,
         )
         self.reset_seg_zoom_button.pack(side='left', padx=(0, 0), pady=2)
+
+        self.break_lanes_button = ttk.Checkbutton(
+            right_controls_container,
+            text="Show Break Attributes Diagram",
+            variable=self._show_break_lanes_var,
+            command=self.update_visualizations,
+            takefocus=False,
+        )
+        try:
+            self.break_lanes_button.configure(cursor='arrow')
+        except Exception:
+            pass
+        self._break_lanes_pack_opts = dict(side='left', padx=(8, 0), pady=2)
+        # Visibility is controlled dynamically per-route; default to hidden.
+        try:
+            self.break_lanes_button.pack_forget()
+        except Exception:
+            pass
 
         # X-only zoom selector for the segmentation axis (disabled by default)
         self._seg_span_selector = SpanSelector(
@@ -817,7 +882,7 @@ class EnhancedVisualizationWindow:
         try:
             route_id = self.route_var.get()
             self.update_segmentation_graph(route_id)
-            self.canvas_right.draw_idle()
+            self._draw_right_canvas(idle=True)
         except Exception as e:
             try:
                 self.status_label.config(text=f"❌ Secondary plot update failed: {e}")
@@ -949,10 +1014,10 @@ class EnhancedVisualizationWindow:
         if force_draw:
             try:
                 # Force a full redraw so any blitted overlay is cleared.
-                self.canvas_right.draw()
+                self._draw_right_canvas()
             except Exception:
                 try:
-                    self.canvas_right.draw_idle()
+                    self._draw_right_canvas(idle=True)
                 except Exception:
                     pass
 
@@ -972,7 +1037,7 @@ class EnhancedVisualizationWindow:
             self._autoscale_segmentation_y_to_visible(xmin, xmax)
             self._autoscale_secondary_y_to_visible(xmin, xmax)
 
-            self.canvas_right.draw_idle()
+            self._draw_right_canvas(idle=True)
             self._update_segmentation_paging_controls()
         except Exception as e:
             try:
@@ -1054,9 +1119,9 @@ class EnhancedVisualizationWindow:
 
             # Use a full draw to ensure any blitted selection overlay is cleared.
             try:
-                self.canvas_right.draw()
+                self._draw_right_canvas()
             except Exception:
-                self.canvas_right.draw_idle()
+                self._draw_right_canvas(idle=True)
             self._update_segmentation_paging_controls()
         except Exception as e:
             try:
@@ -1158,13 +1223,419 @@ class EnhancedVisualizationWindow:
             self.ax_right.set_xlim(new_xmin, new_xmax)
             self._autoscale_segmentation_y_to_visible(new_xmin, new_xmax)
             self._autoscale_secondary_y_to_visible(new_xmin, new_xmax)
-            self.canvas_right.draw_idle()
+            self._draw_right_canvas(idle=True)
             self._update_segmentation_paging_controls()
         except Exception as e:
             try:
                 self.status_label.config(text=f"❌ Paging failed: {e}")
             except Exception:
                 pass
+
+    def _safe_canvas_draw(self, canvas, *, idle: bool = False) -> None:
+        """Draw a matplotlib canvas while suppressing noisy tight_layout warnings."""
+        try:
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore",
+                    message=r"Tight layout not applied.*",
+                    category=UserWarning,
+                )
+                if idle:
+                    canvas.draw_idle()
+                else:
+                    canvas.draw()
+        except Exception:
+            # Never let draw failures crash the UI.
+            try:
+                if idle:
+                    canvas.draw_idle()
+                else:
+                    canvas.draw()
+            except Exception:
+                pass
+
+    def _draw_left_canvas(self, *, idle: bool = False) -> None:
+        if getattr(self, 'canvas_left', None) is None:
+            return
+        self._safe_canvas_draw(self.canvas_left, idle=idle)
+
+    def _draw_right_canvas(self, *, idle: bool = False) -> None:
+        if getattr(self, 'canvas_right', None) is None:
+            return
+        self._safe_canvas_draw(self.canvas_right, idle=idle)
+
+    def _ensure_break_lane_tooltip(self) -> None:
+        """Ensure the Tkinter tooltip window exists (used for break-lane hover)."""
+        try:
+            win = getattr(self, '_break_lane_tooltip_win', None)
+            if win is not None:
+                try:
+                    if bool(win.winfo_exists()):
+                        return
+                except Exception:
+                    pass
+
+            win = tk.Toplevel(self.window)
+            win.withdraw()
+            win.overrideredirect(True)
+            try:
+                win.attributes('-topmost', True)
+            except Exception:
+                pass
+
+            label = tk.Label(
+                win,
+                text='',
+                justify='left',
+                bg='white',
+                fg=COLORS.get('pareto_border', COLORS['text_secondary']),
+                bd=1,
+                relief='solid',
+                padx=6,
+                pady=3,
+            )
+            label.pack()
+
+            self._break_lane_tooltip_win = win
+            self._break_lane_tooltip_label = label
+        except Exception:
+            self._break_lane_tooltip_win = None
+            self._break_lane_tooltip_label = None
+
+    def _cancel_break_lane_hover(self) -> None:
+        try:
+            pending = getattr(self, '_break_lane_hover_after_id', None)
+            if pending is not None and hasattr(self, 'window'):
+                try:
+                    self.window.after_cancel(pending)
+                except Exception:
+                    pass
+        finally:
+            self._break_lane_hover_after_id = None
+            self._break_lane_hover_pending = None
+
+    def _hide_break_lane_tooltip(self, _event=None) -> None:
+        try:
+            self._cancel_break_lane_hover()
+            self._break_lane_hover_active_patch = None
+            win = getattr(self, '_break_lane_tooltip_win', None)
+            if win is not None:
+                try:
+                    win.withdraw()
+                except Exception:
+                    pass
+        except Exception:
+            return
+
+    def _show_break_lane_tooltip(self) -> None:
+        """Show tooltip for the currently pending hover target."""
+        try:
+            self._break_lane_hover_after_id = None
+            pending = getattr(self, '_break_lane_hover_pending', None)
+            if not pending:
+                return
+
+            active_key, col_name, value, x_root, y_root = pending
+
+            self._ensure_break_lane_tooltip()
+            win = getattr(self, '_break_lane_tooltip_win', None)
+            label = getattr(self, '_break_lane_tooltip_label', None)
+            if win is None or label is None:
+                return
+
+            v = (value or '').strip()
+            if not v:
+                v = '(blank)'
+
+            label.configure(text=f"{col_name}: {v}")
+
+            try:
+                x = int(x_root) + 12 if x_root is not None else 0
+                y = int(y_root) + 12 if y_root is not None else 0
+                win.geometry(f"+{x}+{y}")
+            except Exception:
+                pass
+
+            try:
+                win.deiconify()
+                win.lift()
+            except Exception:
+                pass
+
+            self._break_lane_hover_active_patch = active_key
+        except Exception:
+            return
+
+    def _on_segmentation_mouse_move(self, event) -> None:
+        """Show a tooltip for lane boxes when labels are hidden."""
+        try:
+            if event is None or event.inaxes != self.ax_right:
+                self._hide_break_lane_tooltip()
+                return
+
+            # Only active when lanes are enabled.
+            try:
+                if not bool(self._show_break_lanes_var.get()):
+                    self._hide_break_lane_tooltip()
+                    return
+            except Exception:
+                self._hide_break_lane_tooltip()
+                return
+
+            if getattr(event, 'x', None) is None or getattr(event, 'y', None) is None:
+                self._hide_break_lane_tooltip()
+                return
+
+            hit_target = None
+            try:
+                overlay = getattr(self, '_break_lane_overlay_bounds', None)
+                lanes = getattr(self, '_break_lane_hover_lanes', []) or []
+                if overlay and lanes and event.xdata is not None:
+                    inv = self.ax_right.transAxes.inverted()
+                    _x_axes, y_axes = inv.transform((event.x, event.y))
+                    bottom, top = overlay
+                    if y_axes < bottom or y_axes > top:
+                        hit_target = None
+                    else:
+                        x = float(event.xdata)
+                        for lane in lanes:
+                            if y_axes >= lane.get('y0', -1.0) and y_axes <= lane.get('y1', -1.0):
+                                starts = lane.get('starts', [])
+                                boxes = lane.get('boxes', [])
+                                if not starts or not boxes:
+                                    break
+                                i = bisect.bisect_right(starts, x) - 1
+                                if 0 <= i < len(boxes):
+                                    s, e, v = boxes[i]
+                                    if x >= s and x <= e:
+                                        hit_target = ((int(lane.get('lane_idx', 0)), int(i)), lane.get('col', ''), v)
+                                break
+            except Exception:
+                hit_target = None
+
+            if hit_target is None:
+                self._hide_break_lane_tooltip()
+                return
+
+            active_key, col_name, value = hit_target
+
+            # Compute screen coords for a Tk tooltip without redrawing the plot.
+            x_root = None
+            y_root = None
+            try:
+                ge = getattr(event, 'guiEvent', None)
+                if ge is not None and hasattr(ge, 'x_root') and hasattr(ge, 'y_root'):
+                    x_root = ge.x_root
+                    y_root = ge.y_root
+            except Exception:
+                pass
+            if x_root is None or y_root is None:
+                try:
+                    widget = self.canvas_right.get_tk_widget()
+                    x_root = int(widget.winfo_rootx()) + int(event.x)
+                    y_root = int(widget.winfo_rooty()) + int(event.y)
+                except Exception:
+                    x_root = None
+                    y_root = None
+
+            # If we're already showing this same target, do nothing (avoids work).
+            if active_key == getattr(self, '_break_lane_hover_active_patch', None):
+                return
+
+            # Debounce: wait briefly before showing (prevents flicker + busy cursor).
+            self._cancel_break_lane_hover()
+            self._break_lane_hover_pending = (active_key, col_name, value, x_root, y_root)
+            try:
+                if hasattr(self, 'window'):
+                    self._break_lane_hover_after_id = self.window.after(150, self._show_break_lane_tooltip)
+            except Exception:
+                # Fallback: show immediately
+                self._show_break_lane_tooltip()
+        except Exception:
+            return
+
+    def _on_segmentation_draw(self, event) -> None:
+        """After draw, decide which lane labels can fit (pixel-accurate)."""
+        try:
+            if event is None or getattr(event, 'canvas', None) is None:
+                return
+
+            # Only update for our right canvas.
+            if getattr(self, 'canvas_right', None) is None or event.canvas != self.canvas_right:
+                return
+
+            renderer = getattr(event, 'renderer', None)
+            if renderer is None:
+                return
+
+            self._refresh_break_lane_labels(renderer)
+        except Exception:
+            return
+
+    def _refresh_break_lane_labels(self, renderer) -> None:
+        """Refresh lane label positions/visibility using a renderer (zoom-aware)."""
+        try:
+            if renderer is None:
+                return
+
+            xlim = None
+            try:
+                xlim = self.ax_right.get_xlim()
+            except Exception:
+                xlim = None
+
+            if xlim is None:
+                return
+
+            x0_view, x1_view = float(xlim[0]), float(xlim[1])
+            xmin_view, xmax_view = (x0_view, x1_view) if x0_view <= x1_view else (x1_view, x0_view)
+            view_width = max(0.0, float(xmax_view) - float(xmin_view))
+
+            # Convert a small pixel padding into data units so padding stays consistent under zoom.
+            ax_width_px = 0.0
+            try:
+                ax_width_px = float(getattr(getattr(self, 'ax_right', None), 'bbox', None).width)
+            except Exception:
+                ax_width_px = 0.0
+            desired_pad_px = 6.0
+            pad_from_px = (view_width * (desired_pad_px / max(ax_width_px, 1.0))) if view_width > 0 else 0.0
+
+            # Refresh lane (attribute) labels anchored to the first box.
+            lane_labels = getattr(self, '_break_lane_lane_labels', []) or []
+            hover_lanes = getattr(self, '_break_lane_hover_lanes', []) or []
+            fallback_color = COLORS.get('pareto_border', COLORS['text_secondary'])
+            for item in lane_labels:
+                if not isinstance(item, (list, tuple)) or len(item) not in (5, 6):
+                    continue
+
+                if len(item) == 6:
+                    txt, start_x, end_x, y_axes, pad_data, lane_idx = item
+                else:
+                    txt, start_x, end_x, y_axes, pad_data = item
+                    lane_idx = None
+                try:
+                    sx = float(start_x)
+                    ex = float(end_x)
+                    if ex < sx:
+                        sx, ex = ex, sx
+
+                    vx0 = max(sx, xmin_view)
+                    vx1 = min(ex, xmax_view)
+                    if vx1 <= vx0:
+                        txt.set_visible(False)
+                        continue
+
+                    # Place at the left edge of the visible portion.
+                    # Use a zoom-aware pad so the label doesn't drift too far right.
+                    base_pad = max(0.0, float(pad_data))
+                    cap_pad = view_width * 0.01
+                    effective_pad = max(pad_from_px, min(base_pad, cap_pad))
+                    x_pos = vx0 + effective_pad
+                    if x_pos > vx1:
+                        x_pos = vx0
+                    try:
+                        txt.set_position((x_pos, float(y_axes)))
+                    except Exception:
+                        pass
+
+                    # Update color for contrast with the underlying box at x_pos.
+                    try:
+                        lane_info = None
+                        if lane_idx is not None:
+                            for lane in hover_lanes:
+                                if int(lane.get('lane_idx', -1)) == int(lane_idx):
+                                    lane_info = lane
+                                    break
+
+                        if lane_info is not None:
+                            starts = lane_info.get('starts') or []
+                            boxes = lane_info.get('boxes') or []
+                            value_to_color = lane_info.get('value_to_color') or {}
+
+                            i = bisect.bisect_right(starts, float(x_pos)) - 1
+                            if 0 <= i < len(boxes):
+                                s, e, v = boxes[i]
+                                if float(s) <= float(x_pos) <= float(e):
+                                    base = value_to_color.get(str(v).strip(), COLORS.get('original_data', '#DDDDDD'))
+                                    fill = mcolors.to_rgba(base, alpha=0.90)
+                                    txt.set_color(self._contrast_text_color(fill))
+                                else:
+                                    txt.set_color(fallback_color)
+                            else:
+                                txt.set_color(fallback_color)
+                        else:
+                            txt.set_color(fallback_color)
+                    except Exception:
+                        try:
+                            txt.set_color(fallback_color)
+                        except Exception:
+                            pass
+
+                    # Fit check based on visible width.
+                    px0 = self.ax_right.transData.transform((vx0, 0))[0]
+                    px1 = self.ax_right.transData.transform((vx1, 0))[0]
+                    avail = abs(px1 - px0)
+
+                    txt.set_visible(True)
+                    bb = txt.get_window_extent(renderer=renderer)
+                    needed = bb.width + 8
+
+                    txt.set_visible(bool(avail >= max(30, needed)))
+                except Exception:
+                    try:
+                        txt.set_visible(False)
+                    except Exception:
+                        pass
+
+            labels = getattr(self, '_break_lane_labels', []) or []
+            for item in labels:
+                # Backward compatibility if any 3-tuples still exist.
+                if not isinstance(item, (list, tuple)):
+                    continue
+                if len(item) == 4:
+                    txt, start_x, end_x, y_axes = item
+                elif len(item) == 3:
+                    txt, start_x, end_x = item
+                    y_axes = None
+                else:
+                    continue
+
+                try:
+                    sx = float(start_x)
+                    ex = float(end_x)
+                    if ex < sx:
+                        sx, ex = ex, sx
+
+                    vx0 = max(sx, xmin_view)
+                    vx1 = min(ex, xmax_view)
+                    if vx1 <= vx0:
+                        txt.set_visible(False)
+                        continue
+
+                    x_mid_visible = (vx0 + vx1) / 2.0
+                    if y_axes is not None:
+                        try:
+                            txt.set_position((x_mid_visible, float(y_axes)))
+                        except Exception:
+                            pass
+
+                    px0 = self.ax_right.transData.transform((vx0, 0))[0]
+                    px1 = self.ax_right.transData.transform((vx1, 0))[0]
+                    avail = abs(px1 - px0)
+
+                    txt.set_visible(True)
+                    bb = txt.get_window_extent(renderer=renderer)
+                    needed = bb.width + 8
+
+                    show = (avail >= max(40, needed))
+                    txt.set_visible(bool(show))
+                except Exception:
+                    try:
+                        txt.set_visible(False)
+                    except Exception:
+                        pass
+        except Exception:
+            return
 
     def reset_pareto_zoom(self):
         """Reset Pareto plot limits to the defaults for the current route."""
@@ -1175,7 +1646,7 @@ class EnhancedVisualizationWindow:
                 self.ax_left.set_xlim(*self._pareto_default_xlim)
             if self._pareto_default_ylim is not None:
                 self.ax_left.set_ylim(*self._pareto_default_ylim)
-            self.canvas_left.draw_idle()
+            self._draw_left_canvas(idle=True)
         except Exception as e:
             try:
                 self.status_label.config(text=f"❌ Reset pareto zoom failed: {e}")
@@ -1207,8 +1678,8 @@ class EnhancedVisualizationWindow:
                 self.ax_right.set_title("Segmentation")
 
                 if self.is_multi_objective:
-                    self.canvas_left.draw()
-                self.canvas_right.draw()
+                    self._draw_left_canvas()
+                self._draw_right_canvas()
                 return
 
             # Get pareto points. Contract: properly saved results must include at least one.
@@ -1235,8 +1706,8 @@ class EnhancedVisualizationWindow:
                 self.ax_right.set_title(f"Highway Segmentation - {route_id}")
 
                 if self.is_multi_objective:
-                    self.canvas_left.draw()
-                self.canvas_right.draw()
+                    self._draw_left_canvas()
+                self._draw_right_canvas()
                 return
 
             self.pareto_points_data = pareto_points
@@ -1259,7 +1730,9 @@ class EnhancedVisualizationWindow:
                             self.main_paned.remove(self.left_frame)
                     except (tk.TclError, ValueError):
                         pass
-                    _safe_print(f"[ROUTE {route_id}] Hidden Pareto pane for single-objective (degenerate case)")
+                    if not getattr(self, '_pareto_hidden_logged', False):
+                        _safe_print(f"[ROUTE {route_id}] Hidden Pareto pane for single-objective (degenerate case)")
+                        self._pareto_hidden_logged = True
 
             # Update segmentation graph (RIGHT pane) with selected point
             self.update_segmentation_graph(route_id)
@@ -1269,8 +1742,15 @@ class EnhancedVisualizationWindow:
 
             # Redraw canvases
             if self.is_multi_objective:
-                self.canvas_left.draw()
-            self.canvas_right.draw()
+                self._draw_left_canvas()
+            self._draw_right_canvas()
+
+            # Ensure lane labels are refreshed even when draw events are flaky.
+            try:
+                renderer = getattr(self.canvas_right, 'get_renderer', lambda: None)()
+                self._refresh_break_lane_labels(renderer)
+            except Exception:
+                pass
 
         except Exception as e:
             error_msg = f"Visualization error: {e}"
@@ -1291,11 +1771,11 @@ class EnhancedVisualizationWindow:
             self.ax_right.set_title("Segmentation")
             if self.is_multi_objective:
                 try:
-                    self.canvas_left.draw()
+                    self._draw_left_canvas()
                 except Exception:
                     pass
             try:
-                self.canvas_right.draw()
+                self._draw_right_canvas()
             except Exception:
                 pass
         
@@ -1429,11 +1909,11 @@ class EnhancedVisualizationWindow:
             # Instant selection with minimal processing
             self.select_pareto_point(point_id)
             self.update_pareto_selection_only(route_id)
-            self.canvas_left.draw_idle()  # Non-blocking draw
+            self._draw_left_canvas(idle=True)  # Non-blocking draw
             
             # Update segmentation immediately (synchronous for reliability)
             self.update_segmentation_graph(route_id)
-            self.canvas_right.draw_idle()
+            self._draw_right_canvas(idle=True)
             
     def on_pareto_click(self, event):
         """Fast Pareto point click handler with optimized performance."""
@@ -1467,11 +1947,11 @@ class EnhancedVisualizationWindow:
             
             # Fast update: redraw the left pane with new selection
             self.update_pareto_selection_only(route_id)
-            self.canvas_left.draw_idle()  # Non-blocking draw
+            self._draw_left_canvas(idle=True)  # Non-blocking draw
             
             # Update segmentation graph immediately (synchronous for reliability)
             self.update_segmentation_graph(route_id)
-            self.canvas_right.draw_idle()
+            self._draw_right_canvas(idle=True)
             
     def select_pareto_point(self, point_id):
         """Select a Pareto point and update displays with clear visual feedback."""
@@ -1625,26 +2105,84 @@ class EnhancedVisualizationWindow:
         y_col = xy.y_col
         
         # Get mandatory breakpoints
-        from visualization.breakpoints import extract_mandatory_breakpoints
+        from visualization.breakpoints import (
+            extract_attribute_breakpoints,
+            extract_attribute_break_signatures,
+            extract_gap_boundary_breakpoints,
+            extract_mandatory_breakpoints,
+        )
+
+        from visualization.break_lanes import attribute_breakpoints_by_column, compute_lane_boxes
 
         mandatory_breakpoints = extract_mandatory_breakpoints(route_results)
+        gap_breakpoints = extract_gap_boundary_breakpoints(route_results)
+        attribute_breakpoints = extract_attribute_breakpoints(route_results)
+        attribute_signatures_by_x = extract_attribute_break_signatures(route_results)
+
+        # Keep artists so we can remove/redraw the lane overlay cleanly.
+        if not hasattr(self, '_break_lane_artists'):
+            self._break_lane_artists = []
+        for a in getattr(self, '_break_lane_artists', []) or []:
+            try:
+                a.remove()
+            except Exception:
+                pass
+        self._break_lane_artists = []
+
+        # Reset lane interaction artifacts for this draw.
+        self._break_lane_hitboxes = []
+        self._break_lane_labels = []
+        self._break_lane_lane_labels = []
+        self._break_lane_hover_lanes = []
+        self._break_lane_overlay_bounds = None
+        self._hide_break_lane_tooltip()
 
         # Always draw breakpoint lines from JSON when available, even if original points are missing.
         if breakpoints:
             from visualization.breakpoints import compute_breakpoint_line_specs
 
-            specs = compute_breakpoint_line_specs(breakpoints, mandatory_breakpoints)
+            specs = compute_breakpoint_line_specs(
+                breakpoints,
+                mandatory_breakpoints,
+                gap_breakpoints=gap_breakpoints,
+                attribute_breakpoints=attribute_breakpoints,
+                gap_label="Gap Breaks",
+                attribute_label="Attribute Breaks",
+            )
+
+            attribute_labeled = False
             for spec in specs:
-                if spec.kind == 'mandatory':
+                if spec.kind in ('mandatory', 'mandatory_other'):
                     self.ax_right.axvline(
                         x=spec.x,
                         color=COLORS['mandatory_bp'],
                         linestyle='--',
-                        linewidth=1.2,
+                        linewidth=1.1,
                         alpha=0.9,
                         zorder=3,
                         label=spec.label,
                     )
+                elif spec.kind == 'mandatory_gap':
+                    self.ax_right.axvline(
+                        x=spec.x,
+                        color=COLORS['mandatory_bp'],
+                        linestyle='-',
+                        linewidth=1.9,
+                        alpha=0.95,
+                        zorder=3,
+                        label=spec.label,
+                    )
+                elif spec.kind == 'mandatory_attribute':
+                    self.ax_right.axvline(
+                        x=spec.x,
+                        color=COLORS.get('pareto_normal', COLORS.get('segment_avg', COLORS['mandatory_bp'])),
+                        linestyle='-',
+                        linewidth=1.2,
+                        alpha=0.9,
+                        zorder=3,
+                        label=(spec.label or ("Attribute Breaks" if not attribute_labeled else "")),
+                    )
+                    attribute_labeled = True
                 else:
                     self.ax_right.axvline(
                         x=spec.x,
@@ -1655,6 +2193,265 @@ class EnhancedVisualizationWindow:
                         zorder=3,
                         label=spec.label,
                     )
+
+        # Break lanes overlay (per attribute) aligned to the x-axis.
+        try:
+            show_lanes = bool(self._show_break_lanes_var.get()) if hasattr(self, '_show_break_lanes_var') else False
+        except Exception:
+            show_lanes = False
+
+        try:
+            attr_block = None
+            input_analysis = route_results.get('input_data_analysis') if isinstance(route_results, dict) else None
+            if isinstance(input_analysis, dict):
+                attr_block = input_analysis.get('attribute_break_analysis')
+
+            # Only show the lanes toggle when must-break columns exist.
+            try:
+                cols_used_for_toggle = []
+                if isinstance(attr_block, dict):
+                    cols_used_for_toggle = attr_block.get('columns_used')
+                if not isinstance(cols_used_for_toggle, list):
+                    cols_used_for_toggle = []
+                cols_used_for_toggle = [str(c).strip() for c in cols_used_for_toggle if str(c).strip()]
+
+                toggle_visible = bool(cols_used_for_toggle)
+                if hasattr(self, 'break_lanes_button'):
+                    if toggle_visible:
+                        # Show if currently hidden
+                        if self.break_lanes_button.winfo_manager() != 'pack':
+                            self.break_lanes_button.pack(**getattr(self, '_break_lanes_pack_opts', {}))
+                    else:
+                        # Hide and force off
+                        try:
+                            self._show_break_lanes_var.set(False)
+                        except Exception:
+                            pass
+                        try:
+                            self.break_lanes_button.pack_forget()
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+
+            if show_lanes and isinstance(attr_block, dict) and route_data is not None:
+                cols_used = attr_block.get('columns_used')
+                if not isinstance(cols_used, list):
+                    cols_used = []
+                cols_used = [str(c).strip() for c in cols_used if str(c).strip()]
+
+                # Prefer per-route x-range from results; fall back to dataframe.
+                x_min = None
+                x_max = None
+                try:
+                    ds = input_analysis.get('data_summary') if isinstance(input_analysis, dict) else None
+                    dr = ds.get('data_range') if isinstance(ds, dict) else None
+                    if isinstance(dr, dict):
+                        x_min = float(dr.get('x_min'))
+                        x_max = float(dr.get('x_max'))
+                except Exception:
+                    x_min = None
+                    x_max = None
+
+                if x_min is None or x_max is None:
+                    try:
+                        x_min = float(route_data[x_col].min())
+                        x_max = float(route_data[x_col].max())
+                    except Exception:
+                        x_min = None
+                        x_max = None
+
+                if cols_used and x_min is not None and x_max is not None:
+                    bp_by_col = attribute_breakpoints_by_column(attr_block)
+
+                    total_height = 0.16
+                    top = 0.995
+                    bottom = top - total_height
+                    lane_h = total_height / max(len(cols_used), 1)
+
+                    # Cache overlay bounds for fast hover detection.
+                    self._break_lane_overlay_bounds = (float(bottom), float(top))
+
+                    trans = transforms.blended_transform_factory(self.ax_right.transData, self.ax_right.transAxes)
+                    label_color = COLORS.get('pareto_border', COLORS['text_secondary'])
+
+                    # Value color palette (re-use existing palette tokens).
+                    # Colors are assigned per *attribute value* within a lane.
+                    value_palette = [
+                        COLORS.get('pareto_normal', COLORS.get('segment_avg', COLORS['analysis_bp'])),
+                        COLORS.get('segment_avg', COLORS.get('pareto_normal', COLORS['analysis_bp'])),
+                        COLORS.get('secondary_default', COLORS.get('analysis_bp', '#000000')),
+                        COLORS.get('analysis_bp', COLORS.get('pareto_normal', '#000000')),
+                        COLORS.get('pareto_border', COLORS.get('analysis_bp', '#000000')),
+                        COLORS.get('original_edge', COLORS.get('analysis_bp', '#000000')),
+                    ]
+
+                    def _rgba(color: str, alpha: float):
+                        return mcolors.to_rgba(color, alpha=max(0.0, min(1.0, alpha)))
+
+                    def _value_text_color(fill_rgba) -> str:
+                        return self._contrast_text_color(fill_rgba)
+
+                    # Lane labels on the left (axes coords).
+                    for lane_idx, col_name in enumerate(cols_used):
+                        y0 = top - (lane_idx + 1) * lane_h
+                        y1 = y0 + lane_h
+                        y_mid = (y0 + y1) / 2.0
+
+                        # Background band for visual separation
+                        rect_bg = Rectangle(
+                            (x_min, y0),
+                            x_max - x_min,
+                            lane_h,
+                            transform=trans,
+                            facecolor=COLORS['original_data'],
+                            edgecolor=COLORS['grid'],
+                            linewidth=0.6,
+                            alpha=0.22,
+                            zorder=4,
+                            clip_on=False,
+                        )
+                        self.ax_right.add_patch(rect_bg)
+                        self._break_lane_artists.append(rect_bg)
+
+                        lane_bps = bp_by_col.get(col_name, [])
+                        try:
+                            x_vals = list(route_data[x_col].values)
+                            attr_vals = list(route_data[col_name].values)
+                        except Exception:
+                            continue
+
+                        boxes = compute_lane_boxes(
+                            x_values=x_vals,
+                            attribute_values=attr_vals,
+                            lane_breakpoints=lane_bps,
+                            x_min=float(x_min),
+                            x_max=float(x_max),
+                        )
+
+                        # Stable value->color mapping per lane.
+                        unique_vals = sorted({(bx.value or '').strip() for bx in boxes if (bx.value or '').strip()})
+                        value_to_color = {
+                            v: value_palette[i % len(value_palette)]
+                            for i, v in enumerate(unique_vals)
+                        }
+
+                        # Build fast hover index for this lane (include value->color for contrast decisions).
+                        try:
+                            lane_boxes = [(float(bx.start_x), float(bx.end_x), str(bx.value) if bx.value is not None else "") for bx in boxes]
+                            lane_boxes = [(s, e, v) for (s, e, v) in lane_boxes if e > s]
+                            lane_starts = [s for (s, _e, _v) in lane_boxes]
+                            self._break_lane_hover_lanes.append(
+                                {
+                                    'lane_idx': int(lane_idx),
+                                    'y0': float(y0),
+                                    'y1': float(y1),
+                                    'col': str(col_name),
+                                    'starts': lane_starts,
+                                    'boxes': lane_boxes,
+                                    'value_to_color': dict(value_to_color),
+                                }
+                            )
+                        except Exception:
+                            pass
+
+                        # Attribute label: show for every lane.
+                        # Anchor to the full x-range so it doesn't disappear when the first box is tiny.
+                        try:
+                            # Small left padding in data units.
+                            pad = (float(x_max) - float(x_min)) * 0.005
+                            x_label = float(x_min) + pad
+                            # Vertically centered within the lane box strip.
+                            y_label = y0 + 0.50 * lane_h
+
+                            lane_label_color = label_color
+                            try:
+                                first_box = boxes[0] if boxes else None
+                                if first_box is not None:
+                                    fb_val = (first_box.value or '').strip()
+                                    fb_base = value_to_color.get(fb_val, COLORS.get('original_data', '#DDDDDD'))
+                                    fb_fill = _rgba(fb_base, 0.90)
+                                    lane_label_color = self._contrast_text_color(fb_fill)
+                            except Exception:
+                                lane_label_color = label_color
+
+                            lane_label = self.ax_right.text(
+                                x_label,
+                                y_label,
+                                str(col_name),
+                                transform=trans,
+                                ha='left',
+                                va='center',
+                                fontsize=9,
+                                color=lane_label_color,
+                                alpha=1.0,
+                                zorder=6,
+                                clip_on=True,
+                            )
+                            self._break_lane_artists.append(lane_label)
+                            try:
+                                # Track the full lane span so the label stays visible on zoom.
+                                self._break_lane_lane_labels.append(
+                                    (lane_label, float(x_min), float(x_max), float(y_label), float(pad), int(lane_idx))
+                                )
+                            except Exception:
+                                pass
+                        except Exception:
+                            pass
+
+                        for b in boxes:
+                            w = b.end_x - b.start_x
+                            if w <= 0:
+                                continue
+
+                            raw_val = (b.value or '').strip()
+                            base = value_to_color.get(raw_val, COLORS.get('original_data', '#DDDDDD'))
+                            fill = _rgba(base, 0.90)
+                            txt_color = _value_text_color(fill)
+
+                            rect = Rectangle(
+                                (b.start_x, y0 + 0.10 * lane_h),
+                                w,
+                                0.80 * lane_h,
+                                transform=trans,
+                                facecolor=fill,
+                                edgecolor=base,
+                                linewidth=1.0,
+                                zorder=4.5,
+                                clip_on=True,
+                            )
+                            self.ax_right.add_patch(rect)
+                            self._break_lane_artists.append(rect)
+                            self._break_lane_hitboxes.append((rect, col_name, b.value))
+
+                            # Draw value label only if there is enough pixel width.
+                            try:
+                                px0 = self.ax_right.transData.transform((b.start_x, 0))[0]
+                                px1 = self.ax_right.transData.transform((b.end_x, 0))[0]
+                                width_px = abs(px1 - px0)
+                            except Exception:
+                                width_px = 0
+
+                            # Always create the text artist, but decide visibility after draw.
+                            if b.value:
+                                txt = self.ax_right.text(
+                                    (b.start_x + b.end_x) / 2.0,
+                                    y_mid,
+                                    b.value,
+                                    transform=trans,
+                                    ha='center',
+                                    va='center',
+                                    fontsize=8,
+                                    color=txt_color,
+                                    alpha=1.0,
+                                    zorder=5,
+                                    clip_on=True,
+                                )
+                                txt.set_visible(True)
+                                self._break_lane_artists.append(txt)
+                                self._break_lane_labels.append((txt, b.start_x, b.end_x, y_mid))
+        except Exception:
+            pass
 
         # If x/y column info is missing, stop here (breakpoints already drawn).
         if xy.error_message:
@@ -1700,7 +2497,7 @@ class EnhancedVisualizationWindow:
 
             deduped_labels, deduped_handles = dedupe_legend_entries(labels, handles)
             if deduped_labels:
-                self.ax_right.legend(deduped_handles, deduped_labels, loc='best', framealpha=0.9)
+                self.ax_right.legend(deduped_handles, deduped_labels, loc='lower right', framealpha=0.9)
 
             from visualization.zoom_decisions import should_cache_default_limits
 
@@ -1955,7 +2752,7 @@ class EnhancedVisualizationWindow:
 
         deduped_labels, deduped_handles = dedupe_legend_entries(labels, handles)
         if deduped_labels:
-            self.ax_right.legend(deduped_handles, deduped_labels, loc='best', framealpha=0.9)
+            self.ax_right.legend(deduped_handles, deduped_labels, loc='lower right', framealpha=0.9)
 
         # Deterministic full-view y-limits (avoid "sticky" limits when switching routes).
         full_primary_ylim = None

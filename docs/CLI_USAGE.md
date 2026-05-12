@@ -44,6 +44,21 @@ highway-seg run --spec path/to/your.run_spec.json
 
 This writes the results JSON to the `output.output_json_path` location defined inside the run spec.
 
+### Optional: Force breaks on attribute changes (`input.must_break_columns`)
+
+You can optionally provide an array of additional column headers under `input.must_break_columns`.
+If set, a mandatory breakpoint is inserted whenever the attribute value changes along the route.
+
+Example snippet:
+
+```json
+{
+    "input": {
+        "must_break_columns": ["pavement_type", "lane_count"]
+    }
+}
+```
+
 Note: the GUI's **Copy CLI command** currently copies a command of the form:
 
 ```bash
