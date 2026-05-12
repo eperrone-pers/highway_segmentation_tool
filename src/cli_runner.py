@@ -89,6 +89,7 @@ class ResolvedRunSpec:
     gap_threshold: float
     route_column: Optional[str]
     selected_routes: Optional[List[str]]
+    must_break_columns: Optional[List[str]]
 
     method_key: str
     method_parameters: Dict[str, Any]
@@ -172,6 +173,15 @@ def load_and_resolve_run_spec(spec_path: str | os.PathLike[str], *, validate: bo
             raise RunSpecError("input.selected_routes must be an array of strings or null")
         selected_routes = [str(r).strip() for r in selected_routes_raw if str(r).strip()]
 
+    must_break_raw = input_block.get("must_break_columns", None)
+    must_break_columns: Optional[List[str]]
+    if must_break_raw is None:
+        must_break_columns = None
+    else:
+        if not isinstance(must_break_raw, list):
+            raise RunSpecError("input.must_break_columns must be an array of strings or null")
+        must_break_columns = [str(c).strip() for c in must_break_raw if str(c).strip()]
+
     method_key = str(method_block["method_key"]).strip()
     method_parameters = method_block.get("method_parameters") or {}
     if not isinstance(method_parameters, dict):
@@ -189,6 +199,7 @@ def load_and_resolve_run_spec(spec_path: str | os.PathLike[str], *, validate: bo
         gap_threshold=gap_threshold,
         route_column=route_column,
         selected_routes=selected_routes,
+        must_break_columns=must_break_columns,
         method_key=method_key,
         method_parameters=method_parameters,
         output_json_path=output_json_path,
@@ -427,6 +438,7 @@ def run_analysis_from_spec_file(
             spec.y_column,
             route_id=route_id,
             gap_threshold=spec.gap_threshold,
+            must_break_columns=spec.must_break_columns,
         )
         prepared.append((route_id, route_analysis))
         original_data_by_route[route_id] = route_analysis.route_data.copy()
@@ -494,6 +506,7 @@ def run_analysis_from_spec_file(
         # The CLI already has output_json_path; unless the run spec explicitly
         # carries a custom name concept, keep this null for structural parity.
         "custom_save_name": None,
+        "must_break_columns": spec.must_break_columns,
     }
 
     manager = ExtensibleJsonResultsManager()

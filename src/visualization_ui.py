@@ -1625,25 +1625,81 @@ class EnhancedVisualizationWindow:
         y_col = xy.y_col
         
         # Get mandatory breakpoints
-        from visualization.breakpoints import extract_mandatory_breakpoints
+        from visualization.breakpoints import (
+            extract_attribute_breakpoints,
+            extract_attribute_break_signatures,
+            extract_gap_boundary_breakpoints,
+            extract_mandatory_breakpoints,
+        )
 
         mandatory_breakpoints = extract_mandatory_breakpoints(route_results)
+        gap_breakpoints = extract_gap_boundary_breakpoints(route_results)
+        attribute_breakpoints = extract_attribute_breakpoints(route_results)
+        attribute_signatures_by_x = extract_attribute_break_signatures(route_results)
+
+        # Deterministic per-signature styling (avoid introducing new colors).
+        signature_names = sorted({s for s in attribute_signatures_by_x.values() if isinstance(s, str) and s.strip()})
+        signature_linestyles = ['--', '-.', ':']
+        signature_to_linestyle = {
+            sig: signature_linestyles[i % len(signature_linestyles)]
+            for i, sig in enumerate(signature_names)
+        }
+        signature_to_linewidth = {
+            sig: (1.6 if (i % 3) == 0 else (1.4 if (i % 3) == 1 else 1.2))
+            for i, sig in enumerate(signature_names)
+        }
+        signature_labeled = set()
 
         # Always draw breakpoint lines from JSON when available, even if original points are missing.
         if breakpoints:
             from visualization.breakpoints import compute_breakpoint_line_specs
 
-            specs = compute_breakpoint_line_specs(breakpoints, mandatory_breakpoints)
+            specs = compute_breakpoint_line_specs(
+                breakpoints,
+                mandatory_breakpoints,
+                gap_breakpoints=gap_breakpoints,
+                attribute_breakpoints=attribute_breakpoints,
+                gap_label="Gap Breaks",
+            )
             for spec in specs:
-                if spec.kind == 'mandatory':
+                if spec.kind in ('mandatory', 'mandatory_other'):
                     self.ax_right.axvline(
                         x=spec.x,
                         color=COLORS['mandatory_bp'],
                         linestyle='--',
-                        linewidth=1.2,
+                        linewidth=1.1,
                         alpha=0.9,
                         zorder=3,
                         label=spec.label,
+                    )
+                elif spec.kind == 'mandatory_gap':
+                    self.ax_right.axvline(
+                        x=spec.x,
+                        color=COLORS['mandatory_bp'],
+                        linestyle='-',
+                        linewidth=1.9,
+                        alpha=0.95,
+                        zorder=3,
+                        label=spec.label,
+                    )
+                elif spec.kind == 'mandatory_attribute':
+                    sig = attribute_signatures_by_x.get(spec.x, '')
+                    sig = str(sig).strip() if sig is not None else ''
+                    linestyle = signature_to_linestyle.get(sig, '-')
+                    linewidth = signature_to_linewidth.get(sig, 1.5)
+                    label = ''
+                    if sig and sig not in signature_labeled:
+                        signature_labeled.add(sig)
+                        label = f"{sig} Breaks"
+
+                    self.ax_right.axvline(
+                        x=spec.x,
+                        color=COLORS.get('pareto_normal', COLORS.get('segment_avg', COLORS['mandatory_bp'])),
+                        linestyle=linestyle,
+                        linewidth=linewidth,
+                        alpha=0.9,
+                        zorder=3,
+                        label=label,
                     )
                 else:
                     self.ax_right.axvline(
@@ -1700,7 +1756,7 @@ class EnhancedVisualizationWindow:
 
             deduped_labels, deduped_handles = dedupe_legend_entries(labels, handles)
             if deduped_labels:
-                self.ax_right.legend(deduped_handles, deduped_labels, loc='best', framealpha=0.9)
+                self.ax_right.legend(deduped_handles, deduped_labels, loc='upper right', framealpha=0.9)
 
             from visualization.zoom_decisions import should_cache_default_limits
 
@@ -1955,7 +2011,7 @@ class EnhancedVisualizationWindow:
 
         deduped_labels, deduped_handles = dedupe_legend_entries(labels, handles)
         if deduped_labels:
-            self.ax_right.legend(deduped_handles, deduped_labels, loc='best', framealpha=0.9)
+            self.ax_right.legend(deduped_handles, deduped_labels, loc='upper right', framealpha=0.9)
 
         # Deterministic full-view y-limits (avoid "sticky" limits when switching routes).
         full_primary_ylim = None

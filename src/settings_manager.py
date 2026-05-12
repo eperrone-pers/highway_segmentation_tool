@@ -59,7 +59,10 @@ class SettingsManager:
                 'last_data_directory': '',
                 'last_save_directory': '',
                 'x_column': '',
-                'y_column': ''
+                'y_column': '',
+                # Multi-select list of input columns that force mandatory breakpoints
+                # whenever their value changes (attribute-based must-break).
+                'must_break_columns': []
             },
             'advanced': {
                 'nsga2_settings': {

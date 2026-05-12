@@ -30,6 +30,12 @@ class RouteAnalysis:
     data_range: Dict[str, float]  # {'x_min': float, 'x_max': float, 'y_min': float, 'y_max': float}
     route_stats: Dict  # Summary stats: total_points, gap_count, valid_range, etc.
 
+    # Optional attribute-based must-break metadata (framework-level).
+    # These are additive and backward-compatible; older results may not include them.
+    must_break_columns_used: List[str] = None
+    attribute_breakpoints: List[float] = None
+    attribute_break_events: List[Dict] = None
+
 
 def analyze_route_gaps(
     df: pd.DataFrame,
@@ -37,6 +43,7 @@ def analyze_route_gaps(
     y_column: str,
     route_id: str = "default",
     gap_threshold: float = None,
+    must_break_columns: Optional[List[str]] = None,
 ) -> RouteAnalysis:
     """
     Analyze route data to detect gaps and create comprehensive RouteAnalysis.
@@ -149,6 +156,64 @@ def analyze_route_gaps(
         'gap_total_length': sum(end - start for start, end in processed_gaps),
         'valid_length': x_values[-1] - x_values[0] - sum(end - start for start, end in processed_gaps)
     }
+
+    # ===== Attribute-based must-break breakpoints (optional) =====
+    # Policy:
+    # - Breakpoint is placed at x_{i+1} when value differs between i and i+1
+    # - Null/blank counts as a real state; transitions to/from null are changes
+    # - Column values are normalized by trimming whitespace; empty/NaN -> None
+    must_break_columns_used: List[str] = []
+    attribute_events: List[Dict] = []
+    attribute_breakpoints: List[float] = []
+
+    if must_break_columns:
+        # Keep only columns that exist in df_valid
+        existing_cols = [c for c in must_break_columns if isinstance(c, str) and c in df_valid.columns]
+        must_break_columns_used = existing_cols
+
+        def _norm(v) -> Optional[str]:
+            try:
+                if pd.isna(v):
+                    return None
+            except Exception:
+                pass
+            s = "" if v is None else str(v).strip()
+            return None if s == "" else s
+
+        # Build x -> changed_columns mapping
+        changes_by_x: Dict[float, Set[str]] = {}
+
+        if existing_cols and len(df_valid) >= 2:
+            # Use df_valid order (already sorted by x_column)
+            for i in range(len(df_valid) - 1):
+                x_next = float(df_valid.iloc[i + 1][x_column])
+                changed_cols: List[str] = []
+                for col in existing_cols:
+                    v0 = _norm(df_valid.iloc[i][col])
+                    v1 = _norm(df_valid.iloc[i + 1][col])
+                    if v0 != v1:
+                        changed_cols.append(col)
+
+                if changed_cols:
+                    s = changes_by_x.setdefault(x_next, set())
+                    for c in changed_cols:
+                        s.add(c)
+
+        # Emit deterministic events
+        for x_bp in sorted(changes_by_x.keys()):
+            cols = sorted(changes_by_x[x_bp])
+            attribute_events.append(
+                {
+                    "x": float(x_bp),
+                    "changed_columns": cols,
+                    "signature": "|".join(cols),
+                }
+            )
+        attribute_breakpoints = [e["x"] for e in attribute_events]
+
+        # Add attribute breakpoints into the mandatory set
+        for x_bp in attribute_breakpoints:
+            mandatory_breakpoints.add(float(x_bp))
     
     if show_output:
         logger.info("Route statistics:")
@@ -171,8 +236,53 @@ def analyze_route_gaps(
         mandatory_breakpoints=mandatory_breakpoints,
         valid_x_values=valid_x_values,
         data_range=data_range,
-        route_stats=route_stats
+        route_stats=route_stats,
+        must_break_columns_used=must_break_columns_used,
+        attribute_breakpoints=attribute_breakpoints,
+        attribute_break_events=attribute_events,
     )
+
+
+def build_attribute_break_analysis(route_analysis: RouteAnalysis) -> Optional[Dict[str, object]]:
+    """Build a JSON-friendly attribute-break analysis block.
+
+    This is optional metadata intended for visualization/reporting so users can
+    distinguish mandatory breakpoints caused by data gaps vs attribute changes.
+
+    Returns None when there are no must-break columns configured.
+    """
+
+    cols = getattr(route_analysis, "must_break_columns_used", None)
+    if cols is None:
+        cols = []
+    if not isinstance(cols, list):
+        cols = []
+    cols_clean = [str(c).strip() for c in cols if str(c).strip()]
+
+    # If no must-break columns were configured, omit the block entirely.
+    if len(cols_clean) == 0:
+        return None
+
+    events = getattr(route_analysis, "attribute_break_events", None)
+    if events is None:
+        events = []
+    if not isinstance(events, list):
+        events = []
+
+    breakpoints: List[float] = []
+    for e in events:
+        try:
+            x = float(e.get("x"))
+            breakpoints.append(x)
+        except Exception:
+            continue
+
+    return {
+        "columns_used": cols_clean,
+        "break_events": events,
+        "breakpoints": breakpoints,
+        "total_attribute_breaks": int(len(breakpoints)),
+    }
 
 
 def _merge_adjacent_gaps(gaps: List[Tuple[float, float]], merge_epsilon: float = 1e-9) -> List[Tuple[float, float]]:

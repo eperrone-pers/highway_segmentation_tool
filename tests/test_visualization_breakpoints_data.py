@@ -7,6 +7,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from visualization.breakpoints import (
     add_endpoints_to_mandatory_breakpoints,
     compute_breakpoint_line_specs,
+    extract_attribute_breakpoints,
+    extract_attribute_break_signatures,
+    extract_gap_boundary_breakpoints,
     extract_mandatory_breakpoints,
     split_breakpoints_by_mandatory,
 )
@@ -88,3 +91,74 @@ def test_compute_breakpoint_line_specs_coerces_numeric_strings_and_classifies_ma
 def test_compute_breakpoint_line_specs_skips_invalid_breakpoints():
     specs = compute_breakpoint_line_specs(["bad", 1, None, "2"], {2})
     assert [s.x for s in specs] == [1.0, 2.0]
+
+
+def test_extract_gap_boundary_breakpoints_reads_expected_shape():
+    route_results = {
+        "input_data_analysis": {
+            "gap_analysis": {
+                "gap_segments": [
+                    {"start": 10, "end": 20, "length": 10},
+                    {"start": "30", "end": "40", "length": 10},
+                ]
+            }
+        }
+    }
+
+    out = extract_gap_boundary_breakpoints(route_results)
+    assert out == {10.0, 20.0, 30.0, 40.0}
+
+
+def test_extract_attribute_breakpoints_reads_expected_shape():
+    route_results = {
+        "input_data_analysis": {
+            "attribute_break_analysis": {
+                "breakpoints": [15, "25"],
+                "break_events": [{"x": 35}, {"x": "45"}],
+            }
+        }
+    }
+
+    out = extract_attribute_breakpoints(route_results)
+    assert out == {15.0, 25.0, 35.0, 45.0}
+
+
+def test_compute_breakpoint_line_specs_classifies_gap_vs_attribute_when_provided():
+    breakpoints = [0, 10, 15, 20, 30]
+    mandatory = {0, 10, 15, 20}  # 30 is analysis breakpoint
+    gap_bps = {10, 20}
+    attr_bps = {15}
+
+    specs = compute_breakpoint_line_specs(
+        breakpoints,
+        mandatory,
+        gap_breakpoints=gap_bps,
+        attribute_breakpoints=attr_bps,
+    )
+
+    assert [s.kind for s in specs] == [
+        "mandatory_other",
+        "mandatory_gap",
+        "mandatory_attribute",
+        "mandatory_gap",
+        "analysis",
+    ]
+
+
+def test_extract_attribute_break_signatures_prefers_signature_and_falls_back_to_changed_columns():
+    route_results = {
+        "input_data_analysis": {
+            "attribute_break_analysis": {
+                "break_events": [
+                    {"x": 10, "signature": "District"},
+                    {"x": "20", "changed_columns": ["County"]},
+                    {"x": 30, "changed_columns": ["A", "B"], "signature": "A+B"},
+                ]
+            }
+        }
+    }
+
+    out = extract_attribute_break_signatures(route_results)
+    assert out[10.0] == "District"
+    assert out[20.0] == "County"
+    assert out[30.0] == "A+B"

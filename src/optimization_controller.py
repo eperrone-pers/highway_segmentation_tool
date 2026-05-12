@@ -987,6 +987,7 @@ class OptimizationController:
                     y_column, 
                     route_id=route_id,
                     gap_threshold=gap_threshold,
+                    must_break_columns=getattr(self.app, 'must_break_columns', None),
                 )
                 
                 # Log analysis results

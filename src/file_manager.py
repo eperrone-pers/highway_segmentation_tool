@@ -199,6 +199,20 @@ class FileManager:
             self.app.available_columns = columns
             
             self.app.log_message(f"Found {len(columns)} columns: {columns}")
+
+            # Remove any must-break column selections that don't exist in this file
+            try:
+                must_break = getattr(self.app, 'must_break_columns', None)
+                if isinstance(must_break, list) and must_break:
+                    filtered = [c for c in must_break if c in columns]
+                    if filtered != must_break:
+                        self.app.must_break_columns = filtered
+                        if hasattr(self.app, '_update_must_break_columns_display'):
+                            self.app._update_must_break_columns_display()
+                        if hasattr(self.app, 'on_parameter_change'):
+                            self.app.on_parameter_change()
+            except Exception:
+                pass
             
             # Reset route state when loading new file
             self.app.available_routes = []
@@ -441,6 +455,7 @@ class FileManager:
                 y_col,
                 route_id="_COMBINED_DATA_",
                 gap_threshold=effective_gap_threshold,
+                must_break_columns=getattr(self.app, 'must_break_columns', None),
             )
             self.app.log_message(f"Gap analysis: {len(route_analysis.gap_segments)} gaps detected, {len(route_analysis.mandatory_breakpoints)} mandatory breakpoints")
             

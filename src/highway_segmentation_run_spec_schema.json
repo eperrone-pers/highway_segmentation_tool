@@ -76,6 +76,12 @@
           "type": ["array", "null"],
           "items": { "type": "string", "minLength": 1 },
           "description": "Optional explicit list of routes to process. If null/omitted, process all routes"
+        },
+
+        "must_break_columns": {
+          "type": ["array", "null"],
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Optional list of attribute columns that force a mandatory breakpoint when their value changes. If null/omitted, no attribute must-breaks are applied."
         }
       }
     },

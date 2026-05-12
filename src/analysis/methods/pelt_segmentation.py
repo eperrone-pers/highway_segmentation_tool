@@ -22,6 +22,11 @@ from ..base import AnalysisMethodBase, AnalysisResult
 from ..utils.segment_metrics import average_length_excluding_gap_segments
 from config import get_optimization_method
 
+try:
+    from data_loader import build_attribute_break_analysis
+except Exception:  # pragma: no cover
+    build_attribute_break_analysis = None
+
 
 def _rolling_smooth(values: np.ndarray, window_pts: int, method: str) -> np.ndarray:
     window_pts = int(max(1, window_pts))
@@ -429,6 +434,35 @@ class PeltSegmentationMethod(AnalysisMethodBase):
         if enable_diagnostic_output:
             diagnostics["section_details"] = section_diagnostics
 
+        data_summary = {
+            "total_data_points": int(len(route_analysis.route_data)),
+            "data_range": {
+                "x_min": float(route_analysis.data_range.get("x_min")),
+                "x_max": float(route_analysis.data_range.get("x_max")),
+                "y_min": float(route_analysis.data_range.get("y_min")),
+                "y_max": float(route_analysis.data_range.get("y_max")),
+            },
+            "gap_analysis": {
+                "total_gaps": int(len(getattr(route_analysis, "gap_segments", []))),
+                "gap_segments": [
+                    {"start": float(g[0]), "end": float(g[1]), "length": float(g[1] - g[0])}
+                    for g in getattr(route_analysis, "gap_segments", [])
+                ],
+                "total_gap_length": float(
+                    sum((g[1] - g[0]) for g in getattr(route_analysis, "gap_segments", []))
+                ),
+            },
+        }
+
+        # Optional: attribute-based must-break metadata for visualization/reporting
+        try:
+            if build_attribute_break_analysis is not None:
+                attr_block = build_attribute_break_analysis(route_analysis)
+                if attr_block:
+                    data_summary["attribute_break_analysis"] = attr_block
+        except Exception:
+            pass
+
         return AnalysisResult(
             method_name=self.method_name,
             method_key=self.method_key,
@@ -465,23 +499,5 @@ class PeltSegmentationMethod(AnalysisMethodBase):
                 "enable_diagnostic_output": bool(enable_diagnostic_output),
                 "gap_threshold": float(gap_threshold),
             },
-            data_summary={
-                "total_data_points": int(len(route_analysis.route_data)),
-                "data_range": {
-                    "x_min": float(route_analysis.data_range.get("x_min")),
-                    "x_max": float(route_analysis.data_range.get("x_max")),
-                    "y_min": float(route_analysis.data_range.get("y_min")),
-                    "y_max": float(route_analysis.data_range.get("y_max")),
-                },
-                "gap_analysis": {
-                    "total_gaps": int(len(getattr(route_analysis, "gap_segments", []))),
-                    "gap_segments": [
-                        {"start": float(g[0]), "end": float(g[1]), "length": float(g[1] - g[0])}
-                        for g in getattr(route_analysis, "gap_segments", [])
-                    ],
-                    "total_gap_length": float(
-                        sum((g[1] - g[0]) for g in getattr(route_analysis, "gap_segments", []))
-                    ),
-                },
-            },
+            data_summary=data_summary,
         )

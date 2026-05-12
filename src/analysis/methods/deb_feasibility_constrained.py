@@ -384,6 +384,16 @@ class DebFeasibilityConstrainedMethod(AnalysisMethodBase):
             },
         }
 
+        # Optional: attribute-based must-break metadata for visualization/reporting
+        try:
+            from data_loader import build_attribute_break_analysis
+
+            attr_block = build_attribute_break_analysis(ga.route_analysis)
+            if attr_block:
+                data_summary["attribute_break_analysis"] = attr_block
+        except Exception:
+            pass
+
         log("\n=== DEB-FEASIBILITY CONSTRAINED RESULTS ===")
         log(f"Best base fitness: {best_solution['fitness']:.6f}")
         log(f"Segments: {best_solution['num_segments']}")

@@ -396,6 +396,14 @@ class JsonResultsManager:
         
         analysis["gap_analysis"] = gap_info
         analysis["mandatory_segments"] = mandatory_info
+
+        # Optional: attribute-based must-break metadata for visualization/reporting
+        try:
+            attr = data_summary.get("attribute_break_analysis")
+            if isinstance(attr, dict) and attr:
+                analysis["attribute_break_analysis"] = attr
+        except Exception:
+            pass
         
         return analysis
     

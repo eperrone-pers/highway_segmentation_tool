@@ -303,6 +303,66 @@ class ColumnSelectParameter(ParameterDefinition):
 
 
 @dataclass
+class MultiColumnSelectParameter(ParameterDefinition):
+    """Parameter definition for selecting multiple input data columns by header name.
+
+    Stored value is a list of selected column header names (list[str]).
+
+    UI contract:
+    - Rendered via a multi-select dialog populated from the currently loaded CSV headers.
+    - Display summary uses "None" when empty, otherwise "N selected".
+
+    Notes:
+    - This parameter does not store column data itself.
+    - Column existence is validated by the UI when headers are available.
+    """
+
+    def create_widget(self, parent) -> "tk.Variable":
+        import tkinter as tk
+        widget_var = tk.Variable(parent)
+        # Store list as a Python object inside the Variable.
+        widget_var.set(list(self.default_value or []))
+        return widget_var
+
+    def get_widget_value(self, widget) -> List[str]:
+        try:
+            value = widget.get()
+        except Exception:
+            value = None
+
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return [str(v).strip() for v in value if str(v).strip()]
+        return []
+
+    def set_widget_value(self, widget, value: Any) -> None:
+        try:
+            widget.set(list(value or []))
+        except Exception:
+            pass
+
+    def validate_value(self, value: Any) -> tuple[bool, str]:
+        if value is None:
+            value = []
+
+        if not isinstance(value, list):
+            return False, f"{self.display_name} must be a list of column names"
+
+        cleaned: List[str] = []
+        for v in value:
+            s = "" if v is None else str(v).strip()
+            if not s:
+                return False, f"{self.display_name} must contain non-empty column names"
+            cleaned.append(s)
+
+        if self.required and len(cleaned) == 0:
+            return False, f"{self.display_name} is required"
+
+        return True, ""
+
+
+@dataclass
 class BoolParameter(ParameterDefinition):
     """Parameter definition for boolean (checkbox) values."""
     
