@@ -67,9 +67,11 @@
         },
 
         "route_column": {
-          "type": ["string", "null"],
-          "minLength": 1,
-          "description": "Optional route ID column name. If null/omitted, treat the dataset as a single route"
+          "description": "Optional route ID column name. If null/omitted, treat the dataset as a single route",
+          "anyOf": [
+            {"type": "string", "minLength": 1},
+            {"type": "null"}
+          ]
         },
 
         "selected_routes": {

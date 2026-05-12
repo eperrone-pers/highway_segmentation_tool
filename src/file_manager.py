@@ -455,7 +455,11 @@ class FileManager:
                 y_col,
                 route_id="_COMBINED_DATA_",
                 gap_threshold=effective_gap_threshold,
-                must_break_columns=getattr(self.app, 'must_break_columns', None),
+                must_break_columns=(
+                    [str(c).strip() for c in getattr(self.app, 'must_break_columns', None) if str(c).strip()]
+                    if isinstance(getattr(self.app, 'must_break_columns', None), (list, tuple))
+                    else None
+                ),
             )
             self.app.log_message(f"Gap analysis: {len(route_analysis.gap_segments)} gaps detected, {len(route_analysis.mandatory_breakpoints)} mandatory breakpoints")
             

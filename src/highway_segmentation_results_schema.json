@@ -266,6 +266,11 @@
               "type": "integer",
               "minimum": 1,
               "description": "Number of routes actually processed"
+            },
+            "must_break_columns": {
+              "type": ["array", "null"],
+              "items": {"type": "string", "minLength": 1},
+              "description": "Optional list of attribute columns that force a mandatory breakpoint when their value changes. When null/omitted, no attribute must-breaks are applied."
             }
           }
         }
@@ -377,6 +382,45 @@
                   },
                   "total_analyzable_length": {"type": "number", "minimum": 0}
                 }
+              },
+              "attribute_break_analysis": {
+                "type": "object",
+                "title": "Attribute-Based Must-Break Analysis (Optional)",
+                "description": "Optional metadata describing mandatory breakpoints caused by configured must-break columns.",
+                "properties": {
+                  "columns_used": {
+                    "type": "array",
+                    "items": {"type": "string", "minLength": 1},
+                    "description": "List of must-break column headers that were found in the input data and used to compute attribute breaks."
+                  },
+                  "break_events": {
+                    "type": "array",
+                    "description": "Deterministic list of attribute-change events. Each event occurs at an x where one or more configured columns changed.",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "x": {"type": "number"},
+                        "changed_columns": {
+                          "type": "array",
+                          "items": {"type": "string", "minLength": 1}
+                        },
+                        "signature": {"type": "string"}
+                      },
+                      "additionalProperties": true
+                    }
+                  },
+                  "breakpoints": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "description": "List of x breakpoints caused by attribute changes (mandatory)."
+                  },
+                  "total_attribute_breaks": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Count of attribute breakpoints."
+                  }
+                },
+                "additionalProperties": true
               }
             }
           },

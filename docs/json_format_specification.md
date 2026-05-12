@@ -70,6 +70,7 @@ Notes:
 - `route_filtering_applied`: Whether route selection was used
 - `total_routes_in_source`: Routes available in input data
 - Route processing configuration and selected route list
+- `must_break_columns` (optional): When configured, lists the input columns that force mandatory breakpoints on attribute changes.
 
 ### **Input Parameters** (*Complete Reproducibility*)
 
@@ -126,9 +127,23 @@ Notes:
     "mandatory_breakpoints": [0.0, 15.697],
     "analyzable_segments": [{"start": 0.0, "end": 15.697, "length": 15.697, "type": "data"}],
     "total_analyzable_length": 15.697
+  },
+  "attribute_break_analysis": {
+    "columns_used": ["pavement_type"],
+    "breakpoints": [3.2, 7.1],
+    "break_events": [
+      {"x": 3.2, "changed_columns": ["pavement_type"], "signature": "pavement_type"},
+      {"x": 7.1, "changed_columns": ["pavement_type"], "signature": "pavement_type"}
+    ],
+    "total_attribute_breaks": 2
   }
 }
 ```
+
+Notes:
+
+- `attribute_break_analysis` is optional and is only present when the run was configured with must-break columns.
+- `attribute_break_analysis.breakpoints` represent mandatory breakpoint locations caused by attribute value changes.
 
 **Processing Results** (*Unified Pareto Structure*):
 

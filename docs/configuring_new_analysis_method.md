@@ -246,6 +246,24 @@ Example (conceptual):
 
 This keeps configuration ("which column") separate from data (the DataFrame already passed into the method).
 
+### 3.1.2 Framework-level must-break columns (attribute-driven mandatory breakpoints)
+
+Separately from *method parameters*, the application supports a framework-level setting that forces mandatory breakpoints whenever selected attribute values change.
+
+- **Concept**: `must_break_columns` is a list of input column headers (strings).
+- **Behavior**: when the value in any of these columns changes along the x-axis, the framework inserts a **mandatory breakpoint** (the analysis cannot span across that change).
+- **Where it is configured**:
+  - **GUI**: the user selects Must-Break Columns in the main app.
+  - **CLI run spec**: `input.must_break_columns` (optional array of strings).
+- **Where it appears in results JSON** (when set):
+  - `input_parameters.route_processing.must_break_columns` (only present when configured)
+  - `route_results[*].input_data_analysis.attribute_break_analysis` (per-route analysis/diagnostics)
+
+Design note:
+
+- This is intentionally **not** a `ParameterDefinition` in a method’s parameter list.
+- Methods receive a `RouteAnalysis` that already includes mandatory breakpoints; methods should treat these as non-negotiable route boundaries.
+
 #### `ObjectivePlotConfig` (multi-objective plotting)
 
 For multi-objective methods, `objective_plot_configs` can define how each objective is displayed in the Pareto plot.

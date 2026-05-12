@@ -506,8 +506,11 @@ def run_analysis_from_spec_file(
         # The CLI already has output_json_path; unless the run spec explicitly
         # carries a custom name concept, keep this null for structural parity.
         "custom_save_name": None,
-        "must_break_columns": spec.must_break_columns,
     }
+
+    # Structural parity: the GUI omits must_break_columns when not set.
+    if spec.must_break_columns is not None:
+        route_processing_info["must_break_columns"] = spec.must_break_columns
 
     manager = ExtensibleJsonResultsManager()
     json_output_path = manager.save_analysis_results(
