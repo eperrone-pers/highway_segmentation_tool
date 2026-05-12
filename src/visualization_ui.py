@@ -41,15 +41,6 @@ from matplotlib import transforms
 from matplotlib import colors as mcolors
 import bisect
 
-
-# Matplotlib may emit this warning during draw/zoom when layout can't satisfy all decorations.
-# It's noisy (not fatal) and can be triggered by draw paths outside our control (e.g. toolbar).
-warnings.filterwarnings(
-    "ignore",
-    message=r"Tight layout not applied.*",
-    category=UserWarning,
-)
-
 from route_utils import normalize_route_column_selection
 from visualization.utils import safe_print as _safe_print, default_colors
 from visualization.results_binding import (
@@ -59,6 +50,15 @@ from visualization.results_binding import (
     group_original_data_by_route,
 )
 from visualization.pareto import prepare_pareto_series
+
+
+# Matplotlib may emit this warning during draw/zoom when layout can't satisfy all decorations.
+# It's noisy (not fatal) and can be triggered by draw paths outside our control (e.g. toolbar).
+warnings.filterwarnings(
+    "ignore",
+    message=r"Tight layout not applied.*",
+    category=UserWarning,
+)
 
 
 # Pleasant color scheme - updated for better contrast
@@ -2117,7 +2117,7 @@ class EnhancedVisualizationWindow:
         mandatory_breakpoints = extract_mandatory_breakpoints(route_results)
         gap_breakpoints = extract_gap_boundary_breakpoints(route_results)
         attribute_breakpoints = extract_attribute_breakpoints(route_results)
-        attribute_signatures_by_x = extract_attribute_break_signatures(route_results)
+        extract_attribute_break_signatures(route_results)
 
         # Keep artists so we can remove/redraw the lane overlay cleanly.
         if not hasattr(self, '_break_lane_artists'):
@@ -2423,14 +2423,6 @@ class EnhancedVisualizationWindow:
                             self.ax_right.add_patch(rect)
                             self._break_lane_artists.append(rect)
                             self._break_lane_hitboxes.append((rect, col_name, b.value))
-
-                            # Draw value label only if there is enough pixel width.
-                            try:
-                                px0 = self.ax_right.transData.transform((b.start_x, 0))[0]
-                                px1 = self.ax_right.transData.transform((b.end_x, 0))[0]
-                                width_px = abs(px1 - px0)
-                            except Exception:
-                                width_px = 0
 
                             # Always create the text artist, but decide visibility after draw.
                             if b.value:
