@@ -193,21 +193,85 @@ All method parameters are declared using `ParameterDefinition` subclasses. Commo
 
 Parameter types available in `src/config.py`:
 
+### Quick Reference: Parameter Types
+
+| Type | Purpose | Key Fields | Accepts None? | Common Use Cases |
+| ---- | ------- | ---------- | ------------- | ---------------- |
+| `NumericParameter` | Numeric input with bounds | `min_value`, `max_value`, `decimal_places` | No | Population sizes, thresholds, rates, iteration counts |
+| `OptionalNumericParameter` | Optional numeric input | Same as above + `none_text` | Yes | Optional limits (max segments, timeouts, caps) |
+| `SelectParameter` | Dropdown selection | `options` (list of tuples) | No | Algorithm variants, enum-style choices, modes |
+| `ColumnSelectParameter` | CSV column selector | None (dynamic from data) | No | Additional data columns (weights, classifications) |
+| `BoolParameter` | Boolean checkbox | None | No | Feature toggles, diagnostic flags, processing options |
+| `TextParameter` | Text input (single/multi-line) | `min_length`, `max_length`, `allowed_chars`, `multiline` | No | Labels, identifiers, notes, custom metadata |
+
+---
+
 - `NumericParameter`
   - Additional fields: `min_value`, `max_value`, `decimal_places`, `widget_width`.
   - Validation behavior:
     - Enforces bounds if `min_value`/`max_value` are set.
     - If `decimal_places == 0`, the value must be an integer.
+  - **Example:**
+
+    ```python
+    NumericParameter(
+        name="threshold",
+        display_name="Detection Threshold",
+        description="Sensitivity for change detection (0.0-1.0)",
+        group="detection",
+        order=1,
+        default_value=0.5,
+        min_value=0.0,
+        max_value=1.0,
+        decimal_places=2
+    )
+    ```
+
 - `OptionalNumericParameter`
   - Like `NumericParameter`, but also accepts `None`.
   - Additional fields: `none_text` (what the UI shows for `None`).
   - Validation behavior:
     - `None` is always valid.
     - Otherwise, bounds and integer-ness rules apply.
+  - **Example:**
+
+    ```python
+    OptionalNumericParameter(
+        name="max_segments",
+        display_name="Max Segments",
+        description="Maximum number of segments (None=unlimited)",
+        group="constraints",
+        order=2,
+        default_value=None,
+        min_value=2,
+        max_value=100,
+        decimal_places=0,
+        none_text="No Limit"
+    )
+    ```
+
 - `SelectParameter`
   - Additional field: `options: List[Tuple[str, Any]]` where each tuple is `(display_text, value)`.
   - Validation behavior:
     - The value must match one of the `value` entries in `options`.
+  - **Example:**
+
+    ```python
+    SelectParameter(
+        name="error_method",
+        display_name="Error Estimation Method",
+        description="Statistical method for estimating error",
+        group="statistical",
+        order=1,
+        default_value="mad",
+        options=[
+            ("Median Absolute Deviation", "mad"),
+            ("Standard Deviation", "std"),
+            ("Interquartile Range", "iqr")
+        ]
+    )
+    ```
+
 - `ColumnSelectParameter`
   - Use when a method needs the user to pick an additional input column (beyond `route`, `x`, and `y`).
   - Stored value is the selected column *header name* (string), not the data.
@@ -218,13 +282,69 @@ Parameter types available in `src/config.py`:
     - Basic required/non-empty validation is declarative.
     - When CSV headers are available, the app additionally validates that the selected name exists in the loaded file.
     - Any deeper validation (numeric vs categorical, missing values, domain rules) should be performed by the method implementation.
+  - **Example:**
+
+    ```python
+    ColumnSelectParameter(
+        name="weight_column",
+        display_name="Weight Column",
+        description="Column containing segment weights (optional)",
+        group="data_columns",
+        order=3,
+        default_value="",
+        required=False
+    )
+    ```
+
 - `BoolParameter`
   - Checkbox-style boolean parameter.
   - Validation behavior:
     - Must be a Python `bool`.
+  - **Example:**
+
+    ```python
+    BoolParameter(
+        name="enable_diagnostics",
+        display_name="Enable Diagnostic Output",
+        description="Show detailed processing information",
+        group="processing",
+        order=10,
+        default_value=False
+    )
+    ```
+
 - `TextParameter`
-  - String parameter.
-  - Additional fields include `min_length`, `max_length`, `allowed_chars` (regex), `multiline`.
+  - String parameter for text input (single-line or multi-line).
+  - Additional fields: `min_length`, `max_length`, `allowed_chars` (regex pattern), `multiline`, `placeholder`.
+  - Validation behavior:
+    - If `required=True`, validates non-empty after stripping whitespace.
+    - If `min_length` is set, validates string length is >= `min_length`.
+    - If `max_length` is set, validates string length is <= `max_length`.
+    - If `allowed_chars` is set (regex pattern string), validates the entire string matches the pattern.
+  - UI behavior:
+    - Renders as single-line `Entry` widget if `multiline=False` (default).
+    - Renders as multi-line `Text` widget if `multiline=True`.
+    - Displays `placeholder` text when empty (if provided).
+  - **Example use cases:**
+    - Custom identifiers or labels that must follow naming conventions (`allowed_chars`)
+    - Comments or descriptions requiring multiple lines (`multiline=True`)
+    - Analysis notes or metadata fields
+  - **Example:**
+
+    ```python
+    TextParameter(
+        name="analysis_label",
+        display_name="Analysis Label",
+        description="Custom identifier for this analysis run (alphanumeric, underscore, hyphen only)",
+        group="metadata",
+        order=1,
+        default_value="baseline_analysis",
+        min_length=3,
+        max_length=50,
+        allowed_chars=r"^[A-Za-z0-9_-]+$",
+        placeholder="e.g., sensitivity_test_01"
+    )
+    ```
 
 ### 3.1.1 Selecting additional columns (beyond X/Y)
 
@@ -246,6 +366,47 @@ Example (conceptual):
 
 This keeps configuration ("which column") separate from data (the DataFrame already passed into the method).
 
+**Deeper validation example** (in your method implementation):
+
+```python
+import pandas as pd
+
+# In your method's run_analysis():
+weight_column = kwargs.get("weight_column")
+
+if weight_column:
+    # Column existence is already validated by the framework
+    weights = route_analysis.route_data[weight_column]
+    
+    # Validate the column contains numeric data
+    if not pd.api.types.is_numeric_dtype(weights):
+        raise ValueError(
+            f"Weight column '{weight_column}' must contain numeric data, "
+            f"but has dtype: {weights.dtype}"
+        )
+    
+    # Check for missing values
+    if weights.isna().any():
+        missing_count = weights.isna().sum()
+        raise ValueError(
+            f"Weight column '{weight_column}' contains {missing_count} missing values. "
+            f"Please clean the data or choose a different column."
+        )
+    
+    # Domain-specific validation (example: weights must be positive)
+    if (weights < 0).any():
+        raise ValueError(
+            f"Weight column '{weight_column}' contains negative values. "
+            f"Weights must be non-negative."
+        )
+    
+    # Use the validated weights in your algorithm
+    # ...
+else:
+    # Handle case where no weight column was specified (if optional)
+    weights = None
+```
+
 ### 3.1.2 Framework-level must-break columns (attribute-driven mandatory breakpoints)
 
 Separately from *method parameters*, the application supports a framework-level setting that forces mandatory breakpoints whenever selected attribute values change.
@@ -258,6 +419,34 @@ Separately from *method parameters*, the application supports a framework-level 
 - **Where it appears in results JSON** (when set):
   - `input_parameters.route_processing.must_break_columns` (only present when configured)
   - `route_results[*].input_data_analysis.attribute_break_analysis` (per-route analysis/diagnostics)
+
+**Example output** (when `must_break_columns=["LANE_COUNT", "SURFACE_TYPE"]` is configured):
+
+```json
+{
+  "input_parameters": {
+    "route_processing": {
+      "must_break_columns": ["LANE_COUNT", "SURFACE_TYPE"]
+    }
+  },
+  "route_results": [
+    {
+      "route_id": "I-40",
+      "input_data_analysis": {
+        "attribute_break_analysis": {
+          "detected_breaks": [1.5, 3.2, 5.8],
+          "break_reasons": {
+            "1.5": ["LANE_COUNT: 2 -> 4"],
+            "3.2": ["SURFACE_TYPE: 'Asphalt' -> 'Concrete'"],
+            "5.8": ["LANE_COUNT: 4 -> 2", "SURFACE_TYPE: 'Concrete' -> 'Asphalt'"]
+          },
+          "total_attribute_breaks": 3
+        }
+      }
+    }
+  ]
+}
+```
 
 Design note:
 
@@ -273,11 +462,10 @@ Fields:
 - `name` (str): Axis label.
 - `description` (str): Intended for tooltips/help.
 - `transform` (optional str): Transformation to apply before plotting.
-  - Implemented in the current enhanced visualization:
-    - `"negate"` only.
-  - Behavior for `transform="negate"`:
-    - Values are multiplied by `-1` before plotting.
-    - This is used for the methods where an objective used for the pareto might be negated in order to either maximize or minimize aa value (Many optimizations maximizes a negative value to minimize a score).
+  - Currently supported: `"negate"` only.
+  - **When to use `"negate"`**: Many optimization algorithms (including GAs) are designed to maximize fitness values. When you want to minimize a metric (e.g., total deviation from target), a common pattern is to maximize its negative value during optimization. The `"negate"` transform reverses this for display—it multiplies stored values by `-1` so the Pareto plot shows the original (non-negated) metric that users expect.
+  - **Example**: If your GA maximizes `-total_deviation` (stored as negative values like `-150.5`), set `transform="negate"` so the plot displays `total_deviation` as positive values (`150.5`) that users can interpret naturally as "lower deviation is better."
+  - **Implementation note**: The transform is applied only for plotting; the underlying solution data remains unchanged.
 - `reverse_scale` (bool): Defined in config, but not currently used by the enhanced visualization.
 
 ## 4) Step-by-step: AASHTO CDA as a single-objective method
@@ -465,7 +653,7 @@ class AashtoCdaMethod(AnalysisMethodBase):
         return AnalysisResult(...)
 ```
 
-#### 3.1 Pull parameter defaults from config
+#### 4.1 Pull parameter defaults from config
 
 AASHTO CDA reads defaults from `config.py`:
 
@@ -479,7 +667,7 @@ method = kwargs.get('method', param_defaults['method'])
 use_segment_length = kwargs.get('use_segment_length', param_defaults['use_segment_length'])
 ```
 
-#### 3.2 Return results in the unified `AnalysisResult` format
+#### 4.2 Return results in the unified `AnalysisResult` format
 
 Your method must return an `AnalysisResult` such that:
 
