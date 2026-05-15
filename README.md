@@ -1,6 +1,6 @@
 # Highway Segmentation Tool
 
-This tool provides a framework for segmenting routes based on attribute data and then displaying the results graphically. The framework allows Python developers to add their own segmentation algorithms and then display the segmentation results on screen. As of now, there are 6 segmentation methods included in the framework.
+This tool provides a framework for segmenting highway and pavement network data based on condition measurements. While the framework is extensible for any attribute-based segmentation, it's specifically designed for pavement condition analysis (IRI, PCI, rutting, cracking, etc.) with features tailored to pavement engineering workflows. The framework allows Python developers to add their own segmentation algorithms and display results graphically. As of now, there are 6 segmentation methods included in the framework.
 
 ## Features
 
@@ -86,7 +86,11 @@ python -m pytest tests/regression -q
 python src/run.py
 ```
 
-More details: see `SETUP_ENVIRONMENT.md`, `USER_GUIDE.md`, `docs/`, and `tests/README.md`.
+More details:
+
+- **For pavement engineers**: See `USER_GUIDE.md` for pavement-specific guidance, parameter selection, and practical scenarios
+- **For developers**: See `SETUP_ENVIRONMENT.md`, `docs/`, and `tests/README.md` for technical details
+- **For CLI usage**: See `docs/CLI_USAGE.md`
 
 To create a re-distributable zip package (excluding generated outputs), run `scripts/package_deliverable.ps1`.
 
@@ -139,8 +143,11 @@ The repository is delivered with sample input CSVs in `data/`.
 
 CSV file with columns:
 
-- `milepoint`: Highway milepoint locations
-- `structural_strength_ind`: Structural strength index values
+- **Distance column**: Highway milepoint or station locations  
+- **Measurement column**: Numeric condition values (e.g., IRI, PCI, rutting depth, structural indices)
+- **Route column** (optional): Route identifiers for multi-route analysis
+
+The tool works with any numeric pavement condition index including IRI (International Roughness Index), PCI (Pavement Condition Index), rutting depth, cracking indices, structural numbers, deflection data, and custom metrics.
 
 Example:
 

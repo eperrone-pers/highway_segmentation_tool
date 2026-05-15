@@ -3,16 +3,19 @@
 ## Table of Contents
 
 1. [Overview](#overview)
-2. [Getting Started](#getting-started)
-3. [User Interface Guide](#user-interface-guide)
-4. [Common Tasks](#common-tasks)
-5. [Analysis Methods](#analysis-methods)
-6. [Basic Workflow](#basic-workflow)
-7. [Understanding Results](#understanding-results)
-8. [Data Import & Export](#data-import--export)
-9. [Advanced Configuration](#advanced-configuration)
-10. [Troubleshooting](#troubleshooting)
-11. [Technical Reference](#technical-reference)
+2. [Pavement Analysis Context](#pavement-analysis-context)
+3. [Getting Started](#getting-started)
+4. [User Interface Guide](#user-interface-guide)
+5. [Common Tasks](#common-tasks)
+6. [Analysis Methods](#analysis-methods)
+7. [Common Pavement Analysis Scenarios](#common-pavement-analysis-scenarios)
+8. [Basic Workflow](#basic-workflow)
+9. [Understanding Results](#understanding-results)
+10. [Pavement-Specific Parameter Guidance](#pavement-specific-parameter-guidance)
+11. [Data Import & Export](#data-import--export)
+12. [Advanced Configuration](#advanced-configuration)
+13. [Troubleshooting](#troubleshooting)
+14. [Technical Reference](#technical-reference)
 
 ---
 
@@ -36,6 +39,61 @@ The Highway Segmentation Analysis application provides advanced statistical and 
 2. **Multi-Objective NSGA-II**: Pareto front exploration of quality vs. segment length tradeoffs
 3. **Constrained Optimization**: Target-length segmentation with penalty enforcement
 4. **AASHTO Enhanced CDA**: Statistical change point detection (citation: [CITATIONS.md](CITATIONS.md))
+
+---
+
+## Pavement Analysis Context
+
+### Why Segmentation Matters for Pavement Management
+
+Pavement networks are inherently variable due to:
+
+- **Construction History**: Different construction dates, materials, and techniques
+- **Traffic Loading**: Varying traffic volumes, vehicle types, and axle loads across sections
+- **Environmental Conditions**: Climate variations, drainage differences, subgrade changes
+- **Maintenance History**: Different rehabilitation timing, methods, and treatment effectiveness
+- **Functional Classification**: Interstate vs. arterial vs. collector roads requiring different design standards
+- **Structural Composition**: Varying layer thicknesses, base types, and pavement structures
+
+**Segmentation Goal**: Divide the network into homogeneous sections where:
+
+- Pavement condition is relatively uniform within segments
+- Similar treatment strategies and priorities apply
+- Deterioration patterns and rates are consistent
+- Resource allocation and project limits are optimized
+- Performance predictions are more accurate
+
+### Common Pavement Indices for Segmentation
+
+This tool works with any numeric pavement condition index:
+
+- **IRI (International Roughness Index)**: Ride quality measurement, typical range 40-250 inches/mile
+- **PCI (Pavement Condition Index)**: Overall condition rating, 0-100 scale (100 = excellent)
+- **Rutting Depth**: Structural distress indicator, typically 0-25mm
+- **Cracking Indices**: Alligator cracking, longitudinal cracking, etc. (% area or length)
+- **Structural Numbers**: Composite measure of pavement layer strength
+- **Deflection Data**: FWD (Falling Weight Deflectometer) measurements indicating structural capacity
+- **Friction Numbers**: Surface safety measurements (skid resistance)
+- **Texture Depth**: Surface drainage and noise characteristics
+
+### Typical Pavement Segmentation Applications
+
+1. **Network-Level Planning**: Divide network into treatment sections for budget allocation and multi-year programming
+2. **Project-Level Design**: Identify homogeneous sections within projects to optimize treatment limits and reduce costs
+3. **Performance Modeling**: Create consistent sections for deterioration curve development and life-cycle analysis
+4. **Data Quality Control**: Identify anomalous data, equipment calibration issues, or transition zones
+5. **Historical Analysis**: Track condition changes over time in statistically consistent sections
+6. **Treatment Effectiveness**: Evaluate rehabilitation performance in homogeneous test sections
+7. **Pavement Management Systems**: Define analysis sections for optimal resource allocation
+
+### Segmentation vs. Engineering Judgment
+
+**Automated segmentation complements, not replaces, engineering judgment:**
+
+- ✅ **Advantages**: Objective, repeatable, statistically justified, processes large datasets efficiently
+- ✅ **Best for**: Initial screening, validating existing sections, large-scale network analysis
+- ⚠️ **Limitations**: Cannot account for all local knowledge, upcoming projects, or political boundaries
+- 🔧 **Best Practice**: Use algorithms to identify candidate breakpoints, then validate with field knowledge and agency constraints
 
 ---
 
@@ -199,6 +257,32 @@ Method docs: [src/analysis/methods/docs/single/README.md](src/analysis/methods/d
 - Clear visualization with color-coded segments
 - Detailed fitness and segment length information
 
+**🛣️ Pavement Applications**:
+
+- **Network screening**: Rapidly identify sections needing immediate attention for budget prioritization
+- **Maintenance planning**: Group similar condition sections for efficient treatment scheduling
+- **Budget justification**: Demonstrate statistically significant condition differences to support funding requests
+- **Quality assurance**: Validate consistency of data collection equipment and procedures
+- **Baseline analysis**: Establish reference segmentation for comparing with other methods
+
+**📊 Typical Pavement Parameters**:
+
+For **IRI segmentation** on a typical highway corridor:
+
+- **Min Length**: 0.3-0.5 miles (minimum practical project length, crew mobilization)
+- **Max Length**: 2-5 miles (typical resurfacing project limits, budget constraints)
+- **Gap Threshold**: 0.05-0.1 miles (typical GPS/DMI data spacing, bridge/structure gaps)
+- **Population Size**: 100-200 (sufficient exploration for pavement networks)
+- **Generations**: 100-200 (usually achieves convergence for condition data)
+
+**Example Workflow**: 50-mile Interstate corridor with IRI data
+
+- Set Gap Threshold = 0.1 miles (accounts for measurement spacing and bridge gaps)
+- Min Length = 0.5 miles (agency minimum project length)
+- Max Length = 3.0 miles (typical resurfacing contract size)
+- Expected outcome: 15-25 segments for typical heterogeneous corridor
+- Validate breakpoints against maintenance records and known treatment boundaries
+
 ---
 
 ### Multi-Objective NSGA-II Optimization
@@ -234,6 +318,33 @@ Method docs: [src/analysis/methods/docs/multi/README.md](src/analysis/methods/do
 - **Upper-right points**: Fewer segments, longer lengths, more variation
 - **Front shape**: Reveals data characteristics and optimization constraints
 
+**🛣️ Pavement Applications**:
+
+- **Project alternatives analysis**: Present multiple options to decision-makers showing cost vs. quality tradeoffs
+- **Budget scenario planning**: Explore "what-if" scenarios for different funding levels
+- **Stakeholder engagement**: Show range of possibilities when preferences vary among management, engineering, and operations
+- **Treatment strategy evaluation**: Compare fine-grained maintenance vs. major rehabilitation approaches
+
+**📊 Typical Pavement Parameters**:
+
+For **PCI segmentation** on arterial network:
+
+- **Min Length**: 0.2-0.4 miles (smaller projects acceptable on arterials)
+- **Max Length**: 2-4 miles (typical urban project limits)
+- **Population Size**: 150-300 (need good Pareto front diversity)
+- **Generations**: 200-400 (multi-objective requires more iterations)
+- **Archive Size**: 50-100 (number of Pareto solutions to maintain)
+
+**Interpreting Results for Pavement Management**:
+
+On a Pareto front for PCI data:
+
+- **Lower-left solutions**: More segments, better condition homogeneity, higher treatment costs
+  - Use when: Quality is critical, detailed analysis needed, sufficient budget available
+- **Upper-right solutions**: Fewer segments, longer projects, more internal variation
+  - Use when: Budget constrained, simpler management preferred, accept some heterogeneity
+- **Middle solutions**: Balanced approach, often most practical for agencies
+
 ---
 
 ### Constrained Single-Objective Optimization
@@ -267,6 +378,29 @@ Method docs: [src/analysis/methods/docs/constrained/README.md](src/analysis/meth
 - "Constraint satisfied: YES" in results summary
 - Achieved average within your specified tolerance
 - Reasonable fitness value considering the constraint
+
+**🛣️ Pavement Applications**:
+
+- **Regulatory compliance**: Meet DOT requirements for standard segment lengths in reporting systems
+- **Standardized analysis**: Ensure consistency across multiple districts or highway sections
+- **Contractor coordination**: Match typical construction project sizes for bidding efficiency
+- **Pavement management systems**: Align with existing PMS section definitions
+
+**📊 Typical Pavement Parameters**:
+
+For **meeting 1-mile agency standard** with IRI data:
+
+- **Target Avg Length**: 1.0 miles (agency requirement)
+- **Length Tolerance**: ±0.2 miles (acceptable range: 0.8-1.2 miles)
+- **Penalty Weight**: Start at 100-200, increase if constraint not satisfied
+- **Min Length**: 0.5 miles (allow shorter segments where data demands)
+- **Max Length**: 1.5 miles (prevent extremely long outliers)
+
+**Common Agency Standards**:
+
+- **State DOTs**: Often require 0.5-mile or 1-mile standard sections for reporting
+- **Local agencies**: May use shorter 0.1-mile sections for urban arterials
+- **Research studies**: Sometimes need specific lengths for statistical power (e.g., 0.25-mile)
 
 ---
 
@@ -370,6 +504,183 @@ Final result: 49 segments from 49 breakpoints
 - ✅ Validation of other segmentation approaches
 - ✅ When reproducibility is critical
 - ✅ Comparison with published AASHTO procedures
+
+**🛣️ Pavement Applications**:
+
+- **Research publications**: Defensible methodology for peer-reviewed journals
+- **Legal/regulatory compliance**: Statistically justified breakpoints for contested decisions
+- **Forensic analysis**: Investigate pavement failures with documented change point detection
+- **Validation studies**: Compare with engineering judgment or existing segmentation schemes
+- **Contract disputes**: Objective evidence of pavement condition transitions
+
+**📊 Typical Pavement Parameters**:
+
+For **IRI analysis** requiring statistical justification:
+
+- **Alpha (α)**: 0.05 (standard 95% confidence level for pavement engineering)
+- **Error Estimation**: Method 2 (Std Dev of Differences) - recommended for pavement condition data
+- **Use Segment-Specific Length**: Enabled (accounts for varying segment sizes)
+- **Max Segments**: None (let statistics determine breakpoints)
+- **Diagnostic Output**: Enabled for documentation and verification
+
+**Comparing AASHTO CDA to Genetic Algorithms**:
+
+| Characteristic | AASHTO CDA | Genetic Algorithm |
+| -------------- | ---------- | ----------------- |
+| Result variability | None (deterministic) | Some (random seed) |
+| Statistical justification | Yes (p-values) | No (heuristic optimization) |
+| Computational time | Fast | Moderate to slow |
+| Number of breakpoints | Data-driven | Parameter-driven |
+| Best for | Research, validation | Practical optimization |
+
+**Validation Example**:
+
+```text
+Run both AASHTO CDA (α=0.05) and Single-Objective GA on same IRI data:
+- AASHTO CDA: 23 segments, statistically justified breakpoints
+- GA (min=0.5, max=3.0): 21 segments, optimized for homogeneity
+- Agreement: 18 breakpoints within 0.1 miles
+→ Conclusion: Both methods identify similar major transitions
+→ Use: AASHTO for documentation, GA for operational optimization
+```
+
+---
+
+## Common Pavement Analysis Scenarios
+
+This section provides step-by-step guidance for typical pavement engineering applications.
+
+### Scenario 1: Interstate Rehabilitation Prioritization
+
+**Context**: 50-mile Interstate corridor, annual IRI surveys, need to identify and prioritize 10 miles for rehabilitation within budget
+
+**Recommended Approach**:
+
+1. **Method**: Use **Single-Objective GA** for clear, prioritized recommendations
+2. **Must-Break Columns**: Set to ["PAVEMENT_TYPE", "MAJOR_STRUCTURE"] to respect construction boundaries
+3. **Parameters**:
+   - Gap Threshold: 0.1 miles (bridge gaps, measurement spacing)
+   - Min Length: 0.5 miles (minimum rehabilitation project)
+   - Max Length: 3.0 miles (typical contract size)
+   - Population: 150, Generations: 150
+4. **Analysis**:
+   - Run analysis, obtain one optimal segmentation
+   - Sort segments by mean IRI (descending - worst first)
+   - Select top segments totaling ~10 miles
+5. **Validation**:
+   - Cross-check with pavement management system data
+   - Verify against recent construction/maintenance records
+   - Consider geographic distribution and contractor access
+6. **Documentation**: Export to Excel for presentation to management
+
+**Expected Outcome**: Clear prioritization list with statistical justification for selected segments
+
+---
+
+### Scenario 2: Local Agency Network Budget Optimization
+
+**Context**: 500-mile arterial network, limited annual budget, need to show project alternatives to agency board
+
+**Recommended Approach**:
+
+1. **Method**: Use **Multi-Objective NSGA-II** to demonstrate quality vs. cost tradeoffs
+2. **Must-Break Columns**: ["FUNCTIONAL_CLASS", "PAVEMENT_TYPE", "JURISDICTION"]
+3. **Parameters**:
+   - Gap Threshold: 0.05 miles (more sensitive for urban arterials)
+   - Min Length: 0.2 miles (allow shorter urban projects)
+   - Max Length: 2.0 miles (urban project constraints)
+   - Population: 200, Generations: 300, Archive: 75
+4. **Presentation Strategy**:
+   - Display Pareto front to board: "More segments = higher quality but higher cost"
+   - Show 3-5 representative solutions from across the front
+   - Highlight tradeoffs: "Option A: 150 segments, $50M vs. Option B: 100 segments, $35M"
+5. **Decision Support**:
+   - Let decision-makers select preferred balance point
+   - Export selected solution for project development
+   - Use for multi-year capital improvement planning
+
+**Expected Outcome**: Informed board decision with clear understanding of quality vs. cost tradeoffs
+
+---
+
+### Scenario 3: Research Study Validation and Publication
+
+**Context**: Academic/agency research comparing automated segmentation to traditional engineering judgment
+
+**Recommended Approach**:
+
+1. **Method**: Use **AASHTO CDA** for statistical rigor and reproducibility
+2. **Must-Break Columns**: ["TREATMENT_BOUNDARY", "PAVEMENT_TYPE"] if available from records
+3. **Parameters**:
+   - Alpha: 0.05 (95% confidence - standard for pavement engineering research)
+   - Error Estimation: Method 2 (Standard Deviation of Differences)
+   - Use Segment-Specific Length: Enabled
+   - Diagnostic Output: Enabled (essential for methodology documentation)
+4. **Validation Process**:
+   - Document all parameters completely
+   - Compare automated breakpoints to existing agency segment boundaries
+   - Calculate agreement metrics (% within 0.1 miles, mean offset, etc.)
+   - Run sensitivity analysis on α values (0.01, 0.05, 0.10)
+5. **Publication Documentation**:
+   - Export diagnostic JSON for methodology verification
+   - Include statistical confidence levels for each breakpoint
+   - Provide complete parameter settings in methods section
+   - Reference: Katicha & Flintsch (2025) paper
+
+**Expected Outcome**: Peer-reviewable methodology with full statistical justification
+
+---
+
+### Scenario 4: DOT Standard Segment Length Compliance
+
+**Context**: State DOT requires 1.0-mile segments ±0.2 miles for pavement management system reporting
+
+**Recommended Approach**:
+
+1. **Method**: Use **Constrained GA** with agency length requirement
+2. **Must-Break Columns**: ["DISTRICT_BOUNDARY", "ROUTE_TYPE"] per agency standards
+3. **Parameters**:
+   - Target Avg Length: 1.0 miles (agency requirement)
+   - Length Tolerance: 0.2 miles (acceptable range: 0.8-1.2 miles)
+   - Penalty Weight: Start at 200, increase to 500 if needed
+   - Min Length: 0.5 miles (allow exceptions where data demands)
+   - Max Length: 1.5 miles (prevent outliers)
+4. **Compliance Verification**:
+   - Check "Constraint Satisfied: YES" in results
+   - Verify achieved average is within 0.8-1.2 mile range
+   - Review segment length distribution
+5. **Integration**:
+   - Export to agency PMS format (Excel or CSV)
+   - Validate segment IDs match agency conventions
+   - Document any exceptions requiring engineering judgment
+
+**Expected Outcome**: Compliant segmentation ready for PMS import
+
+---
+
+### Scenario 5: Treatment Effectiveness Evaluation
+
+**Context**: Need to create test sections to evaluate mill-and-overlay effectiveness over 5-year period
+
+**Recommended Approach**:
+
+1. **Method**: Use **Single-Objective GA** to create homogeneous pre-treatment sections
+2. **Must-Break Columns**: ["TRAFFIC_VOLUME_CLASS", "SUBGRADE_TYPE"] for consistent test conditions
+3. **Parameters**:
+   - Gap Threshold: 0.05 miles (tight control for research)
+   - Min Length: 0.3 miles (minimum statistical sample)
+   - Max Length: 1.0 miles (control section size)
+   - Higher generations (300+) for refined homogeneity
+4. **Section Selection**:
+   - Select 5-10 most homogeneous segments (lowest std deviation)
+   - Ensure similar pre-treatment condition (IRI, PCI)
+   - Match traffic levels across test sections
+5. **Monitoring Plan**:
+   - Annual condition surveys using same equipment/method
+   - Track deterioration rates in consistent sections
+   - Compare treated vs. control sections
+
+**Expected Outcome**: Statistically valid test sections for performance comparison
 
 ---
 
@@ -508,6 +819,264 @@ Final result: 49 segments from 49 breakpoints
 - Very long segments with high internal variation
 - Constraint not satisfied after reasonable penalty weight adjustment
 - Breakpoints in unexpected locations (may indicate data quality issues)
+
+### Interpreting Results for Pavement Data
+
+**Practical Examples with IRI Data**:
+
+```text
+Segment 1: MP 10.0-12.5 (2.5 mi), Mean IRI = 85 in/mi, Std Dev = 8 in/mi
+  ✅ Interpretation: Good condition, excellent uniformity
+  → Treatment: Routine maintenance (crack sealing, joint repair)
+  → Priority: Low (5-7 year timeframe)
+  → Budget: ~$15K/mile preventive maintenance
+
+Segment 2: MP 12.5-14.8 (2.3 mi), Mean IRI = 145 in/mi, Std Dev = 22 in/mi
+  ⚠️ Interpretation: Fair condition, moderate variability
+  → Treatment: Consider mill & overlay (may have localized failures)
+  → Priority: Medium (2-4 year timeframe)
+  → Budget: ~$200K/mile rehabilitation
+  → Note: Investigate high std dev - possible localized distress
+
+Segment 3: MP 14.8-16.2 (1.4 mi), Mean IRI = 195 in/mi, Std Dev = 35 in/mi
+  ❌ Interpretation: Poor condition, high variability
+  → Treatment: Requires detailed investigation before design
+  → Priority: High (immediate to 1 year)
+  → Budget: $300-500K/mile (reconstruction possible)
+  → Action: Field investigation, cores, FWD testing recommended
+```
+
+**Red Flags for Pavement Data**:
+
+**High Standard Deviation Within Segments**:
+
+- **Possible Causes**:
+  - Inadequate segmentation (algorithm needs more breakpoints - decrease min length)
+  - Data quality issues (outliers, sensor errors, calibration drift)
+  - Real transition zones (structure approaches, overlay limits, base failures)
+  - Mixed conditions (alligator cracking + good sections in same segment)
+- **Investigation**:
+  - Review raw data plot - look for obvious outliers
+  - Check maintenance records - was segment partially treated?
+  - Consider field visit - visual validation of variability
+
+**Very Short Segments** (< 0.3 miles):
+
+- **May Indicate**:
+  - Real transitions (excellent! - bridge approach, overlay edge, drainage change)
+  - Measurement noise (increase min length or gap threshold)
+  - Data collection issues (GPS errors, equipment malfunction)
+- **Action**: Cross-reference with construction plans, satellite imagery, field notes
+
+**Unrealistic Breakpoint Locations**:
+
+- **Examples**:
+  - Mid-bridge breakpoints → Increase gap threshold to span structures
+  - Too frequent changes → Increase min segment length
+  - Missing obvious transitions → Decrease gap threshold, check must-break columns
+  - Breakpoint in middle of recent overlay → Data quality issue or old data
+
+### Validating Results Against Field Knowledge
+
+**✅ Cross-Check with Agency Records**:
+
+- Maintenance history database (treatment dates and types)
+- Construction project locations and limits
+- Visual condition survey data and distress maps
+- Pavement management system existing sections
+- Known problem areas (frequent complaints, high maintenance)
+- Traffic volume changes (new developments, ramp additions)
+
+**Validation Example**:
+
+```text
+Algorithm Result: Breakpoint at MP 15.32
+Agency Records Check:
+  - Construction database: Overlay project ended at MP 15.28 (2018)
+  - Google Earth historical: Clear pavement color change at ~MP 15.3
+  - Maintenance notes: "Transition from 2018 overlay to original 1998 pavement"
+  ✅ VALIDATED: Algorithm correctly identified treatment boundary
+  → Confidence: High - use this breakpoint in final segmentation
+
+Algorithm Result: Breakpoint at MP 23.67
+Agency Records Check:
+  - No construction records near this location
+  - Google Earth: No visible change
+  - Maintenance notes: None
+  - BUT: Plotted data shows clear IRI jump from 90 to 150
+  → Investigate: Possible data quality issue or unrecorded event
+  → Action: Field visit to verify condition change
+  ⚠️ TENTATIVE: Verify before finalizing
+```
+
+**When Algorithm Disagrees with Engineering Judgment**:
+
+1. **Algorithm finds breakpoint, engineer doesn't see transition**:
+   - Check: Is there a statistical change that's not visually obvious?
+   - Consider: Subtle deterioration onset, drainage boundary, base change
+   - Action: Field investigation may reveal hidden issue
+
+2. **Engineer sees obvious transition, algorithm misses it**:
+   - Check: Gap threshold may be too large, min length too long
+   - Consider: Recent construction not yet reflected in condition
+   - Action: Adjust parameters or manually add breakpoint
+
+3. **Breakpoints close but not exact** (within 0.1-0.2 miles):
+   - **Normal**: Acceptable difference due to discrete data points
+   - Action: Use engineering judgment to snap to logical location (structure, intersection)
+
+---
+
+## Pavement-Specific Parameter Guidance
+
+### Gap Threshold Selection for Pavement Data
+
+**Based on Data Collection Method**:
+
+- **High-speed profiler** (Laser/inertial): 0.05-0.10 miles
+  - Modern equipment with GPS, very consistent spacing
+  - Use 0.05 for research-grade data, 0.10 for production surveys
+- **DMI-based surveys**: 0.10-0.15 miles
+  - Distance Measuring Instrument, good precision
+  - Accounts for GPS drift and odometer accuracy
+- **Manual surveys** (distress, visual): 0.20-0.30 miles
+  - Lower precision, judgment-based measurement locations
+- **Network-level screening**: 0.10-0.20 miles
+  - Balance between detail and practicality
+- **Bridge/structure gaps**: Set to structure length + 0.05 miles
+  - Ensures breakpoints at structure boundaries
+
+**Practical Rule**: Set gap threshold to **2-3× your typical data point spacing**
+
+**Example**: If you collect IRI every 0.01 miles (528 feet), set gap threshold = 0.05 miles
+
+---
+
+### Segment Length Constraints for Pavement Projects
+
+**Minimum Length Considerations**:
+
+| Factor | Typical Min Length | Rationale |
+| ------ | ------------------ | --------- |
+| **Maintenance Operations** | 0.3-0.5 miles | Crew setup, equipment mobilization, traffic control |
+| **Pavement Design** | 0.5-1.0 miles | Design section consistency, material testing |
+| **Statistical Validity** | 0.2-0.4 miles | Ensure 30-50+ data points per segment (at 0.01 mi spacing) |
+| **Cost Efficiency** | 0.5-1.0 miles | Minimize per-unit costs, contractor efficiency |
+| **Interstate/Freeway** | 0.5-1.0 miles | High-speed operations, lane closure constraints |
+| **Urban Arterial** | 0.2-0.5 miles | Shorter blocks, more frequent intersections |
+| **Rural Highway** | 1.0-2.0 miles | Longer homogeneous sections typical |
+
+**Maximum Length Considerations**:
+
+| Factor | Typical Max Length | Rationale |
+| ------ | ------------------ | --------- |
+| **Treatment Uniformity** | 2-5 miles | Practical limit for consistent pavement treatment |
+| **Budget Planning** | 3-5 miles | Match typical project funding levels ($2-10M) |
+| **Contractor Mobilization** | 2-4 miles | Optimal project size for competitive bidding |
+| **Condition Monitoring** | 2-3 miles | Manageable section for detailed analysis |
+| **Interstate Standards** | 3-5 miles | Typical resurfacing project limits |
+| **Urban Constraints** | 1-3 miles | Traffic impacts, staging limitations |
+
+---
+
+### Must-Break Columns for Pavement Networks
+
+**Common Attributes to Force Breakpoints**:
+
+1. **Pavement Type** (`PAVEMENT_TYPE`)
+   - Asphalt vs. concrete (completely different deterioration)
+   - Composite pavements (AC over PCC)
+   - **Critical**: Never span across pavement type changes
+
+2. **Functional Class** (`FUNC_CLASS`)
+   - Interstate, arterial, collector (different design standards)
+   - Different traffic, maintenance priorities, user expectations
+
+3. **Number of Lanes** (`NUM_LANES`, `LANE_WIDTH`)
+   - Capacity changes affect traffic loading
+   - Width changes indicate different design periods
+
+4. **Surface Type/Treatment** (`SURF_TYPE`, `LAST_TREATMENT`)
+   - Mill & overlay, chip seal, microsurfacing, slurry seal
+   - Different expected performance and deterioration
+
+5. **Drainage Class** (`DRAINAGE`, `SUBGRADE_TYPE`)
+   - Good, fair, poor drainage (major performance factor)
+   - Subgrade type: clay, sand, rock (affects structural capacity)
+
+6. **Structural Section** (`BASE_TYPE`, `DESIGN_PERIOD`)
+   - Full-depth asphalt vs. flexible pavement
+   - Different base courses (aggregate, stabilized)
+
+7. **Administrative** (`DISTRICT`, `COUNTY`, `JURISDICTION`)
+   - Maintenance responsibility boundaries
+   - Budget allocation units
+
+**Example Configuration for State DOT**:
+
+```text
+Must-Break Columns: ["PAVEMENT_TYPE", "FUNC_CLASS", "LAST_OVERLAY_YEAR"]
+
+Effect:
+- Cannot mix asphalt and concrete sections
+- Cannot mix Interstate and arterial sections  
+- Cannot mix 2018 overlay with 2010 overlay sections
+
+Result: Segments respect both physical and administrative boundaries
+```
+
+---
+
+### Method Selection Guide for Pavement Applications
+
+| Scenario | Primary Method | Alternative | Why |
+| -------- | -------------- | ----------- | --- |
+| **Network screening** (one answer needed) | Single-Objective GA | AASHTO CDA | Fast, clear priorities |
+| **Project alternatives** (show options) | Multi-Objective NSGA-II | - | Visualize tradeoffs |
+| **Meet standard lengths** | Constrained GA | - | Enforce requirements |
+| **Research/validation** | AASHTO CDA | - | Statistical justification |
+| **Compare to existing PMS** | AASHTO CDA | Single-Objective GA | Deterministic comparison |
+| **Quick analysis** | Single-Objective GA | - | Fastest to converge |
+| **High-detail urban** | Multi-Objective NSGA-II | Single-Objective GA | Explore fine segmentation |
+| **Rural Interstate** | Single-Objective GA | Constrained GA | Straightforward optimization |
+| **Grant applications** | AASHTO CDA | - | Defensible methodology |
+| **Asset management** | Constrained GA | Single-Objective GA | Standardized reporting |
+
+---
+
+### Typical Parameter Combinations by Pavement Index
+
+**IRI (Roughness) Data**:
+
+- **Gap Threshold**: 0.1 miles (profiler spacing)
+- **Min Length**: 0.5 miles (project minimum)
+- **Max Length**: 3.0 miles (typical resurfacing)
+- **Must-Break**: PAVEMENT_TYPE, MAJOR_STRUCTURE
+- **Why**: IRI is continuous, reflects both structural and surface condition
+
+**PCI (Condition Index) Data**:
+
+- **Gap Threshold**: 0.15 miles (manual survey precision)
+- **Min Length**: 0.3 miles (visual assessment sections)
+- **Max Length**: 2.0 miles (treatment project size)
+- **Must-Break**: PAVEMENT_TYPE, FUNC_CLASS, LAST_TREATMENT
+- **Why**: PCI includes multiple distress types, more variability
+
+**Rutting Depth Data**:
+
+- **Gap Threshold**: 0.08 miles (automated rut measurement)
+- **Min Length**: 0.5 miles (structural sections)
+- **Max Length**: 2.5 miles (rehabilitation limits)
+- **Must-Break**: PAVEMENT_TYPE, NUM_LANES, BASE_TYPE
+- **Why**: Rutting is structural - respect design sections
+
+**Deflection (FWD) Data**:
+
+- **Gap Threshold**: 0.25 miles (FWD testing spacing, typically 500-1000 ft)
+- **Min Length**: 0.5 miles (structural analysis sections)
+- **Max Length**: 2.0 miles (rehabilitation planning)
+- **Must-Break**: BASE_TYPE, PAVEMENT_TYPE, SUBGRADE_CLASS
+- **Why**: Sparser data, structural focus, respect layer boundaries
 
 ---
 
@@ -676,6 +1245,92 @@ If you need a simple CSV of breakpoints for GIS/tools, export to Excel or parse 
 ---
 
 ## Troubleshooting
+
+### Pavement Data Specific Issues
+
+**❌ "Segments Don't Match Field Observations"**:
+
+- **Diagnosis**: Algorithm breakpoints don't align with known pavement features
+- **Possible Causes**:
+  - Must-Break Columns not capturing treatment boundaries
+  - Data is outdated and doesn't reflect recent rehabilitation
+  - Gap threshold too large, spanning structures or transitions
+  - Data quality issues (outliers, sensor errors) misleading algorithm
+- **Solutions**:
+  - Add "LAST_TREATMENT_YEAR" or "OVERLAY_DATE" to Must-Break Columns
+  - Verify data currency - when was it collected vs. when was construction?
+  - Reduce gap threshold to 0.05-0.08 miles for sensitive detection
+  - Plot raw data - look for obvious outliers or equipment issues
+  - Field visit to validate actual pavement condition
+
+**❌ "Too Many Short Segments on Good Pavement"**:
+
+- **Diagnosis**: Algorithm creating micro-segments (< 0.3 mi) where pavement appears uniform
+- **Possible Causes**:
+  - Algorithm oversensitive to normal data variation/noise
+  - High-precision equipment detecting real but minor variations
+  - Data collection equipment calibration changed mid-survey
+- **Solutions**:
+  - Increase min_length to 0.5-1.0 miles (practical project minimum)
+  - Use AASHTO CDA with lower α (e.g., 0.01) for more conservative detection
+  - Check if newer equipment has higher precision than historical data
+  - Consider if micro-segments align with real features (patches, joints)
+  - Review data collection report for equipment/procedure changes
+
+**❌ "Missing Known Treatment Boundaries"**:
+
+- **Diagnosis**: Recent overlay limit not detected as breakpoint
+- **Possible Causes**:
+  - Treatment boundary not yet evident in selected condition index
+  - New pavement still performing like old (immediate post-construction)
+  - Data collected before treatment was completed
+- **Solutions**:
+  - Add "CONSTRUCTION_YEAR" column as Must-Break attribute
+  - Manually add breakpoint at known project limit
+  - Wait 6-12 months for performance difference to emerge
+  - Use different index (IRI changes faster than cracking)
+- **Note**: Similar condition across treatment boundary is OK if treatments are performing well!
+
+**❌ "Breakpoint at Every Bridge"**:
+
+- **Diagnosis**: Algorithm placing breakpoints at each bridge approach
+- **Possible Causes**:
+  - Gap threshold too sensitive to bridge data gaps
+  - Bridge approach slabs actually different from mainline
+  - GPS positioning errors near overpasses
+- **Solutions**:
+  - Increase gap threshold to 0.2-0.3 miles (span short bridges)
+  - Pre-process data to interpolate over short structures (< 0.1 mi)
+  - Add "BRIDGE_ID" column, filter out approach data
+  - Consider: May actually want breaks at major river crossings (different maintenance)
+  - Decision: Small bridges - span them; major structures - break there
+
+**❌ "Results Vary Between Multiple Runs" (Genetic Algorithm methods)**:
+
+- **Diagnosis**: Running same data/parameters gives slightly different results
+- **Expected Behavior**: Genetic algorithms include randomness by design
+- **Typical Impact**: Minor differences in breakpoint locations (usually < 0.2 miles)
+- **Solutions**:
+  - Increase generations (200-300) for better convergence
+  - Run 3-5 times, look for consistent major breakpoints
+  - Use AASHTO CDA if deterministic results required (research, legal)
+  - Accept minor variation - focus on major trends
+- **Best Practice**: Run multiple times, validate consistent breakpoints against field knowledge
+
+**❌ "IRI Shows Breakpoint, But Cracking Data Doesn't"**:
+
+- **Diagnosis**: Different indices showing different segmentation
+- **Explanation**: Normal! Different distress types progress differently
+  - IRI: Responds to roughness (structural + surface)
+  - Cracking: Surface distress only
+  - Rutting: Structural loading response
+- **Approach**:
+  - Choose index matching your treatment decision (surface vs. structural)
+  - For comprehensive analysis, run segmentation on multiple indices
+  - Overlay results to identify sections needing different treatment types
+  - Example: High IRI + low cracking → structural issue (milling won't help)
+
+---
 
 ### Common Data Issues
 

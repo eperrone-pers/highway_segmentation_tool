@@ -19,7 +19,82 @@ For the run spec format, see:
 - `src/highway_segmentation_run_spec_schema.json`
 - `docs/CLI_USAGE.md`
 
-## 🎯 **Overview**
+## **Table of Contents**
+
+- [Quick Start](#quick-start)
+- [Overview](#overview)
+- [Implementation Scope](#implementation-scope---phase-1)
+- [JSON Schema Structure](#json-schema-structure)
+- [Key Design Decisions](#key-design-decisions)
+- [Implementation Guidance](#implementation-guidance)
+- [Field Quick Reference](#field-quick-reference)
+- [Common Pitfalls](#common-pitfalls)
+- [Validation & Testing](#validation--testing)
+- [Next Steps](#next-steps)
+
+## **Quick Start**
+
+**For developers who just need the basics:**
+
+### **Authoritative Source**
+
+- Schema definition: `src/highway_segmentation_results_schema.json`
+- This document is a human-readable guide that mirrors the schema
+
+### **Top-Level Structure**
+
+```json
+{
+  "analysis_metadata": { /* Analysis context, timestamps, summary stats */ },
+  "input_parameters": { /* Method config, parameters, route processing */ },
+  "route_results": [ /* Array of per-route analysis results */ ]
+}
+```
+
+### **Key Field Paths**
+
+| What You Need | Field Path |
+| --------------- | ------------ |
+| Optimization results | `route_results[i].processing_results.pareto_points` |
+| Breakpoint locations | `pareto_points[j].segmentation.breakpoints` |
+| Segment details | `pareto_points[j].segmentation.segment_details` |
+| Must-break columns config | `input_parameters.route_processing.must_break_columns` |
+| Attribute break locations | `route_results[i].input_data_analysis.attribute_break_analysis` |
+| Analysis method | `analysis_metadata.analysis_method` |
+
+### **Single vs Multi-Objective Results**
+
+| Aspect | Single-Objective | Multi-Objective |
+| -------- | ------------------ | ------------------ |
+| `pareto_points` length | 1 | 2+ |
+| `objective_values` length | 1 | 2+ |
+| Use case | Find one best solution | Explore trade-off solutions |
+| Method keys | `single`, `aashto_cda`, `constrained`, `constrained_deb` | `multi` |
+
+### **Common Reading Tasks**
+
+**Reading segmentation results:**
+
+```python
+for route in results["route_results"]:
+    route_id = route["route_info"]["route_id"]
+    for point in route["processing_results"]["pareto_points"]:
+        breakpoints = point["segmentation"]["breakpoints"]
+        objectives = point["objective_values"]
+```
+
+**Checking for must-break columns:**
+
+```python
+must_break = results["input_parameters"]["route_processing"].get("must_break_columns")
+if must_break:  # Can be array, null, or omitted
+    # Must-break columns were configured
+    for route in results["route_results"]:
+        if "attribute_break_analysis" in route["input_data_analysis"]:
+            breaks = route["input_data_analysis"]["attribute_break_analysis"]
+```
+
+## **Overview**
 
 This document specifies the JSON format for Highway Segmentation analysis results. The format is designed for immediate implementation with essential features, while preserving extensibility for future enhancements.
 
@@ -38,7 +113,7 @@ This document specifies the JSON format for Highway Segmentation analysis result
 - Advanced performance metrics and convergence tracking
 - Unique analysis ID generation and cross-analysis tracking
 
-## 📋 **Implementation Scope - Phase 1**
+## **Implementation Scope - Phase 1**
 
 ### **Essential Features** *(Implemented Now)*
 
@@ -70,7 +145,7 @@ Notes:
 - `route_filtering_applied`: Whether route selection was used
 - `total_routes_in_source`: Routes available in input data
 - Route processing configuration and selected route list
-- `must_break_columns` (optional): When configured, lists the input columns that force mandatory breakpoints on attribute changes.
+- `must_break_columns` (optional, in `input_parameters.route_processing`): Array of input column names or `null`. When set to an array, lists the input columns that force mandatory breakpoints on attribute changes. When `null` or omitted, no attribute-based must-breaks are applied.
 
 ### **Input Parameters** (*Complete Reproducibility*)
 
@@ -213,7 +288,7 @@ Constrained/single-objective methods typically emit a single point; multi-object
 
 ---
 
-## 🏗️ **JSON Schema Structure**
+## **JSON Schema Structure**
 
 ### **Top-Level Architecture**
 
@@ -231,7 +306,9 @@ Constrained/single-objective methods typically emit a single point; multi-object
     "method_specific_analysis_stats": { /* Optional method-specific statistics */ },
     "input_parameters": { /* Complete reproducibility data */ },
     "route_results": [ /* Array of per-route results */ ]
-  }
+  },
+  
+  "additionalProperties": false
 }
 ```
 
@@ -383,7 +460,12 @@ Constrained/single-objective methods typically emit a single point; multi-object
         },
         "route_filtering_applied": {"type": "boolean"},
         "total_routes_in_source": {"type": "integer", "minimum": 1},
-        "total_routes_processed": {"type": "integer", "minimum": 1}
+        "total_routes_processed": {"type": "integer", "minimum": 1},
+        "must_break_columns": {
+          "type": ["array", "null"],
+          "items": {"type": "string", "minLength": 1},
+          "description": "Optional list of attribute columns that force mandatory breakpoints when values change (null or omitted = no attribute must-breaks)"
+        }
       }
     }
   }
@@ -494,6 +576,45 @@ Constrained/single-objective methods typically emit a single point; multi-object
               },
               "total_analyzable_length": {"type": "number", "minimum": 0}
             }
+          },
+          "attribute_break_analysis": {
+            "type": "object",
+            "title": "Attribute-Based Must-Break Analysis (Optional)",
+            "description": "Optional section present only when must-break columns were configured. Describes mandatory breakpoints caused by attribute value changes.",
+            "properties": {
+              "columns_used": {
+                "type": "array",
+                "items": {"type": "string", "minLength": 1},
+                "description": "List of must-break column headers found in input data and used to compute attribute breaks"
+              },
+              "breakpoints": {
+                "type": "array",
+                "items": {"type": "number"},
+                "description": "List of x breakpoints caused by attribute changes (mandatory)"
+              },
+              "break_events": {
+                "type": "array",
+                "description": "Deterministic list of attribute-change events at each x location",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "x": {"type": "number"},
+                    "changed_columns": {
+                      "type": "array",
+                      "items": {"type": "string", "minLength": 1}
+                    },
+                    "signature": {"type": "string"}
+                  },
+                  "additionalProperties": true
+                }
+              },
+              "total_attribute_breaks": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Count of attribute breakpoints"
+              }
+            },
+            "additionalProperties": true
           }
         }
       },
@@ -561,7 +682,7 @@ Constrained/single-objective methods typically emit a single point; multi-object
 
 ---
 
-## 🔧 **Key Design Decisions**
+## **Key Design Decisions**
 
 ### **Unified Pareto Architecture**
 
@@ -601,7 +722,7 @@ Constrained/single-objective methods typically emit a single point; multi-object
 
 ---
 
-## 🎯 **Implementation Guidance**
+## **Implementation Guidance**
 
 ### **Phase 2 Integration Points**
 
@@ -736,7 +857,191 @@ GENETIC_ALGORITHM_METHOD = OptimizationMethod(
 
 ---
 
-## ✅ **Validation & Testing**
+## **Field Quick Reference**
+
+### **Top-Level Fields**
+
+| Field Path | Type | Required? | Description |
+| ------------ | ------ | ----------- | ------------- |
+| `analysis_metadata` | object | Yes | Analysis context, timestamps, and aggregate summaries |
+| `analysis_metadata.analysis_method` | string | Yes | Method key (e.g., `"single"`, `"multi"`, `"aashto_cda"`, `"constrained"`, `"constrained_deb"`) |
+| `analysis_metadata.analysis_status` | enum | Yes | One of: `"completed"`, `"failed"`, `"partial"`, `"interrupted"` |
+| `analysis_metadata.analysis_summary` | object | Yes | Aggregated statistics across all routes |
+| `method_specific_analysis_stats` | object | No | Optional method-specific performance metrics |
+| `input_parameters` | object | Yes | Complete reproducibility data (method config + parameters) |
+| `route_results` | array | Yes | Per-route analysis results (1+ routes) |
+
+### **Input Parameters Fields**
+
+| Field Path | Type | Required? | Description |
+| ------------ | ------ | ----------- | ------------- |
+| `input_parameters.optimization_method_config.method_key` | string | Yes | Optimization method identifier |
+| `input_parameters.method_parameters` | object | Yes | Complete parameter set for the method (extensible) |
+| `input_parameters.route_processing.route_mode` | enum | Yes | Either `"single_route"` or `"multi_route"` |
+| `input_parameters.route_processing.must_break_columns` | array/null | No | Attribute columns forcing breakpoints (array, null, or omitted) |
+| `input_parameters.route_processing.selected_routes` | array | Yes | List of route IDs that were processed |
+
+### **Route Results Fields**
+
+| Field Path | Type | Required? | Description |
+| ------------ | ------ | ----------- | ------------- |
+| `route_results[].route_info.route_id` | string | Yes | Route identifier |
+| `route_results[].input_data_analysis` | object | Yes | Data summary, gaps, mandatory segments, attribute breaks |
+| `route_results[].input_data_analysis.attribute_break_analysis` | object | No | Present only when must-break columns configured |
+| `route_results[].processing_results.pareto_points` | array | Yes | Solution set (1 point for single-objective, 2+ for multi-objective) |
+| `pareto_points[].point_id` | integer | Yes | Unique identifier for this Pareto point (0-indexed) |
+| `pareto_points[].objective_values` | array | Yes | Objective function values (1 value = single-objective, 2+ = multi-objective) |
+| `pareto_points[].segmentation.breakpoints` | array | Yes | All breakpoints including mandatory + optimization-generated |
+| `pareto_points[].segmentation.segment_details` | array | No | Per-segment statistics (length, data points, y-value stats) |
+
+### **Must-Break Columns Fields**
+
+| Field Path | Type | Description |
+| ------------ | ------ | ------------- |
+| `input_parameters.route_processing.must_break_columns` | array/null | Configuration: which columns force breakpoints (can be null or omitted) |
+| `route_results[].input_data_analysis.attribute_break_analysis.columns_used` | array | Columns that were actually used (found in data) |
+| `route_results[].input_data_analysis.attribute_break_analysis.breakpoints` | array | X-coordinates of mandatory attribute breakpoints |
+| `route_results[].input_data_analysis.attribute_break_analysis.break_events` | array | Details of each attribute change event |
+| `route_results[].input_data_analysis.attribute_break_analysis.total_attribute_breaks` | integer | Count of attribute-driven breakpoints |
+
+---
+
+## **Common Pitfalls**
+
+### **1. Forgetting Mandatory Breakpoints**
+
+❌ **Wrong:** Optimization removes mandatory breakpoints
+
+```json
+"mandatory_breakpoints": [0.0, 15.697],
+"segmentation": {
+  "breakpoints": [0.0, 5.2, 10.1]  // Missing 15.697!
+}
+```
+
+✅ **Correct:** All mandatory breakpoints must be included
+
+```json
+"mandatory_breakpoints": [0.0, 15.697],
+"segmentation": {
+  "breakpoints": [0.0, 5.2, 10.1, 15.697]  // Includes all mandatory
+}
+```
+
+### **2. Must-Break Columns: Null vs Omitted vs Empty Array**
+
+All three mean "no attribute must-breaks":
+
+```json
+// Option 1: null
+"must_break_columns": null
+
+// Option 2: omitted entirely
+"route_processing": {
+  "route_mode": "single_route",
+  // must_break_columns not present
+}
+
+// Option 3: empty array (treated same as null)
+"must_break_columns": []
+```
+
+When checking for must-breaks:
+
+```python
+must_break = params.get("must_break_columns")
+if must_break:  # Checks for non-null, non-empty
+    # Must-break is configured
+```
+
+### **3. Single-Objective Still Uses Array**
+
+❌ **Wrong:** Expecting single object for single-objective
+
+```python
+result = route["processing_results"]["pareto_point"]  # No such field!
+```
+
+✅ **Correct:** Always an array, even with 1 element
+
+```python
+points = route["processing_results"]["pareto_points"]  # Array
+if len(points) == 1:
+    # Single-objective result
+    breakpoints = points[0]["segmentation"]["breakpoints"]
+```
+
+### **4. Attribute Break Analysis is Optional**
+
+❌ **Wrong:** Always accessing attribute_break_analysis
+
+```python
+breaks = route["input_data_analysis"]["attribute_break_analysis"]  # KeyError if not present!
+```
+
+✅ **Correct:** Check existence first
+
+```python
+if "attribute_break_analysis" in route["input_data_analysis"]:
+    breaks = route["input_data_analysis"]["attribute_break_analysis"]
+    # Process attribute breaks
+```
+
+### **5. Method Keys are Strings, Not Enums**
+
+❌ **Wrong:** Hard-coding method key validation
+
+```python
+if method not in ["single", "multi", "aashto_cda"]:
+    raise ValueError("Invalid method")  # Fails for new methods!
+```
+
+✅ **Correct:** Method keys are extensible
+
+```python
+# Method key is a free string - any configured method is valid
+method = metadata["analysis_method"]  # Trust the configuration system
+```
+
+### **6. Gap vs Attribute Breakpoints**
+
+**Gap breakpoints:** Created when data has missing x-ranges
+
+```json
+"gap_analysis": {
+  "gap_segments": [{"start": 5.0, "end": 7.0}],
+  "total_gaps": 1
+}
+```
+
+**Attribute breakpoints:** Created when must-break column values change
+
+```json
+"attribute_break_analysis": {
+  "breakpoints": [3.2, 7.1],  // Where pavement_type changed
+  "total_attribute_breaks": 2
+}
+```
+
+Both types are **mandatory** and must appear in final `segmentation.breakpoints`.
+
+### **7. Segment Details May Be Absent**
+
+The `segment_details` array is optional in the schema:
+
+```python
+segmentation = point["segmentation"]
+if "segment_details" in segmentation:
+    for seg in segmentation["segment_details"]:
+        # Process detailed segment statistics
+else:
+    # Use basic segmentation info only
+    lengths = segmentation["segment_lengths"]
+```
+
+---
+
+## **Validation & Testing**
 
 ### **Schema Validation Requirements**
 
@@ -761,7 +1066,7 @@ GENETIC_ALGORITHM_METHOD = OptimizationMethod(
 
 ---
 
-## 📅 **Next Steps**
+## **Next Steps**
 
 1. **Create sample JSON files** validating the schema design (Step 1.5.6)
 2. **Implement JSON Schema validation** in Python code
