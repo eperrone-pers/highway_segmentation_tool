@@ -1,9 +1,6 @@
-"""
-UI Builder Module for Highway Segmentation GA
+"""GUI widget construction for the Highway Segmentation application.
 
-This module handles the creation and configuration of all GUI widgets,
-separating UI construction logic from the main application class to improve
-organization and maintainability.
+Separates widget creation logic from the main application class.
 """
 
 import tkinter as tk
@@ -14,48 +11,37 @@ from value_parsing import parse_optional_float, parse_optional_int
 from logger import create_logger
 from route_utils import ROUTE_COLUMN_NONE_SENTINEL
 
-# Create UI config instance
 ui_config = UIConfig()
 
 
 class UIBuilder:
-    """
-    Handles the creation and configuration of GUI widgets for the Highway Segmentation application.
-    
-    This class separates widget creation logic from the main application class,
-    following the Builder pattern to improve code organization and maintainability.
-    """
-    
+    """Builds and configures all Tkinter widgets for the main application window."""
+
     def __init__(self, main_app):
-        """
-        Initialize the UI builder with a reference to the main application.
-        
+        """Initialize the UI builder.
+
         Args:
-            main_app: Reference to the main HighwaySegmentationGUI instance
+            main_app: Reference to the main HighwaySegmentationGUI instance.
         """
         self.app = main_app
     
     def create_main_layout(self):
         """Create the main application layout structure."""
-        # Configure root window
         self.app.root.grid_rowconfigure(0, weight=1)
         self.app.root.columnconfigure(0, weight=1)
-        
-        # Create main frame
+
         main_frame = ttk.Frame(self.app.root, padding=ui_config.main_padding)
         main_frame.grid(row=0, column=0, sticky="nsew")
-        # Configure grid weights for responsive layout
         main_frame.grid_rowconfigure(1, weight=1)
         main_frame.grid_columnconfigure(0, weight=0)  # Left pane: auto-size to fit content
-        main_frame.grid_columnconfigure(1, weight=0)  # Scrollbar column (fixed width when visible)  
-        main_frame.grid_columnconfigure(2, weight=1)  # Right pane gets all remaining horizontal space
-        
-        # Create title
-        title_label = ttk.Label(main_frame, text="Highway Segmentation Tool", 
-                               font=("Arial", 16, "bold"))
-        title_label.grid(row=0, column=0, columnspan=ui_config.title_columnspan, 
-                        pady=ui_config.standard_padding_y)
-        
+        main_frame.grid_columnconfigure(1, weight=0)  # Scrollbar column (fixed width when visible)
+        main_frame.grid_columnconfigure(2, weight=1)  # Right pane gets all remaining space
+
+        title_label = ttk.Label(main_frame, text="Highway Segmentation Tool",
+                                font=("Arial", 16, "bold"))
+        title_label.grid(row=0, column=0, columnspan=ui_config.title_columnspan,
+                         pady=ui_config.standard_padding_y)
+
         return main_frame
     
     def create_scrollable_left_pane(self, parent):

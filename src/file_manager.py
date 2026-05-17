@@ -79,8 +79,9 @@ class FileManager:
             # Extract and display just the filename
             filename = os.path.basename(full_path)
             
-            # Create tooltip helper for the entry widget
             class ToolTip:
+                """Simple hover tooltip for a Tkinter widget."""
+
                 def __init__(self, widget, text=''):
                     self.widget = widget
                     self.text = text
@@ -111,10 +112,8 @@ class FileManager:
                 def update_text(self, new_text):
                     self.text = new_text
             
-            # Update display with filename only
             self.app.data_file.set(filename)
-            
-            # Add tooltip showing full path
+
             if hasattr(self.app, 'data_entry'):
                 if not hasattr(self.app, '_data_tooltip'):
                     self.app._data_tooltip = ToolTip(self.app.data_entry, full_path)

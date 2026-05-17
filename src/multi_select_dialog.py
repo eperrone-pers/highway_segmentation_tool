@@ -21,10 +21,17 @@ from tkinter import ttk
 
 @dataclass(frozen=True)
 class MultiSelectDialogResult:
+    """Return value from a MultiSelectDialog interaction."""
+
     selected: List[str]
 
 
 class MultiSelectDialog:
+    """Modal Tkinter dialog for multi-item selection with search and bulk actions.
+
+    Use the classmethod `ask()` for the typical blocking usage pattern.
+    """
+
     def __init__(
         self,
         parent: tk.Misc,
@@ -51,7 +58,6 @@ class MultiSelectDialog:
         self.dialog.transient(parent)
         self.dialog.grab_set()
 
-        # Container
         main = ttk.Frame(self.dialog, padding="10")
         main.pack(fill="both", expand=True)
         main.columnconfigure(0, weight=1)
@@ -59,7 +65,6 @@ class MultiSelectDialog:
 
         ttk.Label(main, text=prompt).grid(row=0, column=0, sticky="w")
 
-        # Search box
         self.search_var = tk.StringVar(value="")
         search_row = ttk.Frame(main)
         search_row.grid(row=1, column=0, sticky="ew", pady=(6, 6))
@@ -70,7 +75,6 @@ class MultiSelectDialog:
         clear_btn = ttk.Button(search_row, text="Clear", command=self._clear_search)
         clear_btn.grid(row=0, column=1, padx=(8, 0))
 
-        # Status + bulk actions
         actions = ttk.Frame(main)
         actions.grid(row=2, column=0, sticky="ew", pady=(0, 6))
         actions.columnconfigure(2, weight=1)
@@ -81,7 +85,6 @@ class MultiSelectDialog:
         self.status_var = tk.StringVar(value="None")
         ttk.Label(actions, textvariable=self.status_var, foreground="blue").grid(row=0, column=2, sticky="e")
 
-        # Listbox with scrollbar
         list_frame = ttk.Frame(main)
         list_frame.grid(row=3, column=0, sticky="nsew")
         list_frame.columnconfigure(0, weight=1)
@@ -96,7 +99,6 @@ class MultiSelectDialog:
         scrollbar.grid(row=0, column=1, sticky="ns")
         self.listbox.configure(yscrollcommand=scrollbar.set)
 
-        # Buttons
         btns = ttk.Frame(main)
         btns.grid(row=4, column=0, sticky="ew", pady=(10, 0))
         btns.columnconfigure(0, weight=1)
@@ -104,7 +106,6 @@ class MultiSelectDialog:
         ttk.Button(btns, text="Cancel", command=self._cancel).grid(row=0, column=1, padx=(6, 0))
         ttk.Button(btns, text="OK", command=self._ok).grid(row=0, column=2, padx=(6, 0))
 
-        # Bindings
         self.dialog.protocol("WM_DELETE_WINDOW", self._cancel)
         self.search_var.trace_add("write", lambda *_: self._apply_filter())
         self.search_entry.bind("<Return>", self._on_search_enter)
@@ -140,6 +141,20 @@ class MultiSelectDialog:
         width: int = 520,
         height: int = 560,
     ) -> Optional[List[str]]:
+        """Open a modal multi-select dialog and return the chosen items.
+
+        Args:
+            parent: Parent Tkinter widget.
+            title: Dialog window title.
+            items: All available items to display.
+            selected: Pre-selected items (optional).
+            prompt: Instruction text shown above the list.
+            width: Initial dialog width in pixels.
+            height: Initial dialog height in pixels.
+
+        Returns:
+            List of selected item strings, or None if the user cancelled.
+        """
         dlg = cls(
             parent,
             title=title,
