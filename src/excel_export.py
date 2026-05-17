@@ -1,7 +1,4 @@
-"""
-JSON to Excel Export Module
-Comprehensive export of highway segmentation analysis results to Excel format
-"""
+"""Export highway segmentation JSON results to multi-sheet Excel workbooks."""
 
 import json
 import os

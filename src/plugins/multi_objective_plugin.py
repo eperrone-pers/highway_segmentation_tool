@@ -1,33 +1,7 @@
-"""
-Multi-Objective Optimization Plugin - Highway Segmentation GA
+"""NSGA-II multi-objective plugin for extracting method-specific statistics.
 
-Self-contained plugin for extracting method-specific statistics from 
-multi-objective genetic algorithm (NSGA-II) optimization results.
-
-This plugin handles dual-objective optimization where solutions balance:
-- Objective 1: Minimize deviation from target segment lengths (data fit)
-- Objective 2: Minimize number of segments (solution simplicity)
-
-Key Features:
-- Pareto front analysis (size, composition, dominance)
-- Multi-objective performance metrics (hypervolume, spacing, diversity)
-- Solution trade-off analysis (compromise vs specialized solutions)
-- Convergence information specific to multi-objective optimization
-- Cross-route Pareto front comparison and statistics
-
-Usage:
-    # Auto-registered via plugin discovery
-    from plugins.multi_objective_plugin import MultiObjectivePlugin
-    
-    # Or manual registration
-    from extensible_results_manager import JsonMethodRegistry
-    registry = JsonMethodRegistry()
-    registry.register_plugin(MultiObjectivePlugin())
-
-Author: Highway Segmentation GA Team
-Plugin Version: 1.0.0
-Compatible Methods: multi_objective, multiobjective, multi-obj, nsga2
-Date: April 2026
+Handles Pareto front analysis, multi-objective performance metrics, and
+cross-route aggregation for dual-objective optimization results.
 """
 
 from typing import Dict, List, Any

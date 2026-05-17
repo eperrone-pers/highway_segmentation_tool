@@ -1,36 +1,7 @@
-"""
-Single-Objective Optimization Plugin - Highway Segmentation GA
+"""Single-objective GA plugin for extracting method-specific statistics.
 
-Self-contained plugin for extracting method-specific statistics from 
-single-objective genetic algorithm optimization results.
-
-This plugin demonstrates the extensible architecture pattern where each
-optimization method is completely self-contained with its own:
-- Custom statistics extraction logic
-- Method-specific data processing  
-- Analysis summary contributions
-- Independent testing and validation
-
-Key Features:
-- Basic performance metrics (fitness, generations, population size)
-- Solution quality assessment (segment count, total length)
-- Convergence information (final generation, improvement tracking)
-- Cross-route aggregation and summary statistics
-- Processing time and efficiency metrics
-
-Usage:
-    # Auto-registered via plugin discovery
-    from plugins.single_objective_plugin import SingleObjectivePlugin
-    
-    # Or manual registration
-    from extensible_results_manager import JsonMethodRegistry
-    registry = JsonMethodRegistry()
-    registry.register_plugin(SingleObjectivePlugin())
-
-Author: Highway Segmentation GA Team
-Plugin Version: 1.0.0
-Compatible Methods: single_objective, singleobjective, single-obj
-Date: April 2026
+Handles fitness metrics, convergence info, and cross-route aggregation for
+single-objective (and constrained) optimization results.
 """
 
 from typing import Dict, List, Any

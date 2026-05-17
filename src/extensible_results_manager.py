@@ -1,42 +1,9 @@
-"""
-Extensible Results Manager - Highway Segmentation GA
+"""Plugin-based JSON results management for Highway Segmentation GA.
 
-Modern, plugin-based results management system focused on JSON output with
-method-specific extensibility. This is the future-focused replacement for 
-legacy non-schema results outputs.
-
-Key Features:
-- JSON-first architecture with schema compliance
-- Method plugin system for custom statistics
-- Built-in support for AnalysisResult framework  
-- Type-safe, modern Python design
-- Extensible without core system modification
-- Analysis-wide aggregation with method contributions
-
-Architecture:
-- ExtensibleJsonResultsManager: Core JSON generation with plugin support
-- AnalysisMethodPlugin: Base class for method-specific extensions
-- JsonMethodRegistry: Singleton registry for plugin management
-- Built-in plugins for standard methods (single/multi/constrained)
-
-Usage:
-    # Standard usage
-    manager = ExtensibleJsonResultsManager()
-    output_path = manager.save_analysis_results(analysis_results, "results.json")
-    
-    # Custom method extension
-    class MyMethodPlugin(AnalysisMethodPlugin):
-        def supports_method(self, method_key: str) -> bool:
-            return method_key == "my_custom_method"
-        
-        def extract_custom_statistics(self, result: AnalysisResult) -> Dict[str, Any]:
-            return {"custom_metrics": {"efficiency": 0.92}}
-    
-    # Register and use
-    JsonMethodRegistry().register_plugin(MyMethodPlugin())
-
-Author: Highway Segmentation GA Team
-Phase: 1.95.2 - Extensible JSON Results System
+Core types:
+- ExtensibleJsonResultsManager: generates schema-compliant JSON with plugin support
+- AnalysisMethodPlugin: base class for method-specific statistics extensions
+- JsonMethodRegistry: singleton registry for plugin discovery and dispatch
 Date: April 2026
 """
 
