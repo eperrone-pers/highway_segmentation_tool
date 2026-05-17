@@ -31,7 +31,6 @@ import time
 import random
 import numpy as np
 
-# Import base interface and utilities
 from ..base import AnalysisMethodBase, AnalysisResult
 from ..utils.ga_utilities import (
     crossover_with_retries,
@@ -39,8 +38,6 @@ from ..utils.ga_utilities import (
     analyze_population_diversity,
 )
 from ..utils.segment_metrics import average_length_excluding_gap_segments
-
-# Import GA class and configuration
 from ..utils.genetic_algorithm import HighwaySegmentGA
 from config import get_optimization_method
 
@@ -95,7 +92,6 @@ class ConstrainedMethod(AnalysisMethodBase):
         """
         start_time = time.time()
         
-        # Extract callback functions and parameters from kwargs
         input_parameters = kwargs.get('input_parameters', None)
         log_callback = kwargs.get('log_callback', None)
         stop_callback = kwargs.get('stop_callback', None)
@@ -106,30 +102,25 @@ class ConstrainedMethod(AnalysisMethodBase):
                 "Use analyze_route_gaps(...) to build one from a DataFrame."
             )
         
-        # Logging setup
         def log(message: str):
             if log_callback:
                 log_callback(message)
             else:
                 print(message)
         
-        # Get method configuration and merge with user parameters
         method_config = get_optimization_method('constrained')
         param_defaults = {param.name: param.default_value for param in method_config.parameters}
-        
-        # Merge parameters: defaults <- input_parameters <- kwargs
+
+        # Merge: defaults → input_parameters → direct kwargs
         parameters = param_defaults.copy()
         if input_parameters:
             parameters.update(input_parameters)
-        # Add any additional kwargs (excluding callback functions)
-        method_params = {k: v for k, v in kwargs.items() 
+        method_params = {k: v for k, v in kwargs.items()
                         if k not in ['input_parameters', 'log_callback', 'stop_callback']}
         parameters.update(method_params)
-        
-        # Extract parameters with descriptive names
+
         min_length = parameters['min_length']
         max_length = parameters['max_length']
-        # gap_threshold now comes as direct parameter (framework level)
         population_size = int(parameters['population_size'])
         num_generations = int(parameters['num_generations'])
         crossover_rate = parameters['crossover_rate']
@@ -139,13 +130,11 @@ class ConstrainedMethod(AnalysisMethodBase):
         penalty_weight = parameters['penalty_weight']
         length_tolerance = parameters['length_tolerance']
         cache_clear_interval = int(parameters['cache_clear_interval'])
-        # Segment caching always enabled for performance
-        
+
         log("Initializing constrained single-objective GA...")
         log(f"Target: {target_avg_length:.2f} mile average segments (±{length_tolerance:.2f} tolerance)")
         log(f"Parameters: {population_size} individuals, {num_generations} generations")
         
-        # Initialize genetic algorithm
         ga = HighwaySegmentGA(
             data, x_column, y_column,
             min_length=min_length,
@@ -156,9 +145,8 @@ class ConstrainedMethod(AnalysisMethodBase):
             gap_threshold=gap_threshold
         )
         
-        # Enable segment caching for improved performance
         ga.enable_segment_cache_mode(True)
-        
+
         # ===== GAP-AWARE TARGET SEGMENT CALCULATION =====
         route_data = data.route_data
         total_distance = route_data[x_column].max() - route_data[x_column].min()
@@ -173,8 +161,7 @@ class ConstrainedMethod(AnalysisMethodBase):
         # ===== POPULATION INITIALIZATION =====
         log("Generating diverse initial population...")
         population = ga.generate_diverse_initial_population()
-        
-        # Validate and enforce constraints on initial population
+
         population = [
             ga._enforce_constraints(chrom) if not ga.validate_chromosome(chrom) else chrom 
             for chrom in population
@@ -191,21 +178,18 @@ class ConstrainedMethod(AnalysisMethodBase):
         generation_times = []
         
         for generation in range(num_generations):
-            # Check for early termination
             if stop_callback and stop_callback():
                 log(f"\\n[STOPPED] Constrained optimization stopped by user at generation {generation+1}")
                 break
             
             gen_start_time = time.time()
             
-            # Update progress display
             progress_interval = max(1, num_generations // 50)
             if generation % progress_interval == 0:
                 progress = int((generation / num_generations) * 50)
                 bar = "=" * progress + "-" * (50 - progress)
                 log(f"\\rProgress: [{bar}] {generation}/{num_generations} generations")
             
-            # Evaluate population with constrained fitness
             fitness_data = [
                 self._constrained_fitness(chrom, ga, target_avg_length, length_tolerance, penalty_weight)
                 for chrom in population
@@ -216,12 +200,10 @@ class ConstrainedMethod(AnalysisMethodBase):
             avg_lengths = [f[2] for f in fitness_data]
             length_deviations = [f[3] for f in fitness_data]
             
-            # Track best solution
             best_idx = np.argmax(constrained_fitnesses)
             best_fitness_history.append(constrained_fitnesses[best_idx])
             avg_length_history.append(avg_lengths[best_idx])
             
-            # Periodic detailed reporting
             if (generation + 1) % 50 == 0:
                 diversity_stats = analyze_population_diversity(population)
                 avg_length_pop = np.mean(avg_lengths)
@@ -233,10 +215,8 @@ class ConstrainedMethod(AnalysisMethodBase):
                 log(f"  Population avg length: {avg_length_pop:.3f}, compliance: {target_compliance:.1%}")
                 log(f"  Diversity: {diversity_stats['unique_segment_counts']} types, Range: {diversity_stats['min_segments']}-{diversity_stats['max_segments']} segments")
             
-            # Standard genetic algorithm operations with elitism
             parents = self._select_parents_tournament(population, constrained_fitnesses, population_size // 2)
-            
-            # Generate offspring through crossover
+
             offspring = []
             attempts = 0
             max_attempts = population_size * 10  # High guardrail; should not trigger in normal runs
@@ -264,7 +244,6 @@ class ConstrainedMethod(AnalysisMethodBase):
                 while len(offspring) < population_size:
                     offspring.append(random.choice(parents)[:])
             
-            # Apply mutations to offspring
             for i in range(len(offspring)):
                 if np.random.rand() < mutation_rate:
                     mutated = mutation_with_retries(offspring[i], ga.x_data, ga.mandatory_breakpoints,
@@ -272,17 +251,14 @@ class ConstrainedMethod(AnalysisMethodBase):
                     if mutated is not None:
                         offspring[i] = mutated
             
-            # Truncate offspring to correct size
             offspring = offspring[:population_size]
-            
-            # Evaluate offspring
+
             offspring_fitness_data = [
                 self._constrained_fitness(chrom, ga, target_avg_length, length_tolerance, penalty_weight)
                 for chrom in offspring
             ]
             offspring_constrained_fitnesses = [f[0] for f in offspring_fitness_data]
             
-            # Elitist selection: preserve best solutions from both generations
             population = self._elitist_selection(
                 population, constrained_fitnesses,
                 offspring, offspring_constrained_fitnesses,
@@ -291,15 +267,13 @@ class ConstrainedMethod(AnalysisMethodBase):
             
             generation_times.append(time.time() - gen_start_time)
             
-            # Cache management
             if (generation + 1) % cache_clear_interval == 0 and hasattr(ga, 'clear_cache'):
                 ga.clear_cache()
         
-        # Final progress update
         progress = "=" * 50
         elapsed_time = time.time() - start_time
         log(f"\\rProgress: [{progress}] {num_generations}/{num_generations} generations - COMPLETE! ({elapsed_time:.1f}s)")
-        
+
         # ===== FINAL EVALUATION =====
         final_fitness_data = [
             self._constrained_fitness(chrom, ga, target_avg_length, length_tolerance, penalty_weight)
@@ -320,7 +294,6 @@ class ConstrainedMethod(AnalysisMethodBase):
         )
         best_chromosome = population[best_idx]
         
-        # Create solution information
         segments = []
         for i in range(len(best_chromosome) - 1):
             start_point = best_chromosome[i]
@@ -355,7 +328,6 @@ class ConstrainedMethod(AnalysisMethodBase):
             'segment_details': [],
         }
         
-        # Optimization statistics
         final_diversity = analyze_population_diversity(population)
         target_compliance = sum(1 for dev in final_length_deviations if dev <= length_tolerance) / len(final_length_deviations)
         
@@ -375,27 +347,23 @@ class ConstrainedMethod(AnalysisMethodBase):
             'tolerance_used': length_tolerance
         }
         
-        # Data summary - consistent with other methods, use RouteAnalysis data_range for per-route bounds
         route_data = data.route_data
-        
-        # Use data_range from RouteAnalysis if available (ensures consistency with mandatory breakpoints)
+
         if hasattr(ga, 'route_analysis') and ga.route_analysis and hasattr(ga.route_analysis, 'data_range'):
             data_range = ga.route_analysis.data_range
         else:
-            # Fallback to direct calculation if RouteAnalysis not available
             data_range = {
                 'x_min': float(route_data[x_column].min()),
                 'x_max': float(route_data[x_column].max()),
                 'y_min': float(route_data[y_column].min()),
                 'y_max': float(route_data[y_column].max())
             }
-        
+
         data_summary = {
-            'total_data_points': len(route_data),  # Fixed: was 'total_points'
-            'data_range': data_range,  # Schema-compliant per-route data bounds for visualization
+            'total_data_points': len(route_data),
+            'data_range': data_range,
             'mandatory_breakpoints': list(ga.mandatory_breakpoints),
             'target_segments_calculated': target_segments,
-            # Add gap analysis information (generic to all methods)
             'gap_analysis': {
                 'total_gaps': len(ga.route_analysis.gap_segments) if hasattr(ga, 'route_analysis') and ga.route_analysis else 0,
                 'gap_segments': [{'start': gap[0], 'end': gap[1], 'length': gap[1] - gap[0]} for gap in ga.route_analysis.gap_segments] if hasattr(ga, 'route_analysis') and ga.route_analysis else [],
@@ -413,7 +381,6 @@ class ConstrainedMethod(AnalysisMethodBase):
         except Exception:
             pass
         
-        # Final results reporting
         log("\\n=== CONSTRAINED SINGLE-OBJECTIVE RESULTS ===")
         log(f"Best constrained fitness: {best_solution['fitness']:.6f}")
         log(f"Base deviation fitness: {best_solution['unconstrained_fitness']:.6f}")
@@ -430,19 +397,17 @@ class ConstrainedMethod(AnalysisMethodBase):
         log(f"Total time: {elapsed_time:.1f} seconds")
         log("[OK] Constrained optimization complete!")
         
-        # Get route ID from data if available
         route_id = getattr(data, 'route_id', 'Unknown')
-        
-        # Create and return AnalysisResult
+
         return AnalysisResult(
             method_name=self.method_name,
             method_key=self.method_key,
             route_id=route_id,
-            all_solutions=[best_solution],  # Single solution
+            all_solutions=[best_solution],
             optimization_stats=optimization_stats,
             mandatory_breakpoints=sorted(list(ga.mandatory_breakpoints)),
             processing_time=elapsed_time,
-            input_parameters={**parameters, 'gap_threshold': gap_threshold},  # Include framework gap_threshold for export consistency
+            input_parameters={**parameters, 'gap_threshold': gap_threshold},
             data_summary=data_summary
         )
     
@@ -520,19 +485,14 @@ class ConstrainedMethod(AnalysisMethodBase):
         return constrained_fitness, base_fitness, current_avg_length, length_deviation
     
     def _elitist_selection(self, population, fitness_values, offspring, offspring_fitness, elite_ratio):
-        """Elitist selection preserving best solutions from both generations."""
-        
-        # Combine populations
+        """Combine current generation with offspring and return the top-fitness individuals."""
         combined_population = population + offspring
         combined_fitness = fitness_values + offspring_fitness
-        
-        # Sort by fitness (higher is better)
+
+        # Higher fitness is better
         sorted_indices = np.argsort(combined_fitness)[::-1]
-        
-        # Select top individuals
-        selected_size = len(population)
-        selected_indices = sorted_indices[:selected_size]
-        
+        selected_indices = sorted_indices[:len(population)]
+
         return [combined_population[i] for i in selected_indices]
     
     def _select_parents_tournament(self, population, fitnesses, num_parents):

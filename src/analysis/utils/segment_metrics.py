@@ -17,6 +17,7 @@ GapLike = Union[Tuple[float, float], Sequence[float], Dict[str, Any]]
 
 
 def _to_float(value: Any) -> float:
+    """Convert value to float, returning nan on failure."""
     try:
         return float(value)
     except Exception:

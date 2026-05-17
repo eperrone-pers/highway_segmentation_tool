@@ -113,19 +113,17 @@ class NumericParameter(ParameterDefinition):
             # Treat NaN as invalid input.
             if math.isnan(num_value):
                 return False, f"{self.display_name} must be a valid number"
-            
-            # Check bounds
+
             if self.min_value is not None and num_value < self.min_value:
                 return False, f"{self.display_name} must be >= {self.min_value}"
             if self.max_value is not None and num_value > self.max_value:
                 return False, f"{self.display_name} must be <= {self.max_value}"
-            
-            # Check integer requirement
+
             if self.decimal_places == 0 and not float(num_value).is_integer():
                 return False, f"{self.display_name} must be an integer"
-            
+
             return True, ""
-            
+
         except (ValueError, TypeError):
             return False, f"{self.display_name} must be a valid number"
 
@@ -186,19 +184,17 @@ class OptionalNumericParameter(ParameterDefinition):
             # Treat NaN as invalid input.
             if math.isnan(num_value):
                 return False, f"{self.display_name} must be a valid number or None"
-            
-            # Check bounds
+
             if self.min_value is not None and num_value < self.min_value:
                 return False, f"{self.display_name} must be >= {self.min_value} or None"
             if self.max_value is not None and num_value > self.max_value:
                 return False, f"{self.display_name} must be <= {self.max_value} or None"
-            
-            # Check integer requirement
+
             if self.decimal_places == 0 and not float(num_value).is_integer():
                 return False, f"{self.display_name} must be an integer or None"
-            
+
             return True, ""
-            
+
         except (ValueError, TypeError):
             return False, f"{self.display_name} must be a valid number or None"
 
@@ -1174,25 +1170,8 @@ OPTIMIZATION_METHODS = [
         return_type="single_objective",
         method_class_path="analysis.methods.pelt_segmentation.PeltSegmentationMethod",
     )
-    # FUTURE METHODS - Easy to add with completely different parameter sets:
-    #
-    # OptimizationMethodConfig(
-    #     method_key="deterministic",
-    #     display_name="Deterministic Breakpoint Detection",
-    #     description="Statistical analysis-based deterministic segmentation without evolutionary computation.",
-    #     parameters=DETERMINISTIC_BREAKPOINT_PARAMETERS,  # No GA parameters at all!
-    #     return_type="single_objective",  # Shows segmentation graph only
-    #     method_class_path="analysis.methods.deterministic.DeterministicMethod",
-    # ),
-    #
-    # OptimizationMethodConfig(
-    #     method_key="machine_learning",
-    #     display_name="ML-Based Segmentation", 
-    #     description="Machine learning approach using trained models for pattern recognition.",
-    #     parameters=ML_SEGMENTATION_PARAMETERS,  # Completely different parameter set!
-    #     return_type="single_objective",  # Shows segmentation graph only
-    #     method_class_path="analysis.methods.ml_segmentation.MlSegmentationMethod",
-    # )
+    # To add a new method: define its parameter list above, add an OptimizationMethodConfig
+    # entry here, and implement the corresponding AnalysisMethodBase subclass.
 ]
 
 # Helper functions for method configuration management
@@ -1325,18 +1304,8 @@ def is_multi_objective_method(method_key: str) -> bool:
     return method.return_type == "multi_objective"
 
 
-# Removed get_method_config_by_analysis_method - no longer needed!
-# JSON now stores method_key directly, eliminating the need for hard-coded mapping
-
-
-# ===== LEGACY CONFIGURATION CLASSES =====
-# These are kept for backward compatibility during transition
-# The existing configuration classes remain unchanged for now
-
-
 # ===== CONFIGURATION INSTANCES =====
-# Single instances of each configuration class for global use
-# These provide backward compatibility for existing code
+# Module-level singletons used throughout the application for consistent settings access.
 
 # Core configuration instances
 optimization_config = AlgorithmConstants()

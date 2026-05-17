@@ -1262,10 +1262,6 @@ class HighwaySegmentGA:
             distances[sorted_indices[0]] = float('inf')   # Best in this objective
             distances[sorted_indices[-1]] = float('inf')  # Worst in this objective
             
-            # DEBUG: Log edge assignments for verification
-            # Uncomment for detailed edge tracking:
-            
-            # Calculate distances for middle points
             obj_range = (fitness_values[front_indices[sorted_indices[-1]]][obj_idx] - 
                         fitness_values[front_indices[sorted_indices[0]]][obj_idx])
             
@@ -1745,14 +1741,13 @@ class HighwaySegmentGA:
         # Call sites already pass suppress_warnings=True in hot loops to avoid log spam.
         if len(chromosome) < 2:
             return False
-        
-        # Check that all mandatory breakpoints are included
+
         mandatory_set = self._mandatory_bp_set
         chrom_set = set(chromosome)
         if not mandatory_set.issubset(chrom_set):
             return False
-                
-        # Check segment lengths with distinction between mandatory and user-controllable
+
+        # Distinguish mandatory-only segments (length warnings only) from user-controlled ones
         constraint_violations = []
         
         for segment_idx, (start_bp, end_bp) in enumerate(zip(chromosome, chromosome[1:])):

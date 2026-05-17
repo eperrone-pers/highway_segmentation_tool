@@ -29,6 +29,7 @@ except Exception:  # pragma: no cover
 
 
 def _rolling_smooth(values: np.ndarray, window_pts: int, method: str) -> np.ndarray:
+    """Apply a centered rolling window smooth (mean or median) to the signal."""
     window_pts = int(max(1, window_pts))
     series = pd.Series(values)
     rolling = series.rolling(window=window_pts, center=True, min_periods=1)
@@ -38,6 +39,7 @@ def _rolling_smooth(values: np.ndarray, window_pts: int, method: str) -> np.ndar
 
 
 def _estimate_spacing_miles(xs: np.ndarray) -> float:
+    """Return the median positive spacing between consecutive x values."""
     if xs is None or len(xs) < 2:
         return 0.0
     diffs = np.diff(xs.astype(float))
@@ -48,6 +50,7 @@ def _estimate_spacing_miles(xs: np.ndarray) -> float:
 
 
 def _is_gap_segment(start: float, end: float, gap_segments: List) -> bool:
+    """Return True if [start, end] exactly matches a known gap segment (within 1e-6 tolerance)."""
     tol = 1e-6
     for gap in gap_segments or []:
         try:
@@ -169,12 +172,23 @@ def _enforce_max_segment_length(
 
 
 class PeltSegmentationMethod(AnalysisMethodBase):
+    """
+    PELT (Pruned Exact Linear Time) change-point segmentation method.
+
+    Wraps the `ruptures` library's PELT algorithm with gap-aware processing:
+    each section between mandatory breakpoints is segmented independently so
+    the algorithm never splits across data gaps.  A post-processing step
+    enforces the max_length constraint by splitting any overlong non-gap segments.
+    """
+
     @property
     def method_name(self) -> str:
+        """Human-readable method name for GUI display."""
         return "PELT Segmentation (ruptures)"
 
     @property
     def method_key(self) -> str:
+        """Method key for result handling and export."""
         return "pelt_segmentation"
 
     def run_analysis(
@@ -186,6 +200,27 @@ class PeltSegmentationMethod(AnalysisMethodBase):
         gap_threshold: float,
         **kwargs,
     ) -> AnalysisResult:
+        """
+        Run PELT segmentation on each gap-separated section independently.
+
+        Args:
+            data: RouteAnalysis object (must have .route_data).
+            route_id: Route identifier for this analysis.
+            x_column: Milepoint column name in route_data.
+            y_column: Measurement column name in route_data.
+            gap_threshold: Framework-level gap detection threshold (passed through to output).
+            **kwargs: Method-specific parameters (model, penalty, jump, smooth_window_miles,
+                smoothing_method, min_length, max_length, enable_diagnostic_output,
+                log_callback, stop_callback).
+
+        Returns:
+            AnalysisResult with breakpoints and segment statistics.
+
+        Raises:
+            TypeError: If data is not a RouteAnalysis object.
+            ValueError: If parameter values are out of range.
+            ImportError: If the ruptures package is not installed.
+        """
         if not hasattr(data, "route_data"):
             raise TypeError(
                 "PeltSegmentationMethod.run_analysis expects a RouteAnalysis object (with .route_data). "
@@ -202,7 +237,6 @@ class PeltSegmentationMethod(AnalysisMethodBase):
         jump = int(kwargs.get("jump", param_defaults["jump"]))
         smooth_window_miles = kwargs.get("smooth_window_miles", param_defaults["smooth_window_miles"])
         smoothing_method = kwargs.get("smoothing_method", param_defaults["smoothing_method"])
-        # Segment constraints use framework-style names for consistency
         min_length = float(kwargs.get("min_length", param_defaults["min_length"]))
         max_length = float(kwargs.get("max_length", param_defaults["max_length"]))
         enable_diagnostic_output = bool(

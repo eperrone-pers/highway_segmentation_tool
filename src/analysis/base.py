@@ -36,7 +36,6 @@ from typing import Dict, List, Any, Union, Tuple, TYPE_CHECKING, cast
 import pandas as pd
 from datetime import datetime
 
-# Import configuration functions for dynamic method checking
 from config import is_multi_objective_method
 
 if TYPE_CHECKING:
@@ -277,32 +276,28 @@ class AnalysisMethodBase(ABC):
                 - error_message: Description of validation error, or "Valid" if successful
         """
         schema = self.parameter_schema
-        
-        # Check required parameters
+
         for param, config in schema.items():
             if config.get('required', False) and param not in kwargs:
                 return False, f"Required parameter '{param}' is missing"
-        
-        # Validate parameter types and ranges  
+
         for param, value in kwargs.items():
             if param in schema:
                 config = schema[param]
                 expected_type = config.get('type')
-                
-                # Type validation
+
                 if expected_type and not isinstance(value, expected_type):
                     return False, f"Parameter '{param}' must be of type {expected_type.__name__}"
-                
-                # Range validation for numeric types
+
                 if isinstance(value, (int, float)):
                     min_val = config.get('min')
-                    max_val = config.get('max') 
-                    
+                    max_val = config.get('max')
+
                     if min_val is not None and value < min_val:
                         return False, f"Parameter '{param}' must be >= {min_val}"
                     if max_val is not None and value > max_val:
                         return False, f"Parameter '{param}' must be <= {max_val}"
-        
+
         return True, "Valid"
     
     def validate_data(self, data: pd.DataFrame, x_column: str, y_column: str) -> Tuple[bool, str]:
@@ -317,27 +312,22 @@ class AnalysisMethodBase(ABC):
         Returns:
             tuple: (is_valid, error_message)
         """
-        # Check data is not empty
         if data.empty:
             return False, "Input data is empty"
-        
-        # Check required columns exist
+
         if x_column not in data.columns:
             return False, f"Milepoint column '{x_column}' not found in data"
         if y_column not in data.columns:
             return False, f"Value column '{y_column}' not found in data"
-        
-        # Check for sufficient data points
+
         if len(data) < 3:
             return False, "Insufficient data points (minimum 3 required for segmentation)"
-        
-        # Check for numeric data types
+
         if not pd.api.types.is_numeric_dtype(data[x_column]):
             return False, f"Milepoint column '{x_column}' must contain numeric data"
         if not pd.api.types.is_numeric_dtype(data[y_column]):
             return False, f"Value column '{y_column}' must contain numeric data"
-        
-        # Check for null values
+
         if data[x_column].isna().any():
             return False, f"Milepoint column '{x_column}' contains null values"
         if data[y_column].isna().any():

@@ -26,15 +26,12 @@ import numpy as np
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 
-# Import base interface and utilities
 from ..base import AnalysisMethodBase, AnalysisResult
 from ..utils.ga_utilities import (
     crossover_with_retries,
     mutation_with_retries,
 )
 from ..utils.segment_metrics import average_length_excluding_gap_segments
-
-# Import GA class and configuration
 from ..utils.genetic_algorithm import HighwaySegmentGA
 from config import get_optimization_method
 
@@ -89,11 +86,9 @@ class SingleObjectiveMethod(AnalysisMethodBase):
         Returns:
             AnalysisResult with optimization results and statistics
         """
-        # Get configuration defaults for single-objective method
         method_config = get_optimization_method('single')
         param_defaults = {param.name: param.default_value for param in method_config.parameters}
-        
-        # Extract method-specific parameters with proper config defaults
+
         min_length = kwargs.get('min_length', param_defaults['min_length'])
         max_length = kwargs.get('max_length', param_defaults['max_length'])
         population_size = kwargs.get('population_size', param_defaults['population_size'])
@@ -101,19 +96,16 @@ class SingleObjectiveMethod(AnalysisMethodBase):
         elite_ratio = kwargs.get('elite_ratio', param_defaults['elite_ratio'])
         mutation_rate = kwargs.get('mutation_rate', param_defaults['mutation_rate'])
         crossover_rate = kwargs.get('crossover_rate', param_defaults['crossover_rate'])
-        # gap_threshold now comes as direct parameter (framework level)
-        # Segment caching always enabled for performance
         enable_performance_stats = kwargs.get('enable_performance_stats', param_defaults['enable_performance_stats'])
         log_callback = kwargs.get('log_callback', None)
         stop_callback = kwargs.get('stop_callback', None)
 
-        # Logging controls (keep defaults quiet for GUI performance)
+        # Keep logging defaults quiet; GUI performance degrades with excessive output
         log_elitism = bool(kwargs.get('log_elitism', False))
         elitism_log_interval = int(kwargs.get('elitism_log_interval', max(50, num_generations // 20)))
         log_constraint_stats = bool(kwargs.get('log_constraint_stats', False))
         constraint_stats_interval = int(kwargs.get('constraint_stats_interval', max(100, num_generations // 20)))
         
-        # Validate parameters
         self.validate_parameters(
             min_length=min_length,
             max_length=max_length,
@@ -128,8 +120,7 @@ class SingleObjectiveMethod(AnalysisMethodBase):
             )
         
         start_time = time.time()
-        
-        # Setup logging
+
         def log(message):
             if log_callback:
                 log_callback(message)
@@ -138,53 +129,40 @@ class SingleObjectiveMethod(AnalysisMethodBase):
         log("Objective: Maximize data fit (minimize deviation)")
         log(f"Parameters: {population_size} individuals, {num_generations} generations")
         
-        # Initialize genetic algorithm
-        ga = HighwaySegmentGA(data, x_column, y_column, min_length, max_length, 
-                            population_size, mutation_rate=mutation_rate, 
+        ga = HighwaySegmentGA(data, x_column, y_column, min_length, max_length,
+                            population_size, mutation_rate=mutation_rate,
                             crossover_rate=crossover_rate, gap_threshold=gap_threshold)
-        
-        # Enable segment caching for improved performance
         ga.enable_segment_cache_mode(True)
-        
-        # Generate initial population
+
         log("Generating diverse initial population...")
         population = ga.generate_diverse_initial_population()
-        
-        # Validate and fix initial population
-        population = [ga._enforce_constraints(chrom) if not ga.validate_chromosome(chrom) else chrom 
+        population = [ga._enforce_constraints(chrom) if not ga.validate_chromosome(chrom) else chrom
                      for chrom in population]
-        
         log(f"[OK] Generated {len(population)} valid chromosomes")
-        
-        # Initialize tracking
+
         best_fitness_history = []
         generation_times = [] if enable_performance_stats else None
         diversity_history = [] if enable_performance_stats else None
-        
+
         log("\\nStarting single-objective evolution...")
         log("Progress: [" + "-" * 50 + "]")
-        
-        # Main evolution loop
+
         for gen in range(num_generations):
-            # Check for stop request
             if stop_callback and stop_callback():
                 log(f"\\n[STOPPED] Optimization stopped by user at generation {gen+1}")
                 break
 
             gen_start_time = time.time()
 
-            # Progress reporting
             progress_interval = max(1, num_generations // 50)
             if gen % progress_interval == 0 or gen == 0:
                 progress = int((gen / num_generations) * 50)
                 bar = "=" * progress + "-" * (50 - progress)
                 log(f"\\rProgress: [{bar}] {gen}/{num_generations} generations")
             
-            # Evaluate population fitness
             fitnesses = [ga.fitness(chromosome) for chromosome in population]
             best_fitness_history.append(max(fitnesses))
             
-            # Detailed reporting every 50 generations
             if (gen + 1) % 50 == 0:
                 best_idx = np.argmax(fitnesses)
                 best_chromosome = population[best_idx]
@@ -204,24 +182,19 @@ class SingleObjectiveMethod(AnalysisMethodBase):
                 log(f"  Diversity: {diversity_stats['unique_segment_counts']} types, "
                     f"Range: {diversity_stats['min_segments']}-{diversity_stats['max_segments']} segments")
             
-            # Track performance stats
             if enable_performance_stats:
                 generation_times.append(time.time() - gen_start_time)
                 diversity_history.append(ga.analyze_population_diversity(population))
             
-            # Report constraint statistics
             if log_constraint_stats and log_callback and (gen + 1) % constraint_stats_interval == 0:
                 ga.report_constraint_statistics(gen + 1, log_callback)
             
             # ===== GENETIC OPERATIONS =====
-            
-            # Tournament selection for parents
             parents = self._select_parents_tournament(population, fitnesses, population_size // 2, ga)
-            
-            # Generate offspring through crossover
+
             offspring = []
             attempts = 0
-            max_attempts = population_size * 2  # Prevent infinite loops
+            max_attempts = population_size * 2
             
             while len(offspring) < population_size and attempts < max_attempts:
                 attempts += 1
@@ -231,33 +204,27 @@ class SingleObjectiveMethod(AnalysisMethodBase):
                 if random.random() < ga.crossover_rate:
                     c1, c2 = crossover_with_retries(p1, p2, ga.x_data, ga.mandatory_breakpoints, 
                                                   ga.validate_chromosome)
-                    if c1 is None:  # Crossover failed after retries
-                        continue  # Try new parents
+                    if c1 is None:
+                        continue
                 else:
-                    c1, c2 = p1[:], p2[:]  # Copy parents if no crossover
-                    
+                    c1, c2 = p1[:], p2[:]
+
                 offspring.extend([c1, c2])
-            
-            # Truncate to correct size
+
             offspring = offspring[:population_size]
-            
-            # Apply mutations to offspring
+
             for i in range(len(offspring)):
                 if random.random() < ga.mutation_rate:
                     mutated = mutation_with_retries(offspring[i], ga.x_data, ga.mandatory_breakpoints,
                                                   ga.validate_chromosome)
                     if mutated is not None:
                         offspring[i] = mutated
-                    # If None, keep original offspring[i]
-            
-            # Validate offspring constraints
-            offspring = [ga._enforce_constraints(chrom) if not ga.validate_chromosome(chrom) else chrom 
+
+            offspring = [ga._enforce_constraints(chrom) if not ga.validate_chromosome(chrom) else chrom
                         for chrom in offspring]
-            
-            # Evaluate offspring fitness
+
             offspring_fitnesses = [ga.fitness(chromosome) for chromosome in offspring]
-            
-            # Elitist selection: combine generations and select best
+
             elitism_callback = None
             if log_elitism and log_callback and ((gen + 1) % elitism_log_interval == 0 or gen == 0):
                 elitism_callback = log
@@ -271,35 +238,27 @@ class SingleObjectiveMethod(AnalysisMethodBase):
                 log_callback=elitism_callback,
             )
         
-        # Final processing
         elapsed_time = time.time() - start_time
-        
-        # Final progress update
         progress = "=" * 50
         log(f"\\rProgress: [{progress}] {num_generations}/{num_generations} generations - COMPLETE! ({elapsed_time:.1f}s)")
-        
-        # Get final results
+
         final_fitnesses = [ga.fitness(chromosome) for chromosome in population]
         best_idx = np.argmax(final_fitnesses)
         best_chromosome = population[best_idx]
         best_fitness = final_fitnesses[best_idx]
-        
-        # Calculate final statistics
+
         segment_count = len(best_chromosome) + 1
         stats = ga.calculate_detailed_statistics(best_chromosome, data)
         avg_length = stats.avg_length if hasattr(stats, 'avg_length') else 0
         
-        # Print summary
         log("\\n=== SINGLE-OBJECTIVE RESULTS ===")
         log(f"Best fitness: {best_fitness:.6f}")
         log(f"Segments: {segment_count}")
         log(f"Average length: {avg_length:.3f} miles")
         log(f"Total time: {elapsed_time:.1f} seconds")
-        
-        # Collect cache statistics
+
         cache_stats = self._collect_cache_stats(ga)
-        
-        # Prepare performance statistics
+
         performance_stats = None
         if enable_performance_stats and generation_times and diversity_history:
             performance_stats = {
@@ -309,7 +268,6 @@ class SingleObjectiveMethod(AnalysisMethodBase):
                 'final_diversity': ga.analyze_population_diversity(population)
             }
         
-        # Prepare optimization statistics with consistent field names
         optimization_stats = {
             'final_fitness': best_fitness,
             'fitness_history': best_fitness_history, 
@@ -324,7 +282,6 @@ class SingleObjectiveMethod(AnalysisMethodBase):
             'performance_stats': performance_stats
         }
         
-        # Prepare input parameters summary
         input_parameters = {
             'population_size': population_size,
             'num_generations': num_generations,
@@ -336,14 +293,11 @@ class SingleObjectiveMethod(AnalysisMethodBase):
             'gap_threshold': gap_threshold
         }
         
-        # Prepare data summary - use RouteAnalysis data_range for schema compliance
         actual_data = data.route_data
-        
-        # Use data_range from RouteAnalysis if available (ensures consistency with mandatory breakpoints)
+
         if hasattr(ga, 'route_analysis') and ga.route_analysis and hasattr(ga.route_analysis, 'data_range'):
             data_range = ga.route_analysis.data_range
         else:
-            # Fallback to direct calculation if RouteAnalysis not available
             data_range = {
                 'x_min': float(actual_data[x_column].min()),
                 'x_max': float(actual_data[x_column].max()),
@@ -352,10 +306,9 @@ class SingleObjectiveMethod(AnalysisMethodBase):
             }
         
         data_summary = {
-            'total_data_points': len(actual_data),  # Fixed: was 'total_points'
-            'data_range': data_range,  # Schema-compliant data bounds for visualization
+            'total_data_points': len(actual_data),
+            'data_range': data_range,
             'mandatory_breakpoints': list(ga.mandatory_breakpoints),
-            # Add gap analysis information from route analysis (generic to all methods)
             'gap_analysis': {
                 'total_gaps': len(ga.route_analysis.gap_segments) if hasattr(ga, 'route_analysis') and ga.route_analysis else 0,
                 'gap_segments': [{'start': gap[0], 'end': gap[1], 'length': gap[1] - gap[0]} for gap in ga.route_analysis.gap_segments] if hasattr(ga, 'route_analysis') and ga.route_analysis else [],
@@ -373,7 +326,6 @@ class SingleObjectiveMethod(AnalysisMethodBase):
         except Exception:
             pass
         
-        # Get route ID from data if available
         route_id = getattr(data, 'route_id', 'Unknown')
 
         # Average length excluding gap-only segments (method-owned export convention)
@@ -395,7 +347,6 @@ class SingleObjectiveMethod(AnalysisMethodBase):
         
         log("[OK] Single-objective optimization complete!")
         
-        # Create and return AnalysisResult
         return AnalysisResult(
             method_name=self.method_name,
             method_key=self.method_key,
@@ -403,11 +354,11 @@ class SingleObjectiveMethod(AnalysisMethodBase):
             all_solutions=[{
                 'chromosome': best_chromosome,
                 'fitness': best_fitness,
-                'objective_values': [best_fitness, avg_length],  # Unified framework format: [fitness, avg_segment_length]
+                'objective_values': [best_fitness, avg_length],
                 'segment_count': segment_count,
-                'num_segments': segment_count,  # Compatibility alias for controller
+                'num_segments': segment_count,
                 'avg_length': avg_length,
-                'avg_segment_length': avg_length,  # Compatibility alias for multi-objective consistency
+                'avg_segment_length': avg_length,
                 'segmentation': segmentation,
                 'stats': stats
             }] + [{

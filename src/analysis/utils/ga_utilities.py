@@ -21,7 +21,6 @@ import bisect
 import numpy as np
 from typing import List, Tuple, Dict, Any, Optional
 
-# Import from src level (relative to package structure)
 import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -46,11 +45,8 @@ def tournament_selection(population: List[List[float]],
         tournament_size = optimization_config.tournament_size
     
     parents = []
-    for _ in range(2):  # Select 2 parents
-        # Tournament selection
+    for _ in range(2):
         tournament_indices = random.sample(range(len(population)), tournament_size)
-        
-        # Find best individual in tournament
         best_idx = tournament_indices[0]
         best_fitness = fitness_values[best_idx]
         
@@ -91,15 +87,13 @@ def nsga2_tournament_selection(population: List[List[float]],
     Returns:
         List of selected parent chromosomes
     """
-    # Create mapping from individual index to front rank
     front_rank = {}
     for rank, front in enumerate(fronts):
         for idx in front:
             front_rank[idx] = rank
-    
+
     parents = []
     for _ in range(num_parents):
-        # Tournament selection: pick 2 random individuals and compare
         candidates = random.sample(range(len(population)), k=2)
         winner = nsga2_compare(candidates[0], candidates[1], front_rank, crowding_distances)
         parents.append(population[winner])
@@ -190,7 +184,6 @@ def crossover_with_retries(parent1: List[float], parent2: List[float],
         right_bp = child[insert_pos]
         return is_segment_valid(left_bp, right_bp)
 
-    # Precompute optional breakpoints union once per parent pair
     mandatory_set_local = mandatory_set
     p1_optional = [bp for bp in parent1 if bp not in mandatory_set_local]
     p2_optional = [bp for bp in parent2 if bp not in mandatory_set_local]
@@ -206,11 +199,9 @@ def crossover_with_retries(parent1: List[float], parent2: List[float],
                 return child1_bps, child2_bps
             continue
 
-        # Fast local validation for physical-cut crossover
         if fast_validate_physical_cut(child1_bps, cut_point) and fast_validate_physical_cut(child2_bps, cut_point):
-            return child1_bps, child2_bps  # Success!
-    
-    # All attempts failed
+            return child1_bps, child2_bps
+
     return None, None
 
 
@@ -466,9 +457,8 @@ def mutation_with_retries(chromosome: List[float], x_data: List[float],
         mutated = constraint_aware_mutation_attempt(chromosome)
 
         if fast_validate_mutation(chromosome, mutated):
-            return mutated  # Success!
-    
-    # All attempts failed
+            return mutated
+
     return None
 
 
@@ -489,51 +479,45 @@ def perform_single_mutation(chromosome: List[float], x_data: List[float],
     chrom_set = set(chromosome)
     optional_breakpoints = [bp for bp in chromosome if bp not in mandatory_set]
     
-    if len(optional_breakpoints) <= 1:  # Not enough optional breakpoints to mutate
-        # Add a new optional breakpoint instead
+    if len(optional_breakpoints) <= 1:
         possible = [xp for xp in x_data 
                    if xp not in chrom_set and xp not in mandatory_set]
         if possible:
             new_bp = random.choice(possible)
             new_chrom = sorted(chromosome + [new_bp])
         else:
-            return chromosome  # Can't mutate
+            return chromosome
     else:
         new_chrom = chromosome.copy()
         action = random.choice(['add', 'remove', 'move'])
-        
+
         if action == 'add':
-            # Add a new optional breakpoint
             new_chrom_set = set(new_chrom)
-            possible = [xp for xp in x_data 
+            possible = [xp for xp in x_data
                        if xp not in new_chrom_set and xp not in mandatory_set]
             if possible:
                 bp = random.choice(possible)
                 new_chrom.append(bp)
                 new_chrom = sorted(new_chrom)
-                
+
         elif action == 'remove':
-            # Remove an optional breakpoint (never remove mandatory ones)
             if optional_breakpoints:
                 bp_to_remove = random.choice(optional_breakpoints)
                 new_chrom.remove(bp_to_remove)
                 
         elif action == 'move':
-            # Move an optional breakpoint
             if optional_breakpoints:
                 bp_to_move = random.choice(optional_breakpoints)
                 new_chrom.remove(bp_to_move)
-                
-                # Find new location
                 new_chrom_set = set(new_chrom)
-                possible = [xp for xp in x_data 
+                possible = [xp for xp in x_data
                            if xp not in new_chrom_set and xp not in mandatory_set]
                 if possible:
                     new_bp = random.choice(possible)
                     new_chrom.append(new_bp)
                     new_chrom = sorted(new_chrom)
                 else:
-                    new_chrom.append(bp_to_move)  # Put it back if no alternatives
+                    new_chrom.append(bp_to_move)  # restore if no valid replacement exists
                     new_chrom = sorted(new_chrom)
     
     return new_chrom
@@ -612,14 +596,12 @@ def calculate_crowding_distance(front_indices: List[int],
         List of crowding distances for solutions in the front
     """
     distances = [0.0 for _ in range(len(front_indices))]
-    
+
     if len(front_indices) <= optimization_config.min_front_size:
         return [float('inf')] * len(front_indices)
-    
-    # For each objective
-    for obj_idx in range(2):  # We have 2 objectives
-        # Sort by objective value
-        sorted_indices = sorted(range(len(front_indices)), 
+
+    for obj_idx in range(2):
+        sorted_indices = sorted(range(len(front_indices)),
                               key=lambda i: fitness_values[front_indices[i]][obj_idx])
         
         # Set boundary points to infinity (EDGE PRESERVATION)
