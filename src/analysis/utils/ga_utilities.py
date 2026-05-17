@@ -1,19 +1,14 @@
-"""
-Shared Genetic Algorithm Utilities for Highway Segmentation Analysis
+"""Shared genetic algorithm utilities for highway segmentation analysis.
 
-This module contains reusable GA functions extracted from the main genetic_algorithm.py
-class for use across different analysis methods (single-objective, multi-objective, constrained).
+Reusable GA operator functions shared across single-objective, multi-objective,
+and constrained analysis methods. Extracted from GeneticAlgorithm so that each
+method module can call these operators directly without instantiating the full
+GeneticAlgorithm class.
 
-Functions provided:
-- Tournament selection (NSGA-II based)
-- Crossover operations with retry mechanism
-- Mutation operations with retry mechanism  
-- Non-dominated sorting for multi-objective
-- Crowding distance calculation
-- Population diversity analysis
-- Fitness evaluation helpers
-
-Version: 1.95.0 (Phase 1.95 Analysis Method Extraction)
+Fitness sign convention: all functions in this module treat **higher fitness as
+better** (maximization semantics). Callers that minimize a raw objective (e.g.,
+deviation from mean) must negate it before passing fitness values here, or use a
+transformed representation where the best solution has the largest value.
 """
 
 import random
@@ -21,51 +16,57 @@ import bisect
 import numpy as np
 from typing import List, Tuple, Dict, Any, Optional
 
-# Import from src level (relative to package structure)
 import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 from config import optimization_config
 
 
-def tournament_selection(population: List[List[float]], 
-                        fitness_values: List[Tuple[float, float]], 
+def tournament_selection(population: List[List[float]],
+                        fitness_values: List[Tuple[float, float]],
                         tournament_size: int = None) -> List[List[float]]:
-    """
-    Simple tournament selection for single-objective optimization.
-    
+    """Simple tournament selection for single-objective optimization.
+
+    Selects two parents by running independent tournaments. The individual
+    with the **higher** fitness value wins each tournament (maximization
+    semantics — see module docstring).
+
+    For multi-objective fitness tuples, only the first element is compared.
+    Use ``nsga2_tournament_selection`` when Pareto rank and crowding distance
+    should both govern selection.
+
     Args:
-        population: List of chromosomes (breakpoint lists)
-        fitness_values: List of fitness values (single or multi-objective)
-        tournament_size: Size of tournament (default from config)
-        
+        population: List of chromosomes (breakpoint lists).
+        fitness_values: Fitness value per chromosome. Each entry may be a
+            plain ``float`` (single-objective) or a ``Tuple[float, float]``
+            (multi-objective); only the first element is used in the latter case.
+        tournament_size: Number of candidates drawn per tournament. Defaults to
+            ``optimization_config.tournament_size`` when ``None``.
+
     Returns:
-        List of two selected parent chromosomes
+        List of two selected parent chromosomes.
     """
     if tournament_size is None:
         tournament_size = optimization_config.tournament_size
-    
+
     parents = []
-    for _ in range(2):  # Select 2 parents
-        # Tournament selection
+    for _ in range(2):
         tournament_indices = random.sample(range(len(population)), tournament_size)
-        
-        # Find best individual in tournament
         best_idx = tournament_indices[0]
         best_fitness = fitness_values[best_idx]
-        
+
         for idx in tournament_indices[1:]:
             candidate_fitness = fitness_values[idx]
             # For single objective, compare directly; for multi-objective, use first value
             candidate_value = candidate_fitness[0] if isinstance(candidate_fitness, tuple) else candidate_fitness
             best_value = best_fitness[0] if isinstance(best_fitness, tuple) else best_fitness
-            
-            if candidate_value > best_value:  # Assuming maximization
+
+            if candidate_value > best_value:  # Higher value wins (maximization)
                 best_idx = idx
                 best_fitness = candidate_fitness
-        
+
         parents.append(population[best_idx])
-    
+
     return parents
 
 
@@ -91,15 +92,13 @@ def nsga2_tournament_selection(population: List[List[float]],
     Returns:
         List of selected parent chromosomes
     """
-    # Create mapping from individual index to front rank
     front_rank = {}
     for rank, front in enumerate(fronts):
         for idx in front:
             front_rank[idx] = rank
-    
+
     parents = []
     for _ in range(num_parents):
-        # Tournament selection: pick 2 random individuals and compare
         candidates = random.sample(range(len(population)), k=2)
         winner = nsga2_compare(candidates[0], candidates[1], front_rank, crowding_distances)
         parents.append(population[winner])
@@ -143,17 +142,29 @@ def nsga2_compare(idx1: int, idx2: int, front_rank: Dict[int, int],
 def crossover_with_retries(parent1: List[float], parent2: List[float],
                           x_data: List[float], mandatory_breakpoints: List[float],
                           validate_function: callable) -> Tuple[Optional[List[float]], Optional[List[float]]]:
-    """
-    Multi-attempt crossover with retry mechanism.
-    
+    """Multi-attempt crossover that retries until a valid pair of children is produced.
+
+    Performs physical-cut crossover (see ``perform_single_crossover``) and validates
+    each attempt with a fast local segment check before falling back to the full
+    ``validate_function``. Returns ``(None, None)`` after
+    ``optimization_config.operator_max_retries`` failed attempts.
+
+    When ``validate_function`` is a bound method of a ``GeneticAlgorithm`` instance,
+    the fast validator uses the GA's ``min_length``/``max_length`` constraints
+    directly instead of calling the full function, which avoids redundant traversal.
+
     Args:
-        parent1, parent2: Parent chromosomes (breakpoint lists)
-        x_data: Available x-values for chromosome construction
-        mandatory_breakpoints: Breakpoints that must be preserved
-        validate_function: Function to validate chromosome constraints
-        
+        parent1: First parent chromosome (sorted list of breakpoint milepoints).
+        parent2: Second parent chromosome (sorted list of breakpoint milepoints).
+        x_data: Sorted array of all available x-values in the route data.
+        mandatory_breakpoints: Breakpoints that must appear in every child;
+            crossover operates only on the remaining optional breakpoints.
+        validate_function: Callable with signature ``(chromosome: List[float]) -> bool``
+            that returns ``True`` when the chromosome satisfies all constraints.
+
     Returns:
-        Tuple of (child1, child2) or (None, None) if all attempts failed
+        Tuple of ``(child1, child2)`` on success, or ``(None, None)`` if every
+        attempt produced an invalid chromosome.
     """
     ga = getattr(validate_function, "__self__", None)
     mandatory_set = set(mandatory_breakpoints)
@@ -190,7 +201,6 @@ def crossover_with_retries(parent1: List[float], parent2: List[float],
         right_bp = child[insert_pos]
         return is_segment_valid(left_bp, right_bp)
 
-    # Precompute optional breakpoints union once per parent pair
     mandatory_set_local = mandatory_set
     p1_optional = [bp for bp in parent1 if bp not in mandatory_set_local]
     p2_optional = [bp for bp in parent2 if bp not in mandatory_set_local]
@@ -206,11 +216,9 @@ def crossover_with_retries(parent1: List[float], parent2: List[float],
                 return child1_bps, child2_bps
             continue
 
-        # Fast local validation for physical-cut crossover
         if fast_validate_physical_cut(child1_bps, cut_point) and fast_validate_physical_cut(child2_bps, cut_point):
-            return child1_bps, child2_bps  # Success!
-    
-    # All attempts failed
+            return child1_bps, child2_bps
+
     return None, None
 
 
@@ -260,20 +268,31 @@ def perform_single_crossover(
     return child1, child2
 
 
-def mutation_with_retries(chromosome: List[float], x_data: List[float], 
+def mutation_with_retries(chromosome: List[float], x_data: List[float],
                          mandatory_breakpoints: List[float],
                          validate_function: callable) -> Optional[List[float]]:
-    """
-    Multi-attempt mutation with retry mechanism.
-    
+    """Multi-attempt mutation that retries until a valid chromosome is produced.
+
+    Chooses randomly among three mutation actions — add a breakpoint, remove one,
+    or move one — and validates the result. When ``validate_function`` is bound to
+    a ``GeneticAlgorithm`` instance the mutation is constraint-aware: it restricts
+    candidate positions so that both adjacent segments satisfy ``min_length`` /
+    ``max_length`` before the validator is even called. Falls back to
+    ``perform_single_mutation`` otherwise.
+
+    Returns ``None`` after ``optimization_config.operator_max_retries`` failed
+    attempts; the caller is responsible for keeping the original chromosome.
+
     Args:
-        chromosome: Chromosome to mutate (breakpoint list)
-        x_data: Available x-values for mutation
-        mandatory_breakpoints: Breakpoints that must be preserved 
-        validate_function: Function to validate chromosome constraints
-        
+        chromosome: Chromosome to mutate (sorted list of breakpoint milepoints).
+        x_data: Sorted array of all available x-values in the route data.
+        mandatory_breakpoints: Breakpoints that must be preserved across the
+            mutation; only optional breakpoints are added, removed, or moved.
+        validate_function: Callable with signature ``(chromosome: List[float]) -> bool``
+            that returns ``True`` when the chromosome satisfies all constraints.
+
     Returns:
-        Mutated chromosome or None if all attempts failed
+        A valid mutated chromosome, or ``None`` if all attempts failed.
     """
     ga = getattr(validate_function, "__self__", None)
     mandatory_set = set(mandatory_breakpoints)
@@ -466,9 +485,8 @@ def mutation_with_retries(chromosome: List[float], x_data: List[float],
         mutated = constraint_aware_mutation_attempt(chromosome)
 
         if fast_validate_mutation(chromosome, mutated):
-            return mutated  # Success!
-    
-    # All attempts failed
+            return mutated
+
     return None
 
 
@@ -489,68 +507,72 @@ def perform_single_mutation(chromosome: List[float], x_data: List[float],
     chrom_set = set(chromosome)
     optional_breakpoints = [bp for bp in chromosome if bp not in mandatory_set]
     
-    if len(optional_breakpoints) <= 1:  # Not enough optional breakpoints to mutate
-        # Add a new optional breakpoint instead
+    if len(optional_breakpoints) <= 1:
         possible = [xp for xp in x_data 
                    if xp not in chrom_set and xp not in mandatory_set]
         if possible:
             new_bp = random.choice(possible)
             new_chrom = sorted(chromosome + [new_bp])
         else:
-            return chromosome  # Can't mutate
+            return chromosome
     else:
         new_chrom = chromosome.copy()
         action = random.choice(['add', 'remove', 'move'])
-        
+
         if action == 'add':
-            # Add a new optional breakpoint
             new_chrom_set = set(new_chrom)
-            possible = [xp for xp in x_data 
+            possible = [xp for xp in x_data
                        if xp not in new_chrom_set and xp not in mandatory_set]
             if possible:
                 bp = random.choice(possible)
                 new_chrom.append(bp)
                 new_chrom = sorted(new_chrom)
-                
+
         elif action == 'remove':
-            # Remove an optional breakpoint (never remove mandatory ones)
             if optional_breakpoints:
                 bp_to_remove = random.choice(optional_breakpoints)
                 new_chrom.remove(bp_to_remove)
                 
         elif action == 'move':
-            # Move an optional breakpoint
             if optional_breakpoints:
                 bp_to_move = random.choice(optional_breakpoints)
                 new_chrom.remove(bp_to_move)
-                
-                # Find new location
                 new_chrom_set = set(new_chrom)
-                possible = [xp for xp in x_data 
+                possible = [xp for xp in x_data
                            if xp not in new_chrom_set and xp not in mandatory_set]
                 if possible:
                     new_bp = random.choice(possible)
                     new_chrom.append(new_bp)
                     new_chrom = sorted(new_chrom)
                 else:
-                    new_chrom.append(bp_to_move)  # Put it back if no alternatives
+                    new_chrom.append(bp_to_move)  # restore if no valid replacement exists
                     new_chrom = sorted(new_chrom)
     
     return new_chrom
 
 
-def fast_non_dominated_sort(population: List[List[float]], 
+def fast_non_dominated_sort(population: List[List[float]],
                            multi_objective_fitness_function: callable) -> Tuple[List[List[int]], List[Tuple[float, float]]]:
-    """
-    NSGA-II Fast Non-dominated Sorting.
-    
+    """NSGA-II fast non-dominated sorting.
+
+    Evaluates every chromosome and partitions the population into Pareto fronts.
+    Front 0 contains non-dominated solutions (no other solution is better in all
+    objectives). Front 1 contains solutions dominated only by front 0, and so on.
+
+    Dominance uses maximization semantics (see ``dominates``): a solution that is
+    at least as good in every objective and strictly better in one dominates the other.
+
     Args:
-        population: List of chromosomes
-        multi_objective_fitness_function: Function to evaluate multi-objective fitness
-        
+        population: List of chromosomes (sorted breakpoint lists).
+        multi_objective_fitness_function: Callable with signature
+            ``(chromosome: List[float]) -> Tuple[float, float]`` that returns a
+            two-element fitness tuple (higher values are better for both objectives).
+
     Returns:
-        Tuple of (fronts, fitness_values) where fronts is list of fronts and 
-        each front is a list of solution indices
+        Tuple of ``(fronts, fitness_values)`` where ``fronts`` is a list of
+        non-dominated fronts (each front is a list of chromosome indices into
+        ``population``) and ``fitness_values`` is the evaluated fitness for every
+        chromosome in ``population`` order.
     """
     fitness_values = [multi_objective_fitness_function(chrom) for chrom in population]
     
@@ -612,14 +634,12 @@ def calculate_crowding_distance(front_indices: List[int],
         List of crowding distances for solutions in the front
     """
     distances = [0.0 for _ in range(len(front_indices))]
-    
+
     if len(front_indices) <= optimization_config.min_front_size:
         return [float('inf')] * len(front_indices)
-    
-    # For each objective
-    for obj_idx in range(2):  # We have 2 objectives
-        # Sort by objective value
-        sorted_indices = sorted(range(len(front_indices)), 
+
+    for obj_idx in range(2):
+        sorted_indices = sorted(range(len(front_indices)),
                               key=lambda i: fitness_values[front_indices[i]][obj_idx])
         
         # Set boundary points to infinity (EDGE PRESERVATION)
@@ -666,29 +686,28 @@ def analyze_population_diversity(population: List[List[float]]) -> Dict[str, Any
 
 def batch_fitness_evaluation(population: List[List[float]],
                            fitness_function: callable) -> List[float]:
-    """
-    Evaluate fitness for entire population in batch.
-    
+    """Evaluate single-objective fitness for every chromosome in the population.
+
     Args:
-        population: List of chromosomes
-        fitness_function: Function to evaluate single chromosome fitness
-        
+        population: List of chromosomes (sorted breakpoint lists).
+        fitness_function: Callable with signature ``(chromosome: List[float]) -> float``.
+
     Returns:
-        List of fitness values
+        List of fitness values in the same order as ``population``.
     """
     return [fitness_function(chrom) for chrom in population]
 
 
 def batch_multi_objective_fitness(population: List[List[float]],
                                  multi_objective_fitness_function: callable) -> List[Tuple[float, float]]:
-    """
-    Evaluate multi-objective fitness for entire population in batch.
-    
+    """Evaluate multi-objective fitness for every chromosome in the population.
+
     Args:
-        population: List of chromosomes
-        multi_objective_fitness_function: Function to evaluate multi-objective fitness
-        
+        population: List of chromosomes (sorted breakpoint lists).
+        multi_objective_fitness_function: Callable with signature
+            ``(chromosome: List[float]) -> Tuple[float, float]``.
+
     Returns:
-        List of fitness tuples
+        List of two-element fitness tuples in the same order as ``population``.
     """
     return [multi_objective_fitness_function(chrom) for chrom in population]

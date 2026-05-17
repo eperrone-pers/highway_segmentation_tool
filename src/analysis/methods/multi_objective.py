@@ -20,13 +20,11 @@ import time
 import random
 from typing import Any
 
-from ..base import AnalysisMethodBase, AnalysisResult 
+from ..base import AnalysisMethodBase, AnalysisResult
 from ..utils.ga_utilities import (
     nsga2_tournament_selection, crossover_with_retries, mutation_with_retries, analyze_population_diversity
 )
 from ..utils.segment_metrics import average_length_excluding_gap_segments
-
-# Import GA class and configuration
 from ..utils.genetic_algorithm import HighwaySegmentGA
 from config import get_optimization_method
 from logger import create_logger
@@ -93,15 +91,12 @@ class MultiObjectiveMethod(AnalysisMethodBase):
                 "Use analyze_route_gaps(...) to build one from a DataFrame."
             )
 
-        # Get method configuration and default parameters
         method_config = get_optimization_method('multi')
         if not method_config:
             raise ValueError("Multi-objective method configuration not found")
-            
-        # Extract default parameter values from config
+
         param_defaults = {param.name: param.default_value for param in method_config.parameters}
-        
-        # Extract method-specific parameters with proper config defaults
+
         min_length = kwargs.get('min_length', param_defaults['min_length'])
         max_length = kwargs.get('max_length', param_defaults['max_length'])
         # Preserve constraint values; later compromise-scoring code computes min/max stats
@@ -117,7 +112,6 @@ class MultiObjectiveMethod(AnalysisMethodBase):
         log_callback = kwargs.get('log_callback', None)
         stop_callback = kwargs.get('stop_callback', None)
         
-        # Validate parameters
         self.validate_parameters(
             min_length=min_length,
             max_length=max_length,
@@ -125,44 +119,30 @@ class MultiObjectiveMethod(AnalysisMethodBase):
             num_generations=num_generations,
             gap_threshold=gap_threshold
         )
-        
+
         start_time = time.time()
-        # gap_threshold now comes as direct parameter (framework level)
-        # Segment caching always enabled for performance
-        log_callback = kwargs.get('log_callback', None)
-        stop_callback = kwargs.get('stop_callback', None)
-        
-        # Create logger instance
         logger = create_logger(callback=log_callback)
         log = logger.log
-        
+
         log("Initializing NSGA-II multi-objective optimization...")
         log("Objectives: Minimize deviation (data fit) vs. Maximize average segment length")
         log(f"Parameters: {population_size} individuals, {num_generations} generations")
-        
-        # Initialize genetic algorithm (RouteAnalysis-only contract)
+
         ga = HighwaySegmentGA(data, x_column, y_column, min_length=min_length, max_length=max_length,
-                            population_size=population_size, crossover_rate=crossover_rate, mutation_rate=mutation_rate, 
-                            gap_threshold=gap_threshold)  # Pass explicit parameters
-        
-        # Enable segment caching for improved performance 
+                            population_size=population_size, crossover_rate=crossover_rate, mutation_rate=mutation_rate,
+                            gap_threshold=gap_threshold)
         ga.enable_segment_cache_mode(True)
-        
-        # Generate initial population
+
         log("Generating diverse initial population...")
         population = ga.generate_diverse_initial_population()
-        
-        # Validate and fix initial population
-        population = [ga._enforce_constraints(chrom) if not ga.validate_chromosome(chrom) else chrom 
+        population = [ga._enforce_constraints(chrom) if not ga.validate_chromosome(chrom) else chrom
                      for chrom in population]
-        
         log(f"[OK] Generated {len(population)} valid chromosomes")
-        
-        # Initialize tracking variables
+
         pareto_history = []
         generation_times = [] if enable_performance_stats else None
         diversity_history = [] if enable_performance_stats else None
-        
+
         log("\\nStarting NSGA-II multi-objective evolution...")
         log("Progress: [" + "-" * 50 + "]")
         
@@ -170,30 +150,23 @@ class MultiObjectiveMethod(AnalysisMethodBase):
         for generation in range(num_generations):
             generation_start = time.time()
             
-            # Check for user stop request
             if stop_callback and stop_callback():
                 log("\\nOptimization stopped by user request")
                 break
-            
-            # Evaluate population with multi-objective fitness (done by ga.fast_non_dominated_sort)
-            
-            # NSGA-II core: Non-dominated sorting and crowding distance
+
+            # NSGA-II core: non-dominated sorting followed by crowding distance
             fronts, fitness_values = ga.fast_non_dominated_sort(population)
-            
-            # Calculate crowding distances for each front
             crowding_distances = {}
             for front_idx, front in enumerate(fronts):
                 distances = ga.calculate_crowding_distance(front, fitness_values)
                 for sol_idx, distance in zip(front, distances):
                     crowding_distances[sol_idx] = distance
             
-            # Progress reporting
             if generation % 4 == 0:
                 progress = int((generation / num_generations) * 50)
                 progress_bar = "=" * progress + "-" * (50 - progress)
                 log(f"Progress: [{progress_bar}] {generation}/{num_generations} generations")
             
-            # Periodic detailed reporting
             if generation % 50 == 0 and generation > 0:
                 pareto_front = fronts[0] if fronts else []
                 if pareto_front:
@@ -214,26 +187,21 @@ class MultiObjectiveMethod(AnalysisMethodBase):
                     }
                     log(f"  Population diversity (segment counts): {diversity_clean}")
             
-            # Store Pareto front for history
             if fronts:
                 current_pareto = [(population[i], fitness_values[i]) for i in fronts[0]]
                 pareto_history.append(current_pareto)
             
-            # Performance tracking
             if enable_performance_stats:
                 generation_time = time.time() - generation_start
                 generation_times.append(generation_time)
                 diversity_stats = analyze_population_diversity(population)
                 diversity_history.append(diversity_stats)
             
-            # Create next generation using NSGA-II selection
-            if generation < num_generations - 1:  # Skip on last generation
-                # Tournament selection based on dominance and crowding distance
+            if generation < num_generations - 1:  # Skip selection on final generation
                 mating_pool = nsga2_tournament_selection(
                     population, fronts, fitness_values, crowding_distances, population_size
                 )
                 
-                # Generate offspring through crossover and mutation
                 offspring = []
                 for i in range(0, population_size, 2):
                     parent1 = mating_pool[i % len(mating_pool)]
@@ -249,9 +217,8 @@ class MultiObjectiveMethod(AnalysisMethodBase):
                         else:
                             offspring.extend([parent1, parent2])  # Fallback to parents
                     else:
-                        offspring.extend([parent1, parent2])  # No crossover
-                
-                # Apply mutations
+                        offspring.extend([parent1, parent2])
+
                 for i in range(len(offspring)):
                     if random.random() < mutation_rate:
                         mutated = mutation_with_retries(
@@ -260,34 +227,28 @@ class MultiObjectiveMethod(AnalysisMethodBase):
                         if mutated:
                             offspring[i] = mutated
                 
-                # Ensure all offspring are valid
-                offspring = [ga._enforce_constraints(chrom) if not ga.validate_chromosome(chrom) else chrom 
+                offspring = [ga._enforce_constraints(chrom) if not ga.validate_chromosome(chrom) else chrom
                            for chrom in offspring]
-                
-                # Environmental selection: Combine population + offspring, select best
-                combined_population = population + offspring  
-                
-                # Non-dominated sort on combined population  
+
+                # Environmental selection: combine parent + offspring populations, keep best
+                combined_population = population + offspring
                 combined_fronts, combined_fitness = ga.fast_non_dominated_sort(combined_population)
-                
-                # Calculate crowding distances for combined population
                 combined_crowding = {}
                 for front_idx, front in enumerate(combined_fronts):
                     distances = ga.calculate_crowding_distance(front, combined_fitness)
                     for sol_idx, distance in zip(front, distances):
                         combined_crowding[sol_idx] = distance
                 
-                # Select next generation population
                 next_population = []
                 for front in combined_fronts:
                     if len(next_population) + len(front) <= population_size:
                         # Add entire front
                         next_population.extend([combined_population[i] for i in front])
                     else:
-                        # Partial front selection by crowding distance
+                        # Partial front: rank by crowding distance to preserve spread
                         remaining = population_size - len(next_population)
                         front_with_crowding = [(i, combined_crowding[i]) for i in front]
-                        front_with_crowding.sort(key=lambda x: x[1], reverse=True)  # Higher crowding = better
+                        front_with_crowding.sort(key=lambda x: x[1], reverse=True)  # higher crowding distance = more diverse
                         
                         for i in range(remaining):
                             next_population.append(combined_population[front_with_crowding[i][0]])
@@ -295,18 +256,15 @@ class MultiObjectiveMethod(AnalysisMethodBase):
                 
                 population = next_population
             
-            # Cache clearing for performance
             if cache_clear_interval and (generation + 1) % int(cache_clear_interval) == 0 and hasattr(ga, 'clear_cache'):
                 ga.clear_cache()
                 
         # Final progress update
         log("Progress: [" + "=" * 50 + "] " + f"{num_generations}/{num_generations} generations - COMPLETE! ({time.time() - start_time:.1f}s)")
         
-        # Final evaluation and Pareto front extraction
         final_fronts, final_fitness_values = ga.fast_non_dominated_sort(population)
         pareto_front_indices = final_fronts[0] if final_fronts else []
         
-        # Create detailed solution information
         all_solutions = []
         best_deviation_solution = None
         best_length_solution = None
@@ -316,9 +274,7 @@ class MultiObjectiveMethod(AnalysisMethodBase):
         
         for idx in pareto_front_indices:
             chromosome = population[idx]
-            negative_deviation, avg_segment_length = final_fitness_values[idx]  # GA returns (-deviation, +avg_length)
-            
-            # Calculate segment statistics  
+            negative_deviation, avg_segment_length = final_fitness_values[idx]  # GA convention: (-deviation, +avg_length)
             segments = []
             for i in range(len(chromosome) - 1):
                 start_mile = chromosome[i]
@@ -353,18 +309,15 @@ class MultiObjectiveMethod(AnalysisMethodBase):
             }
             
             all_solutions.append(solution_info)
-            
-            # Track best solutions for each objective (using calculated positive values for meaningful comparison)  
-            # Safety check: ensure negative_deviation is a number
+
             if isinstance(negative_deviation, (int, float)):
                 positive_deviation = -negative_deviation  # Convert for meaningful comparison
             else:
-                # Handle case where GA returns unexpected data type
                 try:
                     positive_deviation = -float(negative_deviation)
                 except (ValueError, TypeError):
-                    print(f"🚨 Warning: Could not convert deviation {negative_deviation} to number, using absolute calculated value")
-                    positive_deviation = sum(segments)**2 if segments else 0  # Fallback to basic deviation calculation
+                    print(f"Warning: Could not convert deviation {negative_deviation} to number, using fallback")
+                    positive_deviation = sum(segments)**2 if segments else 0
                     
             if positive_deviation < best_deviation_fitness:
                 best_deviation_fitness = positive_deviation
@@ -377,9 +330,7 @@ class MultiObjectiveMethod(AnalysisMethodBase):
                 best_avg_length = avg_segment_length
                 best_length_solution = solution_info
         
-        # Select best compromise solution (normalized trade-off)
         if all_solutions:
-            # Find solution with best balance between low deviation and high average segment length
             dev_values = [sol['deviation_fitness'] for sol in all_solutions]
             length_values = [sol['avg_segment_length'] for sol in all_solutions]
             
@@ -390,18 +341,16 @@ class MultiObjectiveMethod(AnalysisMethodBase):
             best_compromise_score = float('inf')
             
             for solution in all_solutions:
-                # Normalize deviation (lower is better) and segment length (higher is better)
+                # Normalize both objectives to [0,1] lower-is-better; equal weight compromise
                 norm_dev = (solution['deviation_fitness'] - min_dev) / (max_dev - min_dev) if max_dev > min_dev else 0
-                norm_length = 1 - (solution['avg_segment_length'] - min_avg_length) / (max_avg_length - min_avg_length) if max_avg_length > min_avg_length else 0  # Invert for \"lower is better\"
-                
-                # Compromise score (equal weighting, both normalized to lower-is-better)
+                norm_length = 1 - (solution['avg_segment_length'] - min_avg_length) / (max_avg_length - min_avg_length) if max_avg_length > min_avg_length else 0
+
                 compromise_score = norm_dev + norm_length
                 
                 if compromise_score < best_compromise_score:
                     best_compromise_score = compromise_score
                     best_compromise = solution
             
-            # Use compromise as primary solution, fallback to best deviation
             primary_solution = best_compromise or best_deviation_solution or all_solutions[0]
         else:
             # Fallback: no Pareto solutions found
@@ -420,7 +369,6 @@ class MultiObjectiveMethod(AnalysisMethodBase):
             }
             all_solutions = [primary_solution]
         
-        # Prepare optimization statistics
         optimization_stats = {
             'pareto_front_size': len(all_solutions),
             'best_deviation_fitness': best_deviation_fitness if best_deviation_fitness != float('inf') else None,
@@ -439,11 +387,9 @@ class MultiObjectiveMethod(AnalysisMethodBase):
                 'average_generation_time': sum(generation_times) / len(generation_times) if generation_times else 0,
             })
         
-        # Prepare input parameters record using configuration values
-        # These parameters are preserved for accurate JSON export
         input_parameters = {
-            'min_length': min_length_constraint,        # Configuration parameter value
-            'max_length': max_length_constraint,        # Configuration parameter value
+            'min_length': min_length_constraint,
+            'max_length': max_length_constraint,
             'population_size': population_size,
             'num_generations': num_generations,
             'crossover_rate': crossover_rate,
@@ -453,14 +399,11 @@ class MultiObjectiveMethod(AnalysisMethodBase):
             'enable_performance_stats': enable_performance_stats
         }
         
-        # Prepare data summary - consistent with other methods, use RouteAnalysis data_range for per-route bounds
         actual_data = data.route_data
-        
-        # Use data_range from RouteAnalysis if available (ensures consistency with mandatory breakpoints)
+
         if hasattr(ga, 'route_analysis') and ga.route_analysis and hasattr(ga.route_analysis, 'data_range'):
             data_range = ga.route_analysis.data_range
         else:
-            # Fallback to direct calculation if RouteAnalysis not available
             data_range = {
                 'x_min': float(actual_data[x_column].min()),
                 'x_max': float(actual_data[x_column].max()),
@@ -469,10 +412,9 @@ class MultiObjectiveMethod(AnalysisMethodBase):
             }
         
         data_summary = {
-            'total_data_points': len(actual_data),  # Fixed: was 'total_points'
-            'data_range': data_range,  # Schema-compliant per-route data bounds for visualization
+            'total_data_points': len(actual_data),
+            'data_range': data_range,
             'mandatory_breakpoints': list(ga.mandatory_breakpoints),
-            # Add gap analysis information (generic to all methods)
             'gap_analysis': {
                 'total_gaps': len(ga.route_analysis.gap_segments) if hasattr(ga, 'route_analysis') and ga.route_analysis else 0,
                 'gap_segments': [{'start': gap[0], 'end': gap[1], 'length': gap[1] - gap[0]} for gap in ga.route_analysis.gap_segments] if hasattr(ga, 'route_analysis') and ga.route_analysis else [],
@@ -490,9 +432,8 @@ class MultiObjectiveMethod(AnalysisMethodBase):
         except Exception:
             pass
         
-        # Get route ID from data if available
         route_id = getattr(data, 'route_id', 'Unknown')
-        
+
         log("\\n=== MULTI-OBJECTIVE RESULTS ===")
         log(f"Pareto front size: {len(all_solutions)}")
         if best_deviation_solution:
@@ -504,12 +445,11 @@ class MultiObjectiveMethod(AnalysisMethodBase):
         log(f"Total time: {time.time() - start_time:.1f} seconds")
         log("[OK] Multi-objective optimization complete!")
         
-        # Create and return AnalysisResult
         return AnalysisResult(
             method_name=self.method_name,
             method_key=self.method_key,
             route_id=route_id,
-            all_solutions=all_solutions,  # Complete Pareto front
+            all_solutions=all_solutions,
             optimization_stats=optimization_stats,
             mandatory_breakpoints=sorted(list(ga.mandatory_breakpoints)),
             processing_time=time.time() - start_time,

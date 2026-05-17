@@ -1,20 +1,5 @@
-"""
-Highway Segmentation - Analysis Utilities
+"""Statistical analysis utilities and console summary formatters for optimization results."""
 
-This module contains statistical analysis and calculation utilities for 
-highway segmentation optimization results.
-
-Functions:
-- calculate_non_mandatory_segment_stats: Calculate statistics for segments without mandatory breakpoints
-- print_optimization_summary: Print comprehensive NSGA-II optimization results
-- print_single_objective_summary: Print single-objective optimization results  
-- print_constrained_single_objective_summary: Print constrained optimization results
-
-Author: Eric (Mott MacDonald)
-Date: March 2026
-"""
-
-# Import dependencies for summary functions
 import numpy as np
 from logger import create_logger
 

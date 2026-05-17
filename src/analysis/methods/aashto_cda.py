@@ -86,30 +86,23 @@ def aashto_cda(y: np.ndarray,
     Returns:
         uniform_sections: Segmented data values
         nodes: Identified breakpoints (0-based indices)
-        section_start: Vector containing start indices of segments  
+        section_start: Vector containing start indices of segments
         section_end: Vector containing end indices of segments
-                location, change_point = find_change_point(
+        mu: Mean value of each segment
     """
-    # Convert to column vector and ensure numpy array
     y = np.asarray(y).flatten()
     n = len(y)
-    
-    # Set default num_sections if not provided
+
     if num_sections is None:
         num_sections = n
-    
-    # Create index vector (0-based in Python)
+
     x = np.arange(n)
-    
-    # Cumulative sum
     cy = np.cumsum(y)
-    
-    # Initialize nodes - start with first and last indices (0-based)
+
     nodes = np.zeros(n, dtype=int)
-    nodes[0] = 0      # First index (0-based)
-    nodes[1] = n - 1  # Last index (0-based)
-    
-    # Estimate standard deviation based on method
+    nodes[0] = 0      # first index (0-based)
+    nodes[1] = n - 1  # last index (0-based)
+
     if method == 1:
         # MAD with normal distribution assumption
         diff_y = np.diff(y)
@@ -117,7 +110,7 @@ def aashto_cda(y: np.ndarray,
             1.4826 * np.median(np.abs(diff_y - np.median(diff_y))) / math.sqrt(2)
         )
     elif method == 2:
-        # Standard deviation of differences (recommended) - MATLAB compatibility
+        # Standard deviation of differences (MATLAB-compatible default)
         diff_y = np.diff(y)
         if len(diff_y) >= 2:
             std_diff = float(np.std(diff_y, ddof=1))  # Use sample std (ddof=1) like MATLAB
@@ -133,8 +126,7 @@ def aashto_cda(y: np.ndarray,
         else:
             sigma = float(np.std(y, ddof=0))
     
-    # Iteratively find change points (match MATLAB loop structure)
-    i = 2  # Start with 2 nodes already defined
+    i = 2  # Start with 2 nodes already defined (first and last)
     
     while i <= num_sections:
         try:
@@ -148,31 +140,25 @@ def aashto_cda(y: np.ndarray,
             break
             
         nodes[i] = location
-        i += 1  # Increment before constraint check
-        
-        # Sort current nodes and check minimum length constraint
+        i += 1
+
         snodes = np.sort(nodes[:i])
         
         if np.all(np.diff(snodes) < (2 * min_segment_datapoints - 1)):
             break
     
-    # Final number of nodes found
     ii = i
-    
-    # Sort final nodes and trim to actual count
     nodes = np.sort(nodes[:ii])
-    
-    # Calculate uniform sections using interpolation (match MATLAB exactly)
+
+    # Interpolate uniform section values (matches MATLAB: uniform_sections = [u(1); u])
     cy_nodes = cy[nodes]
     uniform_sections = np.diff(np.interp(x, nodes, cy_nodes))
-    # MATLAB: uniform_sections = [uniform_sections(1); uniform_sections]
     uniform_sections = np.concatenate([[uniform_sections[0]], uniform_sections])
-    
-    # Define section boundaries (match MATLAB: Section_End = nodes(2:end), Section_Start = [1; Section_End(1:end-1)+1])
-    section_end = nodes[1:].copy()  # All nodes except first (MATLAB: nodes(2:end))
-    section_start = np.concatenate([[0], section_end[:-1] + 1])  # [0; previous_ends + 1]
-    
-    # Calculate segment means
+
+    # Section boundaries (MATLAB: Section_End=nodes(2:end), Section_Start=[1; Section_End(1:end-1)+1])
+    section_end = nodes[1:].copy()
+    section_start = np.concatenate([[0], section_end[:-1] + 1])
+
     mu = np.zeros(len(section_start))
     for i, _ in enumerate(section_start):
         mu[i] = np.mean(y[section_start[i]:section_end[i]+1])
@@ -193,36 +179,33 @@ def aashto_cda(y: np.ndarray,
 
             if enable_diagnostic_output:
                 print(f"Merge iteration {iteration}: min_diff={min_change:.3f} vs threshold={min_section_difference}")
-            
+
             if min_change >= min_section_difference:
                 if enable_diagnostic_output:
                     print("STOP: All differences >= threshold")
                 break
-                
-            # Find minimum difference location
+
             min_id = np.argmin(mu_diff)
             if enable_diagnostic_output:
                 print(f"Merging segments {min_id} and {min_id+1}: {mu[min_id]:.3f} + {mu[min_id+1]:.3f}")
-            
-            # Merge segments (exactly match MATLAB logic)
-            section_start = np.delete(section_start, min_id + 1)  # Remove start of 2nd segment
-            section_end = np.delete(section_end, min_id)          # Remove end of 1st segment  
-            mu = np.delete(mu, min_id)                            # Remove mean of 1st segment (MATLAB: mu(ID) = [])
-            
-            # Recalculate mean for merged segment (MATLAB: mu(ID) = mean(...))
+
+            # Merge adjacent segments (matches MATLAB logic exactly)
+            section_start = np.delete(section_start, min_id + 1)
+            section_end = np.delete(section_end, min_id)
+            mu = np.delete(mu, min_id)
             mu[min_id] = np.mean(y[section_start[min_id]:section_end[min_id]+1])
 
             if enable_diagnostic_output:
                 print(f"  New mean: {mu[min_id]:.3f}, remaining segments: {len(mu)}")
             
             iteration += 1
-            if iteration > 50:  # Safety break
+            if iteration > 50:  # Safety cap against degenerate data
                 if enable_diagnostic_output:
                     print("ERROR: Too many merge iterations!")
                 break
-        
-        # Recalculate nodes and uniform sections after merging (match MATLAB)
-        nodes = np.concatenate([[0], section_end]) 
+
+        # Recompute nodes and uniform sections after merging (matches MATLAB)
+        nodes = np.concatenate([[0], section_end])
         cy_nodes = cy[nodes]
         uniform_sections = np.diff(np.interp(x, nodes, cy_nodes))
         uniform_sections = np.concatenate([[uniform_sections[0]], uniform_sections])
@@ -248,8 +231,11 @@ def find_change_point(cy: np.ndarray,
                      global_local: bool,
                      debug: bool = False) -> Tuple[int, int]:
     """
-    Test the presence of change points in the cumulative signal for all sections.
-    
+    Test for significant change points in the cumulative signal across all sections.
+
+    Uses a Bonferroni-adjusted significance threshold to control for multiple comparisons
+    when testing across many segments simultaneously.
+
     Args:
         cy: Cumulative sum of measurements
         nodes: Locations of currently identified change points (0-based)
@@ -257,45 +243,37 @@ def find_change_point(cy: np.ndarray,
         sigma: Error standard deviation
         alpha: Significance level
         min_segment_datapoints: Minimum number of datapoints per segment
-        global_local: Use segment-specific (True) or total data length (False)
-    
+        global_local: Use segment-specific lengths (True) or total data length (False)
+        debug: Unused; retained for API compatibility
+
     Returns:
         location: Index of candidate change point (0-based)
-        change_point_test: 1 if significant change point detected, 0 otherwise
+        change_point_test: 1 if a significant change point was detected, 0 otherwise
     """
-    # Sort nodes
     nodes = np.sort(nodes)
-    
-    # Calculate segment lengths
     L = np.diff(nodes)
-    
-    # Initialize arrays
+
     m = np.zeros(len(L))
     id_array = np.zeros(len(L), dtype=int)
-    
-    # Interpolate cumulative sum at nodes
+
     cy_nodes = cy[nodes]
     cy_interp = np.interp(x, nodes, cy_nodes)
-    
-    # Calculate threshold
+
+    # Bonferroni correction: divide alpha by number of segments and both tails
     alpha_adj = alpha / len(L) / 2
     log_val = math.log(alpha_adj)  
     th = math.sqrt(-0.5 * log_val)
     
     change_point_test = 0
-    
-    # Test each segment for change points
+
     for i, (start_idx, end_idx) in enumerate(zip(nodes, nodes[1:])):
-        
-        # Calculate CDA for this segment
         cda = cy[start_idx:end_idx+1] - cy_interp[start_idx:end_idx+1]
-        
-        # Sort by absolute value in descending order
+
         abs_cda = np.abs(cda)
-        sorted_indices = np.argsort(abs_cda)[::-1]  # Descending order
+        sorted_indices = np.argsort(abs_cda)[::-1]
         sorted_values = abs_cda[sorted_indices]
-        
-        # Find first valid change point location respecting min_segment_datapoints
+
+        # Select the highest-CDA candidate that respects min_segment_datapoints from both ends
         for j, candidate_idx in enumerate(sorted_indices):
             
             # MATLAB: if min(abs(ID(j)-[1; nodes(i+1) - nodes(i) + 1]))>(min_length - 1)
@@ -306,20 +284,16 @@ def find_change_point(cy: np.ndarray,
                 m[i] = sorted_values[j]
                 break
     
-    # Calculate test statistic
     if global_local:
-        # Use segment-specific lengths
-        test_stats = np.divide(m, sigma * np.sqrt(np.maximum(L, 1)), 
+        test_stats = np.divide(m, sigma * np.sqrt(np.maximum(L, 1)),
                               out=np.zeros_like(m), where=(sigma * np.sqrt(np.maximum(L, 1)) != 0))
         M_idx = np.argmax(test_stats)
         M = test_stats[M_idx]
     else:
-        # Use total data length
         test_stats = m / (sigma * math.sqrt(len(cy)))
         M_idx = np.argmax(test_stats)
         M = test_stats[M_idx]
-    
-    # Calculate absolute location
+
     location = id_array[M_idx] + np.sum(L[:M_idx])
     
     print(f"    Max test stat: M={M:.6f} at location {location} (segment {M_idx})")
@@ -356,18 +330,16 @@ class AashtoCdaMethod(AnalysisMethodBase):
         return "aashto_cda"
     
     def _create_analyzable_segments(self, route_analysis):
-        """Create analyzable segments structure from RouteAnalysis data."""
+        """Build the analyzable-segments list from RouteAnalysis mandatory breakpoints."""
         segments = []
-        
-        # Create segments between mandatory breakpoints
+
         mandatory_points = sorted(list(route_analysis.mandatory_breakpoints))
         gap_set = set(route_analysis.gap_segments)
-        
+
         for start, end in zip(mandatory_points, mandatory_points[1:]):
             length = end - start
-            
-            # Determine if this segment is a gap or data
-            is_gap = any(abs(start - gap[0]) < 0.001 and abs(end - gap[1]) < 0.001 
+
+            is_gap = any(abs(start - gap[0]) < 0.001 and abs(end - gap[1]) < 0.001
                         for gap in gap_set)
             segment_type = "gap" if is_gap else "data"
             
@@ -437,7 +409,6 @@ class AashtoCdaMethod(AnalysisMethodBase):
             max_segments = kwargs.get('max_segments', param_defaults['max_segments'])
             min_section_difference = kwargs.get('min_section_difference', param_defaults['min_section_difference'])
             enable_diagnostic_output = kwargs.get('enable_diagnostic_output', param_defaults['enable_diagnostic_output'])
-            # gap_threshold now comes as direct parameter (framework level)
 
             # Validate alpha based on algorithm constraints (documentation: alpha < 0.5)
             if not isinstance(alpha, (int, float)) or not (0.0 < float(alpha) < 0.5):
@@ -542,11 +513,9 @@ class AashtoCdaMethod(AnalysisMethodBase):
                         print(f"    -> ERROR in section {section_idx + 1}: {section_error}")
                     continue
             
-            # Sort all breakpoints and remove duplicates
             all_breakpoints = np.unique(np.array(all_breakpoints))
             all_breakpoints = np.sort(all_breakpoints)
-            
-            # DEBUG: Show final collected breakpoints
+
             if enable_diagnostic_output:
                 print("\n=== FINAL BREAKPOINT COLLECTION ===")
                 print(f"Total breakpoints collected: {len(all_breakpoints)}")

@@ -1,7 +1,4 @@
-"""
-JSON to Excel Export Module
-Comprehensive export of highway segmentation analysis results to Excel format
-"""
+"""Export highway segmentation JSON results to multi-sheet Excel workbooks."""
 
 import json
 import os
@@ -16,15 +13,51 @@ from openpyxl.worksheet.worksheet import Worksheet
 
 
 class HighwaySegmentationExcelExporter:
-    """Complete JSON to Excel converter for highway segmentation analysis results"""
-    
+    """Convert a highway segmentation results JSON file into a multi-sheet Excel workbook.
+
+    Each call to ``export_to_excel`` produces a workbook with the following sheets
+    (in order):
+
+    1. **Analysis Summary** — timestamp, method, status, file info, column mapping
+    2. **Input Parameters** — all configuration parameters in dot-notation rows
+    3. **Route Summary** — one row per route: data points, extents, gap counts, solution count
+    4. **Mandatory Breakpoints & Gaps** — every mandatory breakpoint with gap-type
+       classification and adjacent segment lengths; gap rows are highlighted
+    5. **All Solutions** — one row per solution (Pareto point or best solution) with
+       objective values and segment statistics
+    6. **All Segmentation Output** — one row per segment across every solution, with
+       y-value statistics from ``segment_details``
+    7. **Analyzable Segments** — the contiguous data sections that the GA can segment
+       (excludes gap spans)
+    8. **Original Data** — raw rows from the source CSV, if the file can be located;
+       falls back to an error-message sheet when the file is not found
+    9. **Statistics & Performance** — method-specific timing and performance metrics
+    10. **Processing Log** — operation-level audit trail derived from route results
+
+    Expected top-level keys in ``json_data``:
+
+    - ``analysis_metadata`` — timestamp, method, status, ``input_file_info``,
+      ``analysis_summary``, ``software_version``
+    - ``input_parameters`` — arbitrary nested dict of analysis configuration
+    - ``route_results`` — list of per-route dicts, each containing ``route_info``,
+      ``input_data_analysis``, and ``processing_results``
+
+    For the typical one-shot use case prefer the module-level convenience function
+    ``export_json_to_excel()``, which loads the JSON and resolves the output path
+    automatically.
+    """
+
     def __init__(self, json_data: Dict, original_csv_path: str = None):
-        """
-        Initialize exporter with JSON data and optional original CSV path
-        
+        """Initialize the exporter.
+
         Args:
-            json_data: Complete JSON analysis results
-            original_csv_path: Path to original CSV file (optional)
+            json_data: Parsed JSON results dict conforming to the highway segmentation
+                results schema. Must contain at minimum ``analysis_metadata`` and
+                ``route_results`` keys.
+            original_csv_path: Absolute or relative path to the source CSV file.
+                When provided and the file exists it is written to the "Original Data"
+                sheet. When ``None`` or the file is not found the sheet shows a
+                descriptive error message instead.
         """
         self.json_data = json_data
         self.original_csv_path = original_csv_path
@@ -58,16 +91,21 @@ class HighwaySegmentationExcelExporter:
         return str(value)
     
     def export_to_excel(self, output_path: str) -> tuple[bool, str]:
-        """
-        Export complete analysis results to Excel file
-        
+        """Write all ten sheets to an Excel workbook at ``output_path``.
+
+        Sheets are created in the fixed order documented on the class. The
+        "Original Data" sheet is always written — either with CSV content or with
+        a "file not found" message.
+
         Args:
-            output_path: Path where Excel file will be saved
-            
+            output_path: Destination path for the ``.xlsx`` file. The directory
+                must already exist.
+
         Returns:
-            tuple: (success: bool, error_message: str)
-                  success=True, error_message="" if successful
-                  success=False, error_message=user_friendly_error if failed
+            ``(True, "")`` on success, or ``(False, user_friendly_message)`` when
+            the file cannot be written — for example because it is open in Excel
+            (``PermissionError``) or the target directory does not exist
+            (``FileNotFoundError``).
         """
         try:
             print(f"[INFO] Starting Excel export to: {output_path}")
@@ -109,7 +147,7 @@ class HighwaySegmentationExcelExporter:
             return False, error_msg
     
     def _create_worksheet_with_headers(self, sheet_name: str, headers: List[str]) -> Worksheet:
-        """Create worksheet with bold headers"""
+        """Create a new sheet, write bold column headers in row 1, and return the worksheet."""
         ws = self.workbook.create_sheet(title=sheet_name)
         
         # Add headers
@@ -608,7 +646,17 @@ class HighwaySegmentationExcelExporter:
             self._create_original_data_error_tab()
     
     def _find_original_csv_file(self):
-        """Find original CSV file using improved search strategy"""
+        """Locate the source CSV file using a prioritized search strategy.
+
+        Search order:
+        1. ``original_csv_path`` supplied at construction (if it exists on disk).
+        2. The absolute ``data_file_path`` recorded in the JSON ``input_file_info``.
+        3. Several relative paths derived from ``data_file_name`` in the same block:
+           ``./data/``, ``./Results/``, ``./``, and ``../data/``.
+
+        Returns:
+            The first path that exists as a file, or ``None`` if none are found.
+        """
         # First priority: provided path
         if self.original_csv_path:
             if os.path.exists(self.original_csv_path):
@@ -768,16 +816,21 @@ class HighwaySegmentationExcelExporter:
 
 
 def export_json_to_excel(json_path: str, output_path: str = None, original_csv_path: str = None) -> bool:
-    """
-    Convenience function to export JSON results to Excel
-    
+    """Load a results JSON file and export it to Excel in a single call.
+
+    Convenience wrapper around ``HighwaySegmentationExcelExporter`` for callers
+    that already have a JSON file path and just want an Excel file beside it.
+
     Args:
-        json_path: Path to JSON results file
-        output_path: Path for Excel output (default: same as JSON with .xlsx)
-        original_csv_path: Path to original CSV file (optional)
-        
+        json_path: Path to the highway segmentation results JSON file.
+        output_path: Destination path for the ``.xlsx`` file. Defaults to
+            ``json_path`` with the extension replaced by ``.xlsx``.
+        original_csv_path: Optional path to the source CSV file, forwarded to
+            ``HighwaySegmentationExcelExporter`` for the "Original Data" sheet.
+
     Returns:
-        bool: True if export successful
+        ``True`` on success, ``False`` if the JSON cannot be read or
+        ``export_to_excel`` reports a failure (error is printed to stdout).
     """
     if output_path is None:
         output_path = str(Path(json_path).with_suffix('.xlsx'))

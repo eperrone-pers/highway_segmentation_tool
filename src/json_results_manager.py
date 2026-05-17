@@ -1,19 +1,7 @@
-"""
-JSON Results Manager for Highway Segmentation GA
+"""JSON output for Highway Segmentation GA analysis results.
 
-This module provides JSON output capabilities for Highway Segmentation GA.
-Implements the Phase 1 simplified JSON schema with essential features and extensibility
-for future enhancements.
-
-Key Features:
-- Converts AnalysisResult dataclass to JSON schema format
-- Cross-route aggregation for multi-route scenarios  
-- Data traceability with column mapping
-- Route processing context tracking
-- Schema validation support
-
-Author: Highway Segmentation GA Team
-Phase: 1.95.2 - JSON Output Implementation
+Converts AnalysisResult objects to the schema-compliant JSON format, handling
+multi-route aggregation, data traceability, and schema validation.
 """
 
 import json
