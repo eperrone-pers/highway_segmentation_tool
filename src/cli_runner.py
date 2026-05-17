@@ -36,6 +36,19 @@ LogCallback = Callable[[str], None]
 
 
 def _coerce_numeric(value: Any, default: float = 0.0) -> float:
+    """Convert a JSON-serialized numeric value to float, unwrapping single-element lists.
+
+    Some analysis methods return numeric fields as ``[1.23]`` rather than ``1.23``
+    (a serialization artifact). This function handles both forms transparently.
+
+    Args:
+        value: The raw value from an AnalysisResult field — may be int, float, or a
+            single-element list of int/float.
+        default: Value to return when ``value`` is None, empty, or an unsupported type.
+
+    Returns:
+        The numeric value as a float, or ``default`` if conversion is not possible.
+    """
     if isinstance(value, (int, float)):
         return float(value)
     if isinstance(value, list) and value and isinstance(value[0], (int, float)):
@@ -78,7 +91,35 @@ class RunSpecError(ValueError):
 
 @dataclass(frozen=True)
 class ResolvedRunSpec:
-    """Normalized, execution-ready run spec."""
+    """Normalized, execution-ready run spec produced by ``load_and_resolve_run_spec``.
+
+    All paths are absolute. All string fields are stripped. Optional fields that
+    were absent or null in the JSON are represented as ``None``.
+
+    Attributes:
+        spec_path: Absolute path to the run-spec JSON file (used as the path
+            resolution root for relative paths inside the spec).
+        spec_version: Version string from the spec (e.g., ``"1.0"``).
+        data_file_path: Absolute path to the input CSV or Excel file.
+        x_column: Column name for the x-axis values (distance / station).
+        y_column: Column name for the y-axis values (pavement metric).
+        gap_threshold: Minimum distance gap (in the x-axis unit, typically miles)
+            that triggers a forced segment break between consecutive data points.
+        route_column: Column name that identifies individual routes. ``None``
+            means the file is treated as a single route.
+        selected_routes: Subset of route IDs to process. ``None`` means all routes
+            found in ``route_column`` are processed.
+        must_break_columns: Column names whose value changes force a mandatory
+            breakpoint regardless of the GA solution (e.g., district or jurisdiction
+            boundaries). ``None`` means no forced attribute breaks.
+        method_key: Analysis method identifier
+            (e.g., ``"single_objective"``, ``"multi_objective"``, ``"aashto_cda"``).
+        method_parameters: Method-specific parameters, merged with per-method
+            defaults so every parameter has a value.
+        output_json_path: Absolute path where the results JSON file will be written.
+        overwrite: When ``True``, overwrite an existing output file. When ``False``,
+            ``run_analysis_from_spec_file`` raises ``RunSpecError`` if the file exists.
+    """
 
     spec_path: Path
     spec_version: str
@@ -99,18 +140,31 @@ class ResolvedRunSpec:
 
 
 def _default_logger(msg: str) -> None:
+    """Fallback log handler used when no ``log_callback`` is provided."""
     print(msg)
 
 
 def _load_json(path: Path) -> Dict[str, Any]:
-    # Be permissive about UTF-8 BOM.
-    # PowerShell's Set-Content -Encoding UTF8 and some editors may include a BOM,
-    # which breaks strict 'utf-8' decoding for JSON.
+    """Read and parse a JSON file, returning its contents as a dict.
+
+    Uses ``utf-8-sig`` encoding to silently strip a UTF-8 BOM if present.
+    PowerShell's ``Set-Content -Encoding UTF8`` and some editors emit a BOM
+    that breaks the standard ``utf-8`` codec when passed to ``json.loads``.
+
+    Raises:
+        FileNotFoundError: If ``path`` does not exist.
+        json.JSONDecodeError: If the file content is not valid JSON.
+    """
     return json.loads(path.read_text(encoding="utf-8-sig"))
 
 
 def _resolve_path(base_dir: Path, p: str) -> Path:
-    # Treat empty as error at the caller.
+    """Resolve a path string to an absolute Path, relative to ``base_dir``.
+
+    Absolute paths in ``p`` are returned unchanged. Relative paths are joined
+    onto ``base_dir`` (typically the directory containing the run-spec file).
+    Empty strings should be caught by schema validation before reaching here.
+    """
     candidate = Path(p)
     if not candidate.is_absolute():
         candidate = base_dir / candidate
@@ -208,6 +262,22 @@ def load_and_resolve_run_spec(spec_path: str | os.PathLike[str], *, validate: bo
 
 
 def _read_tabular_file(path: Path) -> pd.DataFrame:
+    """Read a CSV or Excel file into a DataFrame with all columns as strings.
+
+    Reading as ``dtype=str`` defers numeric type inference to
+    ``_convert_columns_for_analysis``, which mirrors the GUI load pipeline and
+    avoids pandas silently dropping leading zeros or misinterpreting mixed types.
+
+    Args:
+        path: Path to the input file. Supported extensions: ``.csv``,
+            ``.xlsx``, ``.xls``.
+
+    Returns:
+        DataFrame with every column as object (string) dtype.
+
+    Raises:
+        RunSpecError: If the file extension is not supported.
+    """
     suffix = path.suffix.lower()
     if suffix == ".csv":
         return pd.read_csv(path, dtype=str)
@@ -217,7 +287,33 @@ def _read_tabular_file(path: Path) -> pd.DataFrame:
 
 
 def _convert_columns_for_analysis(df: pd.DataFrame, *, x_column: str, y_column: str, route_column: Optional[str]) -> pd.DataFrame:
-    """Mimic the GUI load behavior: read strings, then coerce numeric safely."""
+    """Coerce DataFrame columns from string dtype to appropriate types for analysis.
+
+    Mirrors the GUI data-load pipeline so the CLI produces identical input to
+    the analysis methods. Key behaviors:
+
+    - ``x_column`` and ``y_column`` are coerced to numeric; rows where either is
+      non-numeric or missing are dropped.
+    - ``route_column`` (when present) is normalized to stripped strings.
+    - All other columns undergo safe numeric coercion: if every non-null value
+      can be parsed as a number, the column becomes numeric. Columns that contain
+      any leading-zero integers (e.g., zip codes, padded section IDs) are left as
+      strings to avoid silently dropping the leading zero.
+
+    Args:
+        df: Input DataFrame with all columns as string dtype (from ``_read_tabular_file``).
+        x_column: Name of the distance/station column.
+        y_column: Name of the pavement-metric column.
+        route_column: Name of the route-ID column, or ``None`` for single-route files.
+
+    Returns:
+        DataFrame with x/y as numeric, route column as string, and other columns
+        coerced where safe. Rows with missing x, y, or route values are dropped.
+
+    Raises:
+        RunSpecError: If ``x_column`` or ``y_column`` is absent from the DataFrame,
+            or if either contains non-numeric values after coercion.
+    """
 
     if x_column not in df.columns:
         raise RunSpecError(f"X column {x_column!r} not found in input file")
@@ -336,6 +432,27 @@ def _determine_routes(
 
 
 def _merge_method_defaults(method_key: str, overrides: Dict[str, Any]) -> Dict[str, Any]:
+    """Build a complete parameter dict by merging spec overrides on top of method defaults.
+
+    Starts from the declared default value for every parameter in the method's
+    config, then applies ``overrides`` from the run spec. After merging:
+
+    - ``OptionalNumericParameter`` values that are none-like (empty string, ``"None"``,
+      etc.) are normalized to ``None`` so method code can test with ``is None``.
+    - ``gap_threshold`` is removed — it belongs to the framework input section and
+      must not be passed as a method parameter.
+
+    Args:
+        method_key: Analysis method identifier (e.g., ``"single_objective"``).
+        overrides: Parameter values from the run spec's ``method.method_parameters``
+            block. Missing keys fall back to the method's declared defaults.
+
+    Returns:
+        Dict mapping every parameter name to its resolved value.
+
+    Raises:
+        KeyError / AttributeError: If ``method_key`` is not registered in config.
+    """
     cfg = get_optimization_method(method_key)
     defaults = {p.name: p.default_value for p in (cfg.parameters or [])}
 
@@ -354,6 +471,20 @@ def _merge_method_defaults(method_key: str, overrides: Dict[str, Any]) -> Dict[s
 
 
 def _validate_method_parameters(method_key: str, params: Dict[str, Any]) -> None:
+    """Validate a fully-merged parameter dict against the method's declared constraints.
+
+    Iterates every ``ParameterDefinition`` in the method's config and calls its
+    ``validate_value()`` method. All validation errors are collected before raising
+    so the caller sees the complete list of problems in a single exception.
+
+    Args:
+        method_key: Analysis method identifier (e.g., ``"single_objective"``).
+        params: Merged parameter dict from ``_merge_method_defaults``.
+
+    Raises:
+        RunSpecError: If any required parameter is missing or any value fails
+            its ``ParameterDefinition.validate_value()`` check.
+    """
     cfg = get_optimization_method(method_key)
     errors: List[str] = []
 

@@ -162,7 +162,29 @@ class OptimizationController:
                     self.optimization_thread = None
     
     def _run_optimization_worker(self):
-        """Worker method that runs in a separate thread to perform optimization."""
+        """Entry point for the daemon thread started by ``start_optimization``.
+
+        Owns the full optimization lifecycle on the worker thread:
+
+        1. Reads parameters and resolves the route list from ``self.app``.
+        2. Calls ``_prepare_multi_route_analyses`` to build per-route
+           ``RouteAnalysis`` objects (gap detection, mandatory breakpoints).
+        3. Iterates routes, calling ``_run_single_route_optimization`` for each.
+           Checks ``self.app.stop_requested`` between routes — this is the
+           cooperative cancellation point; no mid-generation forced abort occurs.
+        4. On completion (or partial completion), saves consolidated results via
+           ``_save_consolidated_results`` if a save name is set, then schedules
+           ``_show_enhanced_multi_route_visualization`` on the main thread via
+           ``root.after(0, ...)``.
+        5. Any unhandled exception is caught and routed to ``app.handle_error``
+           (or a fallback ``messagebox``).
+        6. The ``finally`` block always calls ``_finalize_optimization`` via
+           ``root.after(0, ...)`` to restore UI state (buttons, flags) on the
+           main thread regardless of success or failure.
+
+        Does not return a value. Results are communicated through the sequence
+        of ``log_message`` calls and the scheduled visualization callback.
+        """
         try:
             self._optimization_start_time = time.time()
 
@@ -354,25 +376,60 @@ class OptimizationController:
             # Always clean up UI state
             self.app.root.after(0, lambda: self._finalize_optimization(self.app.stop_requested))
     
-    def _run_single_route_optimization(self, data, method_config, method_key, params, 
+    def _run_single_route_optimization(self, data, method_config, method_key, params,
                                      x_column, y_column, min_length, max_length, gap_threshold,
                                      route_id, route_idx=1, total_routes=1):
-        """
-        Run optimization for a single route (unified architecture - always has route_id).
-        
+        """Run the configured analysis method for one route and return a result dict.
+
+        Resolves the method class from ``method_key``, strips framework-level keys
+        (``gap_threshold``, ``log_callback``, ``stop_callback``, ``input_parameters``)
+        from ``params`` before passing them as keyword arguments, then injects the
+        live GUI callbacks so the method can log and honour stop requests.
+
         Args:
-            data: RouteAnalysis object containing the route data
-            method_config: Optimization method configuration
-            method_key: Method key (single, constrained, multi, aashto_cda)
-            params: All optimization parameters (method-specific extraction handled by each method)
-            x_column, y_column: Data column names
-            min_length, max_length: Basic segment constraints for logging
-            route_id: Route identifier (always present in unified architecture)
-            route_idx: Current route index (1-based)
-            total_routes: Total number of routes being processed
-            
+            data: ``RouteAnalysis`` object for this route (gap-aware, pre-sorted).
+            method_config: ``OptimizationMethodConfig`` for the selected method.
+            method_key: Short method identifier, e.g. ``"single"``, ``"multi"``,
+                ``"constrained"``, ``"aashto_cda"``.
+            params: Full parameter dict from ``parameter_manager``. Framework-level
+                keys are stripped inside this method before forwarding.
+            x_column: Column name for the x-axis (milepoint / distance).
+            y_column: Column name for the y-axis (pavement metric).
+            min_length: Minimum segment length from params (used for log messages only).
+            max_length: Maximum segment length from params (used for log messages only).
+            gap_threshold: Minimum gap distance that triggers a forced breakpoint.
+            route_id: Unique identifier for this route.
+            route_idx: 1-based position of this route in the processing sequence.
+            total_routes: Total number of routes being processed in this run.
+
         Returns:
-            dict: Optimization results or None if failed
+            A dict containing the route results on success, or ``None`` on failure.
+            Common keys present for all methods:
+
+            - ``route_id`` — route identifier
+            - ``method_key`` — method used
+            - ``best_fitness`` — scalar fitness of the best solution
+            - ``best_chromosome`` — breakpoint list of the best solution
+            - ``best_segments`` — segment count of the best solution
+            - ``avg_segment_length`` — average segment length in miles
+            - ``execution_time`` — wall-clock seconds for this route
+            - ``mandatory_breakpoints`` — forced breakpoints from gap/attribute analysis
+            - ``data_summary``, ``input_parameters``, ``optimization_stats`` — pass-through
+              from the ``AnalysisResult``
+
+            Additional keys for multi-objective runs:
+
+            - ``all_solutions`` — full Pareto front solution list
+            - ``pareto_front_size``, ``best_deviation_fitness``, ``best_segment_count``
+
+            Additional keys for constrained runs:
+
+            - ``best_unconstrained_fitness``, ``length_deviation``,
+              ``target_avg_length``, ``tolerance``
+
+            Additional keys for AASHTO CDA runs:
+
+            - ``analysis_method``, ``statistical_parameters``, ``method_stats``
         """
         try:
             route_data_points = len(data.route_data)
@@ -492,7 +549,17 @@ class OptimizationController:
             return None
     
     def _finalize_optimization(self, stopped_early=False):
-        """Finalize the optimization process and update UI."""
+        """Reset UI state after optimization completes or is stopped.
+
+        Always called on the **main thread** via ``root.after(0, ...)`` from the
+        worker thread's ``finally`` block so that Tkinter widget updates are safe.
+        Resets ``app.is_running`` and ``app.stop_requested``, re-enables the Start
+        button, and restores the Stop button label and disabled state.
+
+        Args:
+            stopped_early: When ``True``, logs a "stopped by user" message instead
+                of the normal "completed" message.
+        """
         self.app.is_running = False
         self.app.stop_requested = False
 
@@ -742,11 +809,36 @@ class OptimizationController:
             return {}
     
     def is_optimization_running(self):
-        """Check if optimization is currently running."""
+        """Return ``True`` only when both the running flag is set and the thread is alive.
+
+        Checking both conditions avoids false positives during the brief window
+        between ``start_optimization`` setting ``app.is_running`` and the thread
+        actually starting, or after the thread finishes but before
+        ``_finalize_optimization`` clears the flag.
+        """
         return self.app.is_running and (self.optimization_thread is not None and self.optimization_thread.is_alive())
     
     def _show_enhanced_multi_route_visualization(self, json_path, all_route_results, method_key):
-        """Show visualization for multi-route optimization results."""
+        """Open the enhanced visualization window for the completed optimization run.
+
+        Always called on the **main thread** via ``root.after(0, ...)`` from the
+        worker thread.
+
+        Prefers loading data from ``json_path`` (the saved results file) because
+        it contains the fully schema-compliant structure including segment details
+        and plugin statistics. When ``json_path`` is ``None`` or the file cannot be
+        read, falls back to assembling a minimal ``json_data`` dict from the
+        in-memory ``all_route_results`` list. The fallback dict lacks segment-level
+        detail but is sufficient to render the Pareto front and segmentation overlay.
+
+        Args:
+            json_path: Path to the saved results JSON file, or ``None`` when results
+                were not saved (no custom save name was set).
+            all_route_results: List of per-route result dicts from
+                ``_run_single_route_optimization``.
+            method_key: Method identifier used to decide whether to include Pareto
+                data in the fallback dict.
+        """
         try:
             from visualization_ui import show_enhanced_visualization
 
@@ -814,25 +906,32 @@ class OptimizationController:
             self.app.log_message(f"[ERROR] Error showing multi-route visualization: {str(e)}")
 
     def _prepare_multi_route_analyses(self, original_data, route_column, selected_routes, x_column, y_column, gap_threshold=0.5, is_single_route_mode=False):
-        """
-        Pre-analyze all selected routes to create RouteAnalysis objects.
-        
-        This separates route preparation from optimization execution for better architecture:
-        - Early error detection for route analysis issues
-        - Better progress reporting  
-        - Clean separation of concerns
-        
+        """Filter and gap-analyse each selected route, returning ready-to-optimize objects.
+
+        Separating this step from optimization allows early detection of per-route
+        data problems (too few points, bad column values) before any expensive GA
+        work starts, and gives cleaner progress logging.
+
+        Routes with fewer than 3 data points are skipped with a warning. Failures
+        on individual routes are caught and logged so the remaining routes still run.
+
         Args:
-            original_data: Original RouteAnalysis object (contains all routes mixed)
-            route_column: Name of the route column (None for single-route mode)
-            selected_routes: List of route IDs to process
-            x_column: X-axis column name
-            y_column: Y-axis column name
-            is_single_route_mode: If True, treat entire dataset as single route
-            
+            original_data: The application's loaded ``RouteAnalysis`` object whose
+                ``route_data`` DataFrame contains all routes combined.
+            route_column: Column name used to split routes, or ``None`` in
+                single-route mode.
+            selected_routes: Ordered list of route ID strings to process.
+            x_column: Column name for the x-axis (milepoint / distance).
+            y_column: Column name for the y-axis (pavement metric).
+            gap_threshold: Minimum x-axis distance between consecutive points that
+                triggers a mandatory segment break. Forwarded to ``analyze_route_gaps``.
+            is_single_route_mode: When ``True``, the entire ``original_data.route_data``
+                DataFrame is used as-is (no per-route filtering).
+
         Returns:
-            List[Tuple[str, RouteAnalysis]]: List of (route_id, route_analysis) tuples
-            Returns empty list if no routes could be analyzed successfully
+            List of ``(route_id, RouteAnalysis)`` tuples in ``selected_routes`` order,
+            containing only the routes that were successfully prepared. Returns an
+            empty list if every route failed.
         """
         from data_loader import filter_data_by_route, analyze_route_gaps
         
@@ -883,7 +982,15 @@ class OptimizationController:
         return prepared_routes
     
     def get_optimization_status(self):
-        """Get current optimization status information."""
+        """Return a snapshot of the current optimization state.
+
+        Returns:
+            Dict with keys:
+
+            - ``is_running`` (bool) — ``app.is_running`` flag value
+            - ``stop_requested`` (bool) — ``app.stop_requested`` flag value
+            - ``thread_alive`` (bool) — whether the worker thread exists and is alive
+        """
         return {
             'is_running': self.app.is_running,
             'stop_requested': self.app.stop_requested,
