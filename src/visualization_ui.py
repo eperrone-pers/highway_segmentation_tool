@@ -1,25 +1,10 @@
-"""
-Enhanced Integrated Visualization for Highway Segmentation GA
+"""Enhanced paned-window visualization for Highway Segmentation results.
 
-This module provides an enhanced paned window visualization that integrates directly
-with the main application, replacing separate matplotlib windows with a professional
-unified interface featuring:
+Integrates directly with the main application and shows a resizable two-pane view:
+- Left pane: Pareto front (multi-objective) or fitness history
+- Right pane: segmentation overlay on the original data signal
 
-- Resizable horizontal panes with movable divider
-- Type-ahead route dropdown selection  
-- Navigation toolbars for each pane
-- Labeled frames with professional appearance
-- Integration with optimization results and original data
-
-Features:
-- Automatic opening after optimization completion
-- JSON results integration with original CSV data
-- Interactive route selection with immediate updates
-- Independent pane navigation and zooming
-- Professional appearance matching main application UI
-
-Author: Eric (Mott MacDonald)  
-Date: April 2026
+Supports interactive route selection, JSON-driven results, and optional original CSV data.
 """
 
 import tkinter as tk
@@ -1807,9 +1792,7 @@ class EnhancedVisualizationWindow:
     def update_pareto_graph(self, route_id, pareto_points):
         """Update LEFT pane with Pareto front for the SELECTED ROUTE only."""
         self.ax_left.clear()
-        
-        # Debug: Pareto front update (removed verbose logging)
-        
+
         if not pareto_points or len(pareto_points) <= 1:
             self.ax_left.text(0.5, 0.5, f'Single point for {route_id}\n(No Pareto front to display)', 
                             transform=self.ax_left.transAxes, ha='center', va='center',
@@ -2046,9 +2029,6 @@ class EnhancedVisualizationWindow:
         except Exception:
             pass
         
-        # Debug: Segmentation update (removed verbose logging)
-        
-        # Get original data and optimization results for this specific route
         route_data = self.get_current_route_data(route_id)
         raw_route_data = route_data
         route_results = self.get_route_results(route_id)
@@ -2062,7 +2042,6 @@ class EnhancedVisualizationWindow:
             
         processing_results = route_results.get('processing_results', {}) or {}
 
-        # Get pareto points and find selected point
         pareto_points = processing_results.get('pareto_points', [])
         if not pareto_points:
             self.ax_right.text(0.5, 0.5, 'Invalid/incompatible results JSON: missing pareto_points',

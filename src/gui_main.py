@@ -1,14 +1,8 @@
-"""
-Refactored GUI Main Module for Highway Segmentation
+"""Main GUI class for the Highway Segmentation application.
 
-This module demonstrates the refactored architecture where the original god object
-(44 methods, 1,901 lines) has been broken down into focused, single-responsibility
-classes. The main GUI class now coordinates between specialized managers rather
-than handling everything directly.
-
-REFACTORING DEMONSTRATION:
-- Original: 1 class with 44 methods handling all concerns
-- Refactored: 5 focused classes with clear separation of concerns
+Coordinates between five specialized managers — UIBuilder, FileManager,
+ParameterManager, OptimizationController, and SettingsManager — rather
+than implementing all concerns directly.
 """
 
 import tkinter as tk
@@ -20,7 +14,6 @@ import json
 from datetime import datetime
 from typing import List, Optional
 
-# Import the specialized manager classes
 from ui_builder import UIBuilder
 from file_manager import FileManager  
 from parameter_manager import ParameterManager
@@ -31,27 +24,13 @@ from route_utils import ROUTE_COLUMN_NONE_SENTINEL, normalize_route_column_selec
 from docs_browser import open_markdown_path_in_browser
 from run_spec import build_command_for_run_spec, build_run_spec, default_run_spec_path_for_output
 
-# Create config instances
 ui_config = UIConfig()
 optimization_config = AlgorithmConstants()
 constrained_config = ConstrainedOptimizationConfig()
 
 
 class HighwaySegmentationGUI:
-    """
-    REFACTORED Main GUI class for Highway Segmentation Genetic Algorithm.
-    
-    This class now coordinates between specialized managers instead of handling
-    all concerns directly. This demonstrates proper separation of concerns and
-    elimination of the god object anti-pattern.
-    
-    ARCHITECTURE:
-    - UIBuilder: Handles all widget creation and layout
-    - FileManager: Handles file I/O and data loading  
-    - ParameterManager: Handles parameter validation and state
-    - OptimizationController: Handles optimization execution
-    - HighwaySegmentationGUI: Coordinates and provides unified interface
-    """
+    """Main application window for the Highway Segmentation GA tool."""
     
     def _get_parameter_defaults(self):
         """Extract default values from parameter definitions across all methods."""
@@ -72,34 +51,28 @@ class HighwaySegmentationGUI:
         self.root.title("Highway Segmentation")
         self.root.geometry(f"{ui_config.window_width}x{ui_config.window_height}")
         
-        # Set working directory to application directory for consistent file operations
+        # Working directory is set to the application directory for consistent relative paths.
         app_dir = os.path.dirname(os.path.abspath(__file__))
         os.chdir(app_dir)
-        
-        # Initialize data and state variables
+
         self._initialize_variables()
-        
-        # Create results_text widget immediately to enable logging during initialization
+
+        # results_text must exist before managers are constructed so they can log.
         self._create_early_log_widget()
 
-        # Dependency check: provide a user-friendly error and exit early if
-        # required packages are missing.
+        # Dependency check: exits early with a user-friendly message if packages are missing.
         self._log_dependency_status()
-        
-        # Initialize specialized manager classes (now safe to log during initialization)
+
         self.ui_builder = UIBuilder(self)
         self.file_manager = FileManager(self)
         self.parameter_manager = ParameterManager(self)
         self.optimization_controller = OptimizationController(self)
         self.settings_manager = SettingsManager()
-        
-        # Load saved settings
+
         self.settings = self.settings_manager.load_settings()
-        
-        # Create the user interface (will integrate the early log widget)
+
         self._create_interface()
-        
-        # Set up window close handler
+
         self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
 
     def _log_dependency_status(self) -> None:
@@ -161,7 +134,6 @@ class HighwaySegmentationGUI:
         self.route_info_label: Optional[ttk.Label] = None
         self.filter_routes_button: Optional[ttk.Button] = None
 
-        # Data management
         self.data = None
         self._data_file_path = ""
         self.data_file = tk.StringVar(value="No file selected")
@@ -173,116 +145,79 @@ class HighwaySegmentationGUI:
         self.route_column = tk.StringVar(value=ROUTE_COLUMN_NONE_SENTINEL)  # New route column selection
         
         # Framework parameters (like x/y columns)
-        self.gap_threshold = tk.DoubleVar(value=0.5)  # Framework-level parameter
+        self.gap_threshold = tk.DoubleVar(value=0.5)
 
-        # Framework-level must-break attribute columns (selected from loaded headers)
-        # Stored as a plain Python list and persisted under settings.ui_state.must_break_columns.
+        # Must-break columns are stored as a plain list and persisted under settings.ui_state.must_break_columns.
         self.must_break_columns: List[str] = []
-        
+
         self.available_columns = []
-        
-        # Route processing state
-        self.available_routes = []  # List of all routes in the data
-        self.selected_routes = []   # List of routes selected for processing
-        
-        # Get default values from parameter definitions
+        self.available_routes = []
+        self.selected_routes = []
+
         defaults = self._get_parameter_defaults()
-        
-        # Optimization parameters: Basic parameters (min_length, max_length, gap_threshold) 
-        # are now handled by the dynamic parameter system for better method-specific control
-        
-        # Genetic algorithm parameters
+
         self.population_size = tk.IntVar(value=defaults.get('population_size', 100))
         self.num_generations = tk.IntVar(value=100)  # Universal default for all methods
         self.mutation_rate = tk.DoubleVar(value=defaults.get('mutation_rate', 0.05)) 
         self.crossover_rate = tk.DoubleVar(value=defaults.get('crossover_rate', 0.8))
         self.elite_ratio = tk.DoubleVar(value=defaults.get('elite_ratio', 0.05))
         
-        # Method selection: Using dropdown UI (method_dropdown) instead of radio buttons,
-        # but maintaining compatibility attribute for existing code
-        self.optimization_method = 'multi'  # Default method
-        
-        # Constrained optimization parameters
+        self.optimization_method = 'multi'
+
         self.target_avg_length = tk.DoubleVar(value=defaults.get('target_avg_length', 2.0))
         self.penalty_weight = tk.DoubleVar(value=defaults.get('penalty_weight', 1000.0))
         self.length_tolerance = tk.DoubleVar(value=defaults.get('length_tolerance', 0.2))
         
-        # Performance and caching controls
         self.cache_clear_interval = tk.IntVar(value=defaults.get('cache_clear_interval', 50))
-        
-        # Save/load options - always require manual save location selection
         self.custom_save_name = tk.StringVar(value="highway_segmentation.json")
-        
-        # Application state
         self.is_running = False
         self.stop_requested = False
     
     def _create_early_log_widget(self):
         """Create a minimal results_text widget early for logging during initialization."""
-        # Create a temporary hidden text widget for early logging
         self.results_text = tk.Text(self.root, height=1, width=1)
-        # Hide it off-screen - the proper UI will replace this
+        # Placed off-screen; the full UI replaces it once _create_interface() runs.
         self.results_text.place(x=-1000, y=-1000)
     
     def _create_interface(self):
         """Create the complete user interface using the UI builder."""
-        # Create main layout
         main_frame = self.ui_builder.create_main_layout()
-        
-        # Create left pane: fixed required controls + dynamic parameters area
         required_frame = self.ui_builder.create_scrollable_left_pane(main_frame)
-        
-        # Create right pane for results
         right_pane = self.ui_builder.create_right_pane(main_frame)
-        
-        # Build required sections in the fixed (non-scrollable) left pane
+
         current_row = 0
         current_row = self.ui_builder.create_cli_command_section(required_frame, current_row)
         current_row = self.ui_builder.create_file_operations_section(required_frame, current_row)
-        # parameters_section removed - now using dynamic parameters in method_section
         current_row = self.ui_builder.create_method_section(required_frame, current_row)
-        # performance_section removed - now handled by dynamic parameters
-        # save_load_section removed - now integrated into file_operations_section
-        # Note: start/stop buttons now moved to top of right pane
 
-        # Dynamic parameters UI: Treeview grid + editor panel
         if self.dynamic_params_parent is not None:
             self.ui_builder.create_dynamic_params_section(self.dynamic_params_parent)
-        
-        # Build right pane (now includes start/stop buttons at top)
+
         self.ui_builder.create_right_pane_actions(right_pane)
         self.ui_builder.create_results_section(right_pane)
-        
-        # Configure root window grid
+
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
-        
-        # Apply loaded settings to UI
-        self._apply_loaded_settings()
-        
-        # Set up parameter change tracking for auto-save
-        self._setup_parameter_tracking()
 
-        # Window close handler is registered once in __init__.
+        self._apply_loaded_settings()
+        self._setup_parameter_tracking()
     
     # ===== DELEGATED METHODS =====
-    # These methods delegate to the appropriate specialized managers
-    
-    # File Management Methods (delegate to FileManager)
+
     def set_data_file_path(self, full_path):
-        """Set data file path - delegates to FileManager."""
+        """Set the path of the loaded data file."""
         return self.file_manager.set_data_file_path(full_path)
-    
+
     def get_data_file_path(self):
-        """Get data file path - delegates to FileManager."""
+        """Return the path of the loaded data file."""
         return self.file_manager.get_data_file_path()
-    
+
     def set_save_file_path(self, full_path):
-        """Set save file path - delegates to FileManager."""
+        """Set the path where results will be saved."""
         return self.file_manager.set_save_file_path(full_path)
-    
+
     def get_save_file_path(self):
-        """Get save file path - delegates to FileManager."""
+        """Return the path where results will be saved."""
         return self.file_manager.get_save_file_path()
     
     def browse_data_file(self):
@@ -299,28 +234,27 @@ class HighwaySegmentationGUI:
             self.on_parameter_change()  # Save the new save path
         return result
     def load_csv_columns(self):
-        """Load CSV columns - delegates to FileManager."""
+        """Load column headers from the selected CSV file."""
         return self.file_manager.load_csv_columns()
-    
+
     def load_data_file(self):
-        """Load data file - delegates to FileManager."""
+        """Load the data file into memory."""
         return self.file_manager.load_data_file()
-    
+
     def load_and_plot_results(self):
-        """Load and plot results - delegates to FileManager."""
+        """Load a results JSON file and open its visualization."""
         return self.file_manager.load_and_plot_results()
-    
+
     def save_parameters(self):
-        """Save parameters - delegates to FileManager.""" 
+        """Save the current parameter set to a file."""
         return self.file_manager.save_parameters()
-    
+
     def load_parameters(self):
-        """Load parameters - delegates to FileManager."""
+        """Load a previously saved parameter set from a file."""
         return self.file_manager.load_parameters()
-    
-    # Parameter Management Methods (delegate to ParameterManager)
+
     def validate_parameters(self):
-        """Validate parameters - delegates to ParameterManager."""
+        """Validate all current parameter values."""
         return self.parameter_manager.validate_parameters()
     
     def reset_parameters(self):
@@ -447,24 +381,20 @@ class HighwaySegmentationGUI:
             return
             
         typed_text = combobox.get().lower()
-        
-        # Don't filter if it's the placeholder text
+
         if typed_text == "load data first...":
             return
-            
-        # Filter columns based on what user typed
-        matching_columns = [col for col in self.available_columns 
-                           if typed_text in col.lower()]
-        
-        # Update the combobox values with filtered results
+
+        matching_columns = [col for col in self.available_columns
+                            if typed_text in col.lower()]
         combobox['values'] = matching_columns
-        
-        # Keep the dropdown open to show filtered results
+
+        # Keep the dropdown open while the user is typing.
         if matching_columns and len(typed_text) > 0:
             combobox.event_generate('<Down>')
     
     def on_save_option_change(self):
-        """Handle save option change - delegates to ParameterManager."""
+        """Handle save option change."""
         return self.parameter_manager.on_save_option_change()
 
     def _reset_route_ui_state(self, *, reset_route_column: bool) -> None:
@@ -523,10 +453,7 @@ class HighwaySegmentationGUI:
                 # No data file - can't detect routes
                 self._reset_route_ui_state(reset_route_column=False)
         else:
-            # No route column - clear route data and disable filter button
             self._reset_route_ui_state(reset_route_column=False)
-            
-        # Log the change (removed problematic parameter_manager call)
     
     def open_route_filter_dialog(self):
         """Open the route filter dialog to select which routes to process."""
@@ -659,14 +586,13 @@ class HighwaySegmentationGUI:
     
     # Optimization Control Methods (delegate to OptimizationController)
     def start_optimization(self):
-        """Start optimization - auto-save parameters then delegate to OptimizationController."""
-        # Auto-save current parameters before starting optimization
+        """Auto-save current parameters then launch the optimization."""
         self._save_current_settings()
         
         return self.optimization_controller.start_optimization()
     
     def stop_optimization(self):
-        """Stop optimization - delegates to OptimizationController."""
+        """Request the running optimization to stop."""
         return self.optimization_controller.stop_optimization()
 
     def copy_command_line_for_analysis(self) -> None:
@@ -690,7 +616,6 @@ class HighwaySegmentationGUI:
                 messagebox.showerror("Gap Threshold Required", "Gap threshold is missing or invalid.")
                 return
 
-            # Get method + merged method parameters (defaults + UI overrides)
             params = self.parameter_manager.get_optimization_parameters()
             method_key = params.get('optimization_method')
             if not method_key:
@@ -703,7 +628,6 @@ class HighwaySegmentationGUI:
                 if k not in ('optimization_method', 'custom_save_name')
             }
 
-            # Route configuration
             route_column_raw = self.route_column.get() if hasattr(self, 'route_column') else None
             route_column = normalize_route_column_selection(route_column_raw)
 
@@ -713,7 +637,6 @@ class HighwaySegmentationGUI:
                 if isinstance(sr, (list, tuple)) and sr:
                     selected_routes = [str(r) for r in sr]
 
-            # Output JSON path: prefer explicit save location, else default to project Results/
             save_file_path = self.file_manager.get_save_file_path() if hasattr(self, 'file_manager') else ''
             if save_file_path:
                 output_json_path = save_file_path
@@ -743,7 +666,6 @@ class HighwaySegmentationGUI:
                     pass
                 return str(value)
 
-            # Keep types stable for build_run_spec() while sanitizing values.
             selected_routes_safe = selected_routes if selected_routes is None else [str(r) for r in selected_routes]
             method_parameters_safe = {str(k): _json_safe(v) for k, v in method_parameters.items()}
 
@@ -774,7 +696,6 @@ class HighwaySegmentationGUI:
 
             cmd = build_command_for_run_spec(str(spec_path))
 
-            # Copy to clipboard using Tk
             self.root.clipboard_clear()
             self.root.clipboard_append(cmd)
             try:
@@ -1113,61 +1034,44 @@ class HighwaySegmentationGUI:
     # These methods remain in the main class as they coordinate between managers
     
     def log_message(self, message):
-        """
-        Log a message to the GUI with timestamp.
-        
+        """Append a timestamped message to the GUI log.
+
         Args:
-            message (str): Message to log
+            message (str): Message to log.
         """
         timestamp = datetime.now().strftime("%H:%M:%S")
-        
-        # Clean up \r characters from progress updates but don't do any replacement logic
+        # Strip \r so progress-update lines don't overwrite previous output.
         clean_message = message.replace('\r', '')
         formatted_message = f"[{timestamp}] {clean_message}"
-        
-        # results_text is now guaranteed to exist from early widget creation
+        # results_text exists from early widget creation — safe to write here.
         self.results_text.insert(tk.END, formatted_message + '\n')
-        
-        # Auto-scroll to the bottom
         self.results_text.see(tk.END)
     
-    def handle_error(self, error_message: str, exception: Optional[Exception] = None, 
-                    severity: str = "error", show_messagebox: bool = False, 
+    def handle_error(self, error_message: str, exception: Optional[Exception] = None,
+                    severity: str = "error", show_messagebox: bool = False,
                     silence_console: bool = True) -> None:
-        """
-        Centralized error handling that logs to GUI and optionally shows user dialogs.
-        
-        Replaces scattered print statements with structured error handling that:
-        - Logs to GUI with consistent formatting and timestamps
-        - Optionally shows user-friendly message boxes for critical errors
-        - Maintains exception context for debugging
-        - Provides severity levels for different error types
-        
+        """Log an error to the GUI and optionally show a dialog.
+
         Args:
-            error_message: Human-readable error description
-            exception: Original exception object (if any) 
-            severity: 'info', 'warning', 'error', 'critical'
-            show_messagebox: Whether to show a popup message to user
-            silence_console: If True, don't print to console (use GUI logging instead)
+            error_message: Human-readable error description.
+            exception: Original exception object (if any).
+            severity: One of 'info', 'warning', 'error', 'critical'.
+            show_messagebox: Whether to show a popup dialog.
+            silence_console: When True, suppress console output.
         """
-        # Format error message with severity prefix
         severity_prefix = {
             'info': 'ℹ️ INFO',
-            'warning': '⚠️ WARNING', 
+            'warning': '⚠️ WARNING',
             'error': '❌ ERROR',
             'critical': '🚨 CRITICAL'
         }.get(severity, '❌ ERROR')
-        
+
         formatted_message = f"{severity_prefix}: {error_message}"
-        
-        # Add exception details if provided
         if exception:
             formatted_message += f"\n   Details: {str(exception)}"
-        
-        # Log to GUI (this already includes timestamp)
+
         self.log_message(formatted_message)
-        
-        # Optionally show user dialog for critical errors
+
         if show_messagebox:
             if severity == 'critical':
                 messagebox.showerror("Critical Error", error_message)
@@ -1177,8 +1081,7 @@ class HighwaySegmentationGUI:
                 messagebox.showwarning("Warning", error_message)
             else:
                 messagebox.showinfo("Information", error_message)
-        
-        # For debugging - optionally still print to console
+
         if not silence_console:
             print(f"[{severity.upper()}] {error_message}")
             if exception:
@@ -1190,8 +1093,6 @@ class HighwaySegmentationGUI:
         self.log_message("=== CURRENT PARAMETER VALUES ===")
         self.log_message(f"Optimization Method: {method}")
         self.log_message("")
-        
-        # Get current parameter values from dynamic system
         try:
             current_params = self.ui_builder.get_parameter_values()
             self.log_message("METHOD-SPECIFIC PARAMETERS:")
@@ -1255,46 +1156,31 @@ class HighwaySegmentationGUI:
         """Apply loaded settings to all UI elements."""
         try:
             self._restore_file_paths_from_settings()
-            
-            # Apply optimization parameters
+
             opt_settings = self.settings.get('optimization', {})
 
             method_key = self._resolve_method_key_from_opt_settings(opt_settings)
-            
-            # Store the optimization method as an attribute
             self.optimization_method = method_key
 
             self._seed_dynamic_parameters_store_from_legacy(opt_settings, method_key)
-            
-
             self._apply_method_selection_to_dropdown(opt_settings, method_key)
-            
-
             self._apply_method_parameters_from_opt_settings(opt_settings, method_key)
-
             self._restore_ui_state_from_settings()
-            
-            # Update UI visibility based on loaded method
-            # BUT skip if we just loaded parameters to avoid widget rebuild
-            # Parameter loading already handles method-specific UI setup
-            # self.parameter_manager.on_method_change()  # DISABLED - causes widget rebuild after parameter loading
-        
+
         except Exception as e:
             self.handle_error("Could not apply some loaded settings", e, "warning")
     
     def _migrate_method_key(self, method_key):
-        """
-        Normalize/validate method keys loaded from settings.
+        """Validate a method key against the config registry.
 
-        This project uses config-driven method registration. We accept a method key
-        only if it exists in the config registry; otherwise we fall back to the GUI
-        default.
-        
         Args:
-            method_key: The method key from settings (could be old numeric or new string format)
-            
+            method_key: Key to validate (string form expected).
+
         Returns:
-            str: The standardized string-based method key
+            str: The validated method key, unchanged.
+
+        Raises:
+            ValueError: If the key is not found in the registry.
         """
         if isinstance(method_key, str):
             try:
@@ -1308,12 +1194,10 @@ class HighwaySegmentationGUI:
     
     def _setup_parameter_tracking(self):
         """Set up automatic saving when parameters change."""
-        # Track only framework/global UI state here.
-        # Method-specific optimization parameters are persisted via the dynamic
-        # parameter store and the Apply/Reset buttons in the editor.
+        # Track only framework/global UI state here; method-specific parameters
+        # are persisted via the per-method dynamic parameter store.
         tracked_vars: List[tk.Variable] = [self.custom_save_name]
-        
-        # Add column selection variables if they exist
+
         if hasattr(self, 'x_column'):
             tracked_vars.append(self.x_column)
         if hasattr(self, 'y_column'):
@@ -1322,8 +1206,7 @@ class HighwaySegmentationGUI:
             tracked_vars.append(self.gap_threshold)
         if hasattr(self, 'route_column'):
             tracked_vars.append(self.route_column)
-        
-        # Add trace callbacks to automatically save when values change
+
         for var in tracked_vars:
             try:
                 var.trace_add("write", lambda *_: self.on_parameter_change())
@@ -1333,11 +1216,10 @@ class HighwaySegmentationGUI:
     def _save_current_settings(self):
         """Save current UI state to settings."""
         try:
-            # Update file paths
             self.settings['files']['data_file_path'] = self.file_manager.get_data_file_path() or ''
             self.settings['files']['save_file_path'] = self.file_manager.get_save_file_path() or ''
-            
-            # Persist dynamic params for the active method (so they survive restart)
+
+            # Persist dynamic params for the active method so they survive restart.
             try:
                 active_key = getattr(self, '_active_method_key', None) or self._get_selected_method_key_safe()
                 if active_key:
@@ -1367,7 +1249,6 @@ class HighwaySegmentationGUI:
             for k in legacy_optimization_keys:
                 self.settings['optimization'].pop(k, None)
             
-            # Update method selection from dropdown - convert display name to key for settings
             method_dropdown = getattr(self, "method_dropdown", None)
             if method_dropdown is None:
                 ui_builder = getattr(self, "ui_builder", None)
@@ -1379,29 +1260,23 @@ class HighwaySegmentationGUI:
                 try:
                     method_key = get_method_key_from_display_name(display_name)
                 except ValueError:
-                    # If display_name lookup fails, check if it's already a method key
                     from config import get_optimization_method
                     try:
-                        get_optimization_method(display_name)  # Test if it's a valid method key
-                        method_key = display_name  # Use as-is if it's a valid method key
+                        get_optimization_method(display_name)
+                        method_key = display_name
                     except (ValueError, KeyError):
-                        method_key = 'multi'  # Final fallback
-                        
-                # Ensure we always save the migrated string-based method key
+                        method_key = 'multi'
+
                 method_key = self._migrate_method_key(method_key)
                 self.settings['optimization']['optimization_method'] = method_key
             elif hasattr(self, 'optimization_method'):
-                # Fallback: use the optimization_method attribute with migration
                 method_key = self._migrate_method_key(self.optimization_method)
                 self.settings['optimization']['optimization_method'] = method_key
             else:
-                # Final fallback
                 self.settings['optimization']['optimization_method'] = 'multi'
-            
-            # Save window geometry
+
             self.settings['ui_state']['window_geometry'] = self.root.geometry()
-            
-            # Save column selections
+
             if hasattr(self, 'x_column'):
                 self.settings['ui_state']['x_column'] = self.x_column.get()
             if hasattr(self, 'y_column'):
@@ -1411,7 +1286,6 @@ class HighwaySegmentationGUI:
             if hasattr(self, 'route_column'):
                 self.settings['ui_state']['route_column'] = self.route_column.get()
 
-            # Save must-break columns (list[str])
             try:
                 cols = getattr(self, 'must_break_columns', [])
                 if cols is None:
@@ -1423,81 +1297,65 @@ class HighwaySegmentationGUI:
             except Exception:
                 self.settings['ui_state']['must_break_columns'] = []
             
-            # Save route selection
             if hasattr(self, 'selected_routes'):
                 self.settings['ui_state']['selected_routes'] = self.selected_routes.copy()
-            
-            # Save to file
+
             self.settings_manager.save_settings(self.settings)
             
         except Exception as e:
             self.log_message(f"Could not save settings: {e}")
     
     def _on_closing(self):
-        """Handle application closing - save settings and clean up."""
-        
-        # Cancel any pending save timers first
-        if hasattr(self, '_save_timer'):
-            try:
-                self.root.after_cancel(self._save_timer)
-            except tk.TclError:
-                pass  # Timer may have already executed
-                
-        # Save current settings before closing
-        try:
-            self._save_current_settings()
-        except Exception as e:
-            self.handle_error("Could not save settings on shutdown", e, "warning")
-        
-        # Stop any running optimization immediately and wait for it to finish
-        if hasattr(self, 'optimization_controller') and self.is_running:
-            self.stop_requested = True
-            self.optimization_controller.stop_optimization()
-            
-        # Proper matplotlib cleanup
-        try:
-            import matplotlib.pyplot as plt
-            
-            # Close any remaining matplotlib figures
-            open_figures = plt.get_fignums()
-            if open_figures:
-                plt.close('all')
-                
-            # Turn off interactive mode
-            plt.ioff()
-        except Exception as e:
-            self.handle_error("Failed to cleanup matplotlib resources", e, 
-                             severity="warning", silence_console=True)
-            
-        # Clean up application state
-        self.is_running = False
-        
-        # Small delay to ensure all file operations complete
-        import time
-        time.sleep(0.1)
-        
-        # Normal, proper shutdown
-        try:
-            self.root.quit()  # Stop the main loop but keep window
-            self.root.destroy()  # Now destroy the window
-        except Exception as e:
-            self.handle_error("Error occurred during application shutdown", e,
-                             severity="error", silence_console=True)
-    
-    def on_parameter_change(self):
-        """Called when any parameter changes - save settings with minimal delay."""
-        # Cancel any existing timer to avoid excessive saves
+        """Handle application closing — save settings, stop optimization, and destroy window."""
         if hasattr(self, '_save_timer'):
             try:
                 self.root.after_cancel(self._save_timer)
             except tk.TclError:
                 pass
-        # Reduced delay from 1000ms to 500ms for faster response        
+
+        try:
+            self._save_current_settings()
+        except Exception as e:
+            self.handle_error("Could not save settings on shutdown", e, "warning")
+
+        if hasattr(self, 'optimization_controller') and self.is_running:
+            self.stop_requested = True
+            self.optimization_controller.stop_optimization()
+
+        try:
+            import matplotlib.pyplot as plt
+            if plt.get_fignums():
+                plt.close('all')
+            plt.ioff()
+        except Exception as e:
+            self.handle_error("Failed to cleanup matplotlib resources", e,
+                             severity="warning", silence_console=True)
+
+        self.is_running = False
+
+        # Brief pause to let any in-flight file operations complete.
+        import time
+        time.sleep(0.1)
+
+        try:
+            self.root.quit()
+            self.root.destroy()
+        except Exception as e:
+            self.handle_error("Error occurred during application shutdown", e,
+                             severity="error", silence_console=True)
+    
+    def on_parameter_change(self):
+        """Debounce settings saves so rapid edits don't thrash the file system."""
+        # Cancel any existing timer to avoid excessive saves.
+        if hasattr(self, '_save_timer'):
+            try:
+                self.root.after_cancel(self._save_timer)
+            except tk.TclError:
+                pass
         self._save_timer = self.root.after(500, self._save_current_settings)
     
     def on_closing(self):
-        """Handle application closing - redirect to main close handler."""
-        # Redirect to the main close handler - no artificial delays
+        """Handle application closing."""
         self._on_closing()
 
 
@@ -1516,8 +1374,6 @@ def main():
         )
 
     root = tk.Tk()
-    
-    # Configure ttk style
     style = ttk.Style()
     # Prefer platform-native ttk themes for visual consistency.
     # Forcing non-native themes (e.g. "clam" on macOS) can lead to odd
@@ -1546,7 +1402,6 @@ def main():
             pass
         return
 
-    # Create and run application
     HighwaySegmentationGUI(root)
     
     try:
