@@ -1,15 +1,15 @@
-"""CLI entrypoint to launch the GUI."""
+"""Entry point for launching the GUI application."""
 
 import gui_main
 
 
 def main() -> None:
-	# Highway Segmentation GA - GUI Launcher
-	print("Highway Segmentation Genetic Algorithm")
-	print("=" * 40)
-	print("Launching GUI interface...")
+    """Start the Highway Segmentation GA graphical interface."""
+    print("Highway Segmentation Genetic Algorithm")
+    print("=" * 40)
+    print("Launching GUI interface...")
 
-	gui_main.main()
+    gui_main.main()
 
 
 if __name__ == "__main__":

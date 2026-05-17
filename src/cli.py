@@ -46,6 +46,14 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Parse CLI arguments and dispatch to the appropriate command.
+
+    Args:
+        argv: Argument list; defaults to sys.argv[1:] when None.
+
+    Returns:
+        Exit code — 0 on success, 2 on error.
+    """
     argv = list(sys.argv[1:] if argv is None else argv)
     parser = _build_parser()
     args = parser.parse_args(argv)

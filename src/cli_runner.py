@@ -379,8 +379,22 @@ def run_analysis_from_spec_file(
 ) -> str:
     """Execute an analysis run defined by a run-spec JSON file.
 
+    Loads and validates the spec, reads input data, runs the specified analysis
+    method across all selected routes, and writes consolidated JSON results.
+
+    Args:
+        spec_path: Path to the run-spec JSON file.
+        validate_spec: When True, validate the spec against the JSON schema before
+            loading. Set to False only when the caller has already validated.
+        log_callback: Optional callable that receives log messages; defaults to
+            printing to stdout.
+
     Returns:
-        Path to the written results JSON file (string).
+        Absolute path to the written results JSON file.
+
+    Raises:
+        RunSpecError: If the spec is invalid, input data is missing or malformed,
+            no routes could be analyzed, or the output file exists and overwrite is False.
     """
     log = log_callback or _default_logger
     spec = load_and_resolve_run_spec(spec_path, validate=validate_spec)
@@ -416,7 +430,6 @@ def run_analysis_from_spec_file(
     method_params.setdefault("optimization_method", spec.method_key)
     _validate_method_parameters(spec.method_key, method_params)
 
-    # Prepare route analyses (gap-aware)
     prepared: List[Tuple[str, RouteAnalysis]] = []
     original_data_by_route: Dict[str, pd.DataFrame] = {}
 
@@ -446,7 +459,6 @@ def run_analysis_from_spec_file(
     if not prepared:
         raise RunSpecError("No routes could be analyzed successfully")
 
-    # Run method
     cls = resolve_method_class(spec.method_key)
     method_instance = cls()
 
@@ -471,13 +483,11 @@ def run_analysis_from_spec_file(
         _normalize_analysis_result_for_json_parity(res, method_params=method_params)
         results.append(res)
 
-    # Output file handling
     out_path = spec.output_json_path
     out_path.parent.mkdir(parents=True, exist_ok=True)
     if out_path.exists() and not spec.overwrite:
         raise RunSpecError(f"Output file already exists and overwrite=false: {out_path}")
 
-    # Build metadata for results writer
     input_file_info = {
         "data_file_path": str(spec.data_file_path),
         "data_file_name": spec.data_file_path.name,
