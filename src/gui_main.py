@@ -130,7 +130,10 @@ class HighwaySegmentationGUI:
         # instance (e.g., self.method_dropdown). Predeclare key ones so static
         # type checkers can reason about them.
         self.dynamic_params_parent: Optional[ttk.Frame] = None
-        self.method_dropdown: Optional[ttk.Combobox] = None
+        self.analysis_method_panel = None  # Will be set by UIBuilder
+        self.primary_preprocess_panel = None  # Will be set by UIBuilder
+        self.pregap_preprocess_panel = None  # Will be set by UIBuilder
+        self.secondary_preprocess_panel = None  # Will be set by UIBuilder
         self.route_info_label: Optional[ttk.Label] = None
         self.filter_routes_button: Optional[ttk.Button] = None
 
@@ -149,6 +152,7 @@ class HighwaySegmentationGUI:
 
         # Must-break columns are stored as a plain list and persisted under settings.ui_state.must_break_columns.
         self.must_break_columns: List[str] = []
+        self.secondary_break_columns: List[str] = []
 
         self.available_columns = []
         self.available_routes = []
@@ -173,6 +177,13 @@ class HighwaySegmentationGUI:
         self.is_running = False
         self.stop_requested = False
     
+    @property
+    def method_dropdown(self):
+        """Backward compatibility: access dropdown through analysis_method_panel."""
+        if self.analysis_method_panel:
+            return self.analysis_method_panel.method_dropdown
+        return None
+    
     def _create_early_log_widget(self):
         """Create a minimal results_text widget early for logging during initialization."""
         self.results_text = tk.Text(self.root, height=1, width=1)
@@ -186,12 +197,18 @@ class HighwaySegmentationGUI:
         right_pane = self.ui_builder.create_right_pane(main_frame)
 
         current_row = 0
-        current_row = self.ui_builder.create_cli_command_section(required_frame, current_row)
-        current_row = self.ui_builder.create_file_operations_section(required_frame, current_row)
-        current_row = self.ui_builder.create_method_section(required_frame, current_row)
+        current_row = self.ui_builder.create_basic_setup_section(required_frame, current_row)
+        current_row = self.ui_builder.create_pregap_preprocessing_section(required_frame, current_row)
+        current_row = self.ui_builder.create_gap_analysis_section(required_frame, current_row)
+        current_row = self.ui_builder.create_primary_attribute_breaks_section(required_frame, current_row)
+        current_row = self.ui_builder.create_primary_preprocessing_section(required_frame, current_row)
+        current_row = self.ui_builder.create_secondary_attribute_breaks_section(required_frame, current_row)
+        current_row = self.ui_builder.create_secondary_preprocessing_section(required_frame, current_row)
+        current_row = self.ui_builder.create_analysis_method_section(required_frame, current_row)
 
-        if self.dynamic_params_parent is not None:
-            self.ui_builder.create_dynamic_params_section(self.dynamic_params_parent)
+        # Old dynamic params section - now each panel has its own Treeview
+        # if self.dynamic_params_parent is not None:
+        #     self.ui_builder.create_dynamic_params_section(self.dynamic_params_parent)
 
         self.ui_builder.create_right_pane_actions(right_pane)
         self.ui_builder.create_results_section(right_pane)
@@ -558,6 +575,53 @@ class HighwaySegmentationGUI:
         except Exception as e:
             self.handle_error("Failed to open must-break column selector", e, severity="error", show_messagebox=True)
     
+    def open_secondary_break_columns_dialog(self) -> None:
+        """Open multi-select dialog to choose secondary attribute columns that force mandatory breakpoints."""
+
+        available = getattr(self, 'available_columns', None)
+        if not isinstance(available, list) or not available:
+            messagebox.showwarning(
+                "Load Data First",
+                "Please select a data file first so column headers are available.",
+            )
+            return
+
+        try:
+            from multi_select_dialog import MultiSelectDialog
+
+            preselected = getattr(self, 'secondary_break_columns', [])
+            if not isinstance(preselected, list):
+                preselected = []
+
+            selected = MultiSelectDialog.ask(
+                self.root,
+                title="Secondary Break Column List",
+                items=available,
+                selected=preselected,
+                prompt="Select columns that force a mandatory breakpoint when their value changes:",
+            )
+
+            if selected is None:
+                return
+
+            self.secondary_break_columns = [str(v).strip() for v in selected if str(v).strip()]
+            self._update_secondary_break_columns_display()
+            self.on_parameter_change()
+        except Exception as e:
+            self.handle_error("Failed to open secondary-break column selector", e, severity="error", show_messagebox=True)
+    
+    def _update_secondary_break_columns_display(self) -> None:
+        label = getattr(self, 'secondary_break_columns_summary', None)
+        if label is None:
+            return
+
+        cols = getattr(self, 'secondary_break_columns', None)
+        if not isinstance(cols, list):
+            cols = []
+
+        cleaned = [str(v).strip() for v in cols if str(v).strip()]
+        label.config(text="None" if len(cleaned) == 0 else f"{len(cleaned)} selected")
+    
     def _update_route_info_display(self):
         """Update the route info label to show selected route count."""
         if self.route_info_label is None:
@@ -675,12 +739,19 @@ class HighwaySegmentationGUI:
                 cleaned = [str(c).strip() for c in must_break_raw if str(c).strip()]
                 must_break_columns_safe = cleaned
 
+            secondary_break_raw = getattr(self, 'secondary_break_columns', None)
+            secondary_break_columns_safe = None
+            if isinstance(secondary_break_raw, (list, tuple)):
+                cleaned = [str(c).strip() for c in secondary_break_raw if str(c).strip()]
+                secondary_break_columns_safe = cleaned
+
             spec = build_run_spec(
                 data_file_path=str(data_file_path),
                 x_column=str(x_column),
                 y_column=str(y_column),
                 gap_threshold=float(gap_threshold),
                 must_break_columns=must_break_columns_safe,
+                secondary_break_columns=secondary_break_columns_safe,
                 route_column=route_column,
                 selected_routes=selected_routes_safe,
                 method_key=str(method_key),
@@ -996,7 +1067,18 @@ class HighwaySegmentationGUI:
         if 'gap_threshold' in ui_state and hasattr(self, 'gap_threshold'):
             self.gap_threshold.set(ui_state['gap_threshold'])
         if 'route_column' in ui_state and hasattr(self, 'route_column'):
-            self.route_column.set(ui_state['route_column'])
+            route_col_value = ui_state['route_column']
+            # Validate route_column value - reject if it looks corrupted (contains suspicious patterns)
+            if route_col_value and isinstance(route_col_value, str):
+                # Check for obvious corruption patterns like concatenated labels
+                suspicious_patterns = ['Gap Threshold', 'X Column', 'Y Column', 'Route Column']
+                if any(pattern in route_col_value for pattern in suspicious_patterns):
+                    self.log_message(f"Rejecting corrupted route_column value from settings: '{route_col_value}'")
+                    self.route_column.set(ROUTE_COLUMN_NONE_SENTINEL)
+                else:
+                    self.route_column.set(route_col_value)
+            else:
+                self.route_column.set(route_col_value)
 
         # Restore must-break columns (backward compatible default: [])
         try:
@@ -1016,6 +1098,61 @@ class HighwaySegmentationGUI:
                 self._update_must_break_columns_display()
         except Exception:
             pass
+
+        # Restore secondary-break columns (backward compatible default: [])
+        try:
+            raw = ui_state.get('secondary_break_columns', [])
+            if raw is None:
+                raw = []
+            if isinstance(raw, list):
+                self.secondary_break_columns = [str(v).strip() for v in raw if str(v).strip()]
+            else:
+                self.secondary_break_columns = []
+        except Exception:
+            self.secondary_break_columns = []
+
+        # Update UI summary label if present
+        try:
+            if hasattr(self, '_update_secondary_break_columns_display'):
+                self._update_secondary_break_columns_display()
+        except Exception:
+            pass
+        
+        # Restore preprocessing panel configurations
+        preprocessing_settings = self.settings.get('preprocessing', {})
+        
+        # Restore pregap preprocessing panel
+        if hasattr(self, 'pregap_preprocess_panel') and self.pregap_preprocess_panel:
+            try:
+                pregap_config = preprocessing_settings.get('pregap_config', {})
+                method_key = pregap_config.get('method')
+                parameters = pregap_config.get('parameters', {})
+                if method_key:
+                    self.pregap_preprocess_panel.set_method(method_key, parameters, expand=True)
+            except Exception as e:
+                self.log_message(f"Warning: Could not restore pregap preprocessing config: {e}")
+        
+        # Restore primary preprocessing panel
+        if hasattr(self, 'primary_preprocess_panel') and self.primary_preprocess_panel:
+            try:
+                primary_config = preprocessing_settings.get('primary_config', {})
+                method_key = primary_config.get('method')
+                parameters = primary_config.get('parameters', {})
+                if method_key:
+                    self.primary_preprocess_panel.set_method(method_key, parameters, expand=True)
+            except Exception as e:
+                self.log_message(f"Warning: Could not restore primary preprocessing config: {e}")
+        
+        # Restore secondary preprocessing (postprocessing) panel
+        if hasattr(self, 'secondary_preprocess_panel') and self.secondary_preprocess_panel:
+            try:
+                secondary_config = preprocessing_settings.get('secondary_config', {})
+                method_key = secondary_config.get('method')
+                parameters = secondary_config.get('parameters', {})
+                if method_key:
+                    self.secondary_preprocess_panel.set_method(method_key, parameters, expand=True)
+            except Exception as e:
+                self.log_message(f"Warning: Could not restore secondary preprocessing config: {e}")
 
         # Restore route selection
         if 'selected_routes' in ui_state:
@@ -1223,7 +1360,17 @@ class HighwaySegmentationGUI:
             try:
                 active_key = getattr(self, '_active_method_key', None) or self._get_selected_method_key_safe()
                 if active_key:
-                    self._persist_dynamic_parameters_for_method(active_key)
+                    # Save parameters from the analysis_method_panel
+                    if hasattr(self, 'analysis_method_panel') and self.analysis_method_panel:
+                        params = self.analysis_method_panel.get_parameters()
+                        if params:
+                            # Store in the dynamic_parameters_by_method for persistence
+                            opt = self.settings.setdefault('optimization', {})
+                            store = opt.setdefault('dynamic_parameters_by_method', {})
+                            store[active_key] = params
+                    else:
+                        # Fallback for legacy path
+                        self._persist_dynamic_parameters_for_method(active_key)
             except (AttributeError, ValueError, KeyError, TypeError):
                 pass
 
@@ -1297,8 +1444,59 @@ class HighwaySegmentationGUI:
             except Exception:
                 self.settings['ui_state']['must_break_columns'] = []
             
+            try:
+                sec_cols = getattr(self, 'secondary_break_columns', [])
+                if sec_cols is None:
+                    sec_cols = []
+                if isinstance(sec_cols, list):
+                    self.settings['ui_state']['secondary_break_columns'] = [str(v).strip() for v in sec_cols if str(v).strip()]
+                else:
+                    self.settings['ui_state']['secondary_break_columns'] = []
+            except Exception:
+                self.settings['ui_state']['secondary_break_columns'] = []
+            
             if hasattr(self, 'selected_routes'):
                 self.settings['ui_state']['selected_routes'] = self.selected_routes.copy()
+            
+            # Save preprocessing panel configurations
+            if 'preprocessing' not in self.settings:
+                self.settings['preprocessing'] = {}
+            
+            # Save pregap preprocessing panel
+            if hasattr(self, 'pregap_preprocess_panel') and self.pregap_preprocess_panel:
+                try:
+                    method_key = self.pregap_preprocess_panel.get_method_key()
+                    parameters = self.pregap_preprocess_panel.get_parameters() if method_key else {}
+                    self.settings['preprocessing']['pregap_config'] = {
+                        'method': method_key,
+                        'parameters': parameters
+                    }
+                except Exception as e:
+                    self.log_message(f"Warning: Could not save pregap preprocessing config: {e}")
+            
+            # Save primary preprocessing panel
+            if hasattr(self, 'primary_preprocess_panel') and self.primary_preprocess_panel:
+                try:
+                    method_key = self.primary_preprocess_panel.get_method_key()
+                    parameters = self.primary_preprocess_panel.get_parameters() if method_key else {}
+                    self.settings['preprocessing']['primary_config'] = {
+                        'method': method_key,
+                        'parameters': parameters
+                    }
+                except Exception as e:
+                    self.log_message(f"Warning: Could not save primary preprocessing config: {e}")
+            
+            # Save secondary preprocessing (postprocessing) panel
+            if hasattr(self, 'secondary_preprocess_panel') and self.secondary_preprocess_panel:
+                try:
+                    method_key = self.secondary_preprocess_panel.get_method_key()
+                    parameters = self.secondary_preprocess_panel.get_parameters() if method_key else {}
+                    self.settings['preprocessing']['secondary_config'] = {
+                        'method': method_key,
+                        'parameters': parameters
+                    }
+                except Exception as e:
+                    self.log_message(f"Warning: Could not save secondary preprocessing config: {e}")
 
             self.settings_manager.save_settings(self.settings)
             

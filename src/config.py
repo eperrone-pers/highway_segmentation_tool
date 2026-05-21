@@ -1304,6 +1304,260 @@ def is_multi_objective_method(method_key: str) -> bool:
     return method.return_type == "multi_objective"
 
 
+# ===== PREPROCESSING METHODS REGISTRY =====
+# Parallel to OPTIMIZATION_METHODS - provides extensible preprocessing framework
+# Adding a new preprocessing method: 1) Implement PreprocessingMethodBase, 2) Add entry below
+
+@dataclass
+class PreprocessingMethodConfig:
+    """
+    Configuration for a single preprocessing method - mirrors OptimizationMethodConfig pattern.
+    
+    Enables extensible preprocessing architecture where new methods can be added
+    by implementing PreprocessingMethodBase and adding a registry entry.
+    """
+    method_key: str                          # Internal identifier (e.g., "tukey_fences", "moving_average")
+    display_name: str                        # User-friendly name for GUI dropdown
+    description: str                         # Detailed description for tooltips/help
+    parameters: List[ParameterDefinition]    # Complete parameter list for this method
+    method_class_path: str                   # Import path (e.g., "preprocessing.methods.tukey_fences.TukeyFencesPreprocessor")
+
+
+@dataclass
+class PreprocessingRunConfig:
+    """
+    Configuration for preprocessing pipeline execution.
+    
+    Defines which preprocessing methods to apply at each phase (pre-gap, primary, secondary)
+    along with their parameters. All phases are optional.
+    
+    Design Note: User can select the same method multiple times with different parameters.
+    Example: Tukey Fences at primary (k=1.5, aggressive) AND secondary (k=3.0, conservative)
+    """
+    # Pre-gap preprocessing (before gap detection)
+    pre_gap_method: Optional[str] = None              # Method key or None
+    pre_gap_parameters: Optional[Dict[str, Any]] = None  # Method parameters
+    
+    # Primary preprocessing (after gaps and first attribute breaks)
+    primary_method: Optional[str] = None              # Method key or None
+    primary_parameters: Optional[Dict[str, Any]] = None  # Method parameters
+    
+    # Secondary preprocessing (after all attribute breaks)
+    secondary_method: Optional[str] = None            # Method key or None
+    secondary_parameters: Optional[Dict[str, Any]] = None  # Method parameters
+    
+    # Master enable flag
+    enabled: bool = False                             # True if any preprocessing configured
+    
+    def __post_init__(self):
+        """Initialize empty parameter dicts if None."""
+        if self.pre_gap_parameters is None:
+            self.pre_gap_parameters = {}
+        if self.primary_parameters is None:
+            self.primary_parameters = {}
+        if self.secondary_parameters is None:
+            self.secondary_parameters = {}
+
+
+# Preprocessing methods registry - currently empty, methods will be added as framework develops
+# Future methods: Tukey Fences, Moving Average, Savitzky-Golay, etc.
+PREPROCESSING_METHODS: List[PreprocessingMethodConfig] = [
+    PreprocessingMethodConfig(
+        method_key="tukey_fences",
+        display_name="Tukey Fences Outlier Detection",
+        description="IQR-based outlier detection with configurable thresholds and actions",
+        parameters=[
+            NumericParameter(
+                name="k_factor",
+                display_name="K Factor",
+                description="IQR multiplier for fence bounds (1.5=mild outliers, 3.0=extreme outliers)",
+                group="detection",
+                order=1,
+                default_value=1.5,
+                min_value=0.5,
+                max_value=5.0,
+                decimal_places=1,
+                widget_width=10
+            ),
+            SelectParameter(
+                name="action",
+                display_name="Outlier Action",
+                description="How to handle detected outliers",
+                group="handling",
+                order=2,
+                default_value="remove",
+                options=[
+                    ("Remove", "remove"),
+                    ("Cap to Fence", "cap"),
+                    ("Interpolate", "interpolate")
+                ]
+            ),
+        ],
+        method_class_path="preprocessing.methods.tukey_fences.TukeyFencesPreprocessor"
+    ),
+]
+
+
+def get_preprocessing_method(method_key: str) -> PreprocessingMethodConfig:
+    """
+    Get preprocessing method configuration by key.
+    
+    Args:
+        method_key: Method identifier (e.g., "tukey_fences")
+        
+    Returns:
+        PreprocessingMethodConfig for the specified method
+        
+    Raises:
+        ValueError: If method_key not found in registry
+    """
+    for method in PREPROCESSING_METHODS:
+        if method.method_key == method_key:
+            return method
+    raise ValueError(f"Unknown preprocessing method key: {method_key}")
+
+
+def resolve_preprocessing_class(method_key: str) -> Type:
+    """
+    Resolve preprocessing method class from method_class_path.
+    
+    Parallel to resolve_method_class() for analysis methods.
+    Dynamically imports and returns the preprocessing method class.
+    
+    Args:
+        method_key: Method identifier
+        
+    Returns:
+        Type: The preprocessing method class (must inherit from PreprocessingMethodBase)
+        
+    Raises:
+        ValueError: If method not found or class_path invalid
+        ImportError: If module or class cannot be imported
+    """
+    method_config = get_preprocessing_method(method_key)
+    class_path = method_config.method_class_path
+    
+    if not class_path:
+        raise ValueError(
+            f"Preprocessing method '{method_key}' is missing method_class_path in PREPROCESSING_METHODS"
+        )
+    
+    if '.' not in class_path:
+        raise ValueError(
+            f"Invalid method_class_path for preprocessing method '{method_key}': '{class_path}' "
+            "(expected module.ClassName)"
+        )
+    
+    module_path, class_name = class_path.rsplit('.', 1)
+    
+    try:
+        module = importlib.import_module(module_path)
+    except Exception as e:
+        raise ImportError(
+            f"Could not import module '{module_path}' for preprocessing method '{method_key}' "
+            f"(method_class_path='{class_path}'): {e}"
+        ) from e
+    
+    try:
+        cls = getattr(module, class_name)
+    except AttributeError as e:
+        raise ImportError(
+            f"Module '{module_path}' does not define class '{class_name}' "
+            f"for preprocessing method '{method_key}' (method_class_path='{class_path}')"
+        ) from e
+    
+    return cls
+
+
+def validate_preprocessing_method_registry() -> None:
+    """
+    Validate that all preprocessing methods have importable, compatible implementations.
+    
+    Parallel to validate_optimization_method_registry(). Runs at application startup
+    to ensure configuration errors fail fast.
+    
+    Raises:
+        ValueError: If any method fails validation (collected errors)
+        ImportError: If PreprocessingMethodBase cannot be imported
+    """
+    errors: List[str] = []
+    
+    try:
+        from preprocessing.base import PreprocessingMethodBase
+    except Exception as e:
+        raise ImportError(
+            f"Could not import PreprocessingMethodBase for validation: {e}"
+        ) from e
+    
+    for method in PREPROCESSING_METHODS:
+        try:
+            cls = resolve_preprocessing_class(method.method_key)
+            
+            if not isinstance(cls, type):
+                raise TypeError(
+                    f"Resolved object is not a class (got {type(cls).__name__})"
+                )
+            
+            if not issubclass(cls, PreprocessingMethodBase):
+                raise TypeError(
+                    f"{cls.__module__}.{cls.__name__} does not inherit from PreprocessingMethodBase"
+                )
+                
+        except Exception as e:
+            errors.append(
+                f"- method_key='{method.method_key}', display_name='{method.display_name}': {e}"
+            )
+    
+    if errors:
+        raise ValueError(
+            "Preprocessing method registry validation failed. Fix PREPROCESSING_METHODS in src/config.py:\n"
+            + "\n".join(errors)
+        )
+
+
+def get_preprocessing_method_names() -> List[str]:
+    """
+    Get list of preprocessing method display names for GUI dropdown.
+    
+    Returns:
+        List of display names (e.g., ["Tukey Fences Outlier Detection", "Moving Average"])
+    """
+    return [method.display_name for method in PREPROCESSING_METHODS]
+
+
+def get_preprocessing_method_key_from_display_name(display_name: str) -> str:
+    """
+    Get method key from display name.
+    
+    Args:
+        display_name: Human-readable method name
+        
+    Returns:
+        Method key (e.g., "tukey_fences")
+        
+    Raises:
+        ValueError: If display_name not found
+    """
+    for method in PREPROCESSING_METHODS:
+        if method.display_name == display_name:
+            return method.method_key
+    raise ValueError(f"Unknown preprocessing method display name: {display_name}")
+
+
+def get_preprocessing_parameters(method_key: str) -> List[ParameterDefinition]:
+    """
+    Get parameter list for a preprocessing method.
+    
+    Args:
+        method_key: Method identifier
+        
+    Returns:
+        List of ParameterDefinition objects for the method
+    """
+    method = get_preprocessing_method(method_key)
+    return method.parameters
+
+
 # ===== CONFIGURATION INSTANCES =====
 # Module-level singletons used throughout the application for consistent settings access.
 

@@ -77,9 +77,11 @@ def extract_gap_boundary_breakpoints(route_results: Optional[Dict[str, Any]]) ->
 def extract_attribute_breakpoints(route_results: Optional[Dict[str, Any]]) -> Set[float]:
     """Extract attribute-change breakpoint positions from a route_results dict.
 
-    Expected JSON path (optional):
+    Expected JSON paths (optional):
     - route_results.input_data_analysis.attribute_break_analysis.breakpoints
     - route_results.input_data_analysis.attribute_break_analysis.break_events[{x,...}]
+    - route_results.input_data_analysis.secondary_attribute_break_analysis.breakpoints
+    - route_results.input_data_analysis.secondary_attribute_break_analysis.break_events[{x,...}]
 
     Missing or malformed values return an empty set.
     """
@@ -91,29 +93,49 @@ def extract_attribute_breakpoints(route_results: Optional[Dict[str, Any]]) -> Se
     if not isinstance(input_analysis, dict):
         return set()
 
-    attr = input_analysis.get("attribute_break_analysis")
-    if not isinstance(attr, dict):
-        return set()
-
     out: Set[float] = set()
 
-    breakpoints = attr.get("breakpoints")
-    if isinstance(breakpoints, list):
-        for bp in breakpoints:
-            try:
-                out.add(float(bp))
-            except (TypeError, ValueError):
-                continue
+    # Extract from primary attribute breaks
+    attr = input_analysis.get("attribute_break_analysis")
+    if isinstance(attr, dict):
+        breakpoints = attr.get("breakpoints")
+        if isinstance(breakpoints, list):
+            for bp in breakpoints:
+                try:
+                    out.add(float(bp))
+                except (TypeError, ValueError):
+                    continue
 
-    events = attr.get("break_events")
-    if isinstance(events, list):
-        for e in events:
-            if not isinstance(e, dict):
-                continue
-            try:
-                out.add(float(e.get("x")))
-            except (TypeError, ValueError):
-                continue
+        events = attr.get("break_events")
+        if isinstance(events, list):
+            for e in events:
+                if not isinstance(e, dict):
+                    continue
+                try:
+                    out.add(float(e.get("x")))
+                except (TypeError, ValueError):
+                    continue
+
+    # Extract from secondary attribute breaks
+    secondary_attr = input_analysis.get("secondary_attribute_break_analysis")
+    if isinstance(secondary_attr, dict):
+        breakpoints = secondary_attr.get("breakpoints")
+        if isinstance(breakpoints, list):
+            for bp in breakpoints:
+                try:
+                    out.add(float(bp))
+                except (TypeError, ValueError):
+                    continue
+
+        events = secondary_attr.get("break_events")
+        if isinstance(events, list):
+            for e in events:
+                if not isinstance(e, dict):
+                    continue
+                try:
+                    out.add(float(e.get("x")))
+                except (TypeError, ValueError):
+                    continue
 
     return out
 
@@ -121,8 +143,9 @@ def extract_attribute_breakpoints(route_results: Optional[Dict[str, Any]]) -> Se
 def extract_attribute_break_signatures(route_results: Optional[Dict[str, Any]]) -> Dict[float, str]:
     """Extract a mapping of attribute-break x-position -> signature label.
 
-    Expected JSON path (optional):
+    Expected JSON paths (optional):
     - route_results.input_data_analysis.attribute_break_analysis.break_events[{x,signature,changed_columns}]
+    - route_results.input_data_analysis.secondary_attribute_break_analysis.break_events[{x,signature,changed_columns}]
 
     Uses `signature` when present; otherwise falls back to a joined changed_columns.
     Missing or malformed values return an empty dict.
@@ -135,35 +158,63 @@ def extract_attribute_break_signatures(route_results: Optional[Dict[str, Any]]) 
     if not isinstance(input_analysis, dict):
         return {}
 
-    attr = input_analysis.get("attribute_break_analysis")
-    if not isinstance(attr, dict):
-        return {}
-
-    events = attr.get("break_events")
-    if not isinstance(events, list):
-        return {}
-
     out: Dict[float, str] = {}
-    for e in events:
-        if not isinstance(e, dict):
-            continue
+    
+    # Process primary attribute breaks
+    attr = input_analysis.get("attribute_break_analysis")
+    if isinstance(attr, dict):
+        events = attr.get("break_events")
+        if isinstance(events, list):
+            for e in events:
+                if not isinstance(e, dict):
+                    continue
 
-        try:
-            x = float(e.get("x"))
-        except (TypeError, ValueError):
-            continue
+                try:
+                    x = float(e.get("x"))
+                except (TypeError, ValueError):
+                    continue
 
-        sig = e.get("signature")
-        if sig is None:
-            changed = e.get("changed_columns")
-            if isinstance(changed, list):
-                sig = ", ".join([str(c).strip() for c in changed if str(c).strip()])
+                sig = e.get("signature")
+                if sig is None:
+                    changed = e.get("changed_columns")
+                    if isinstance(changed, list):
+                        sig = ", ".join([str(c).strip() for c in changed if str(c).strip()])
 
-        sig = str(sig).strip() if sig is not None else ""
-        if not sig:
-            continue
+                sig = str(sig).strip() if sig is not None else ""
+                if not sig:
+                    continue
 
-        out[x] = sig
+                out[x] = sig
+    
+    # Process secondary attribute breaks
+    secondary_attr = input_analysis.get("secondary_attribute_break_analysis")
+    if isinstance(secondary_attr, dict):
+        events = secondary_attr.get("break_events")
+        if isinstance(events, list):
+            for e in events:
+                if not isinstance(e, dict):
+                    continue
+
+                try:
+                    x = float(e.get("x"))
+                except (TypeError, ValueError):
+                    continue
+
+                sig = e.get("signature")
+                if sig is None:
+                    changed = e.get("changed_columns")
+                    if isinstance(changed, list):
+                        sig = ", ".join([str(c).strip() for c in changed if str(c).strip()])
+
+                sig = str(sig).strip() if sig is not None else ""
+                if not sig:
+                    continue
+
+                # If this x position already has a signature from primary, combine them
+                if x in out:
+                    out[x] = f"{out[x]}, {sig}"
+                else:
+                    out[x] = sig
 
     return out
 

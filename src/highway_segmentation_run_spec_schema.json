@@ -83,7 +83,13 @@
         "must_break_columns": {
           "type": ["array", "null"],
           "items": { "type": "string", "minLength": 1 },
-          "description": "Optional list of attribute columns that force a mandatory breakpoint when their value changes. If null/omitted, no attribute must-breaks are applied."
+          "description": "Optional list of primary attribute columns that force a mandatory breakpoint when their value changes. Applied during gap analysis phase. If null/omitted, no primary attribute must-breaks are applied."
+        },
+
+        "secondary_break_columns": {
+          "type": ["array", "null"],
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Optional list of secondary attribute columns that force a mandatory breakpoint when their value changes. Applied during gap analysis phase (same as primary, just tracked separately for reporting). If null/omitted, no secondary attribute must-breaks are applied."
         }
       }
     },
@@ -102,6 +108,64 @@
         "method_parameters": {
           "type": "object",
           "description": "Method-scoped parameters passed to the selected analysis method. This is intentionally flexible to support new methods without changing the schema.",
+          "additionalProperties": true
+        }
+      }
+    },
+
+    "preprocessing": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Optional preprocessing configuration for data cleaning and outlier handling before analysis",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Master switch to enable/disable all preprocessing. When false, all preprocessing phases are skipped."
+        },
+
+        "pre_gap_method": {
+          "description": "Optional preprocessing method to apply before gap analysis. Method key must exist in PREPROCESSING_METHODS registry.",
+          "anyOf": [
+            {"type": "string", "minLength": 1},
+            {"type": "null"}
+          ]
+        },
+
+        "pre_gap_parameters": {
+          "type": "object",
+          "default": {},
+          "description": "Parameters for the pre-gap preprocessing method. Schema is method-specific.",
+          "additionalProperties": true
+        },
+
+        "primary_method": {
+          "description": "Optional primary preprocessing method to apply after gap analysis and first attribute breaks. This is the most commonly used preprocessing phase.",
+          "anyOf": [
+            {"type": "string", "minLength": 1},
+            {"type": "null"}
+          ]
+        },
+
+        "primary_parameters": {
+          "type": "object",
+          "default": {},
+          "description": "Parameters for the primary preprocessing method. Schema is method-specific.",
+          "additionalProperties": true
+        },
+
+        "secondary_method": {
+          "description": "Optional secondary preprocessing method to apply after second attribute breaks. Used for multi-stage preprocessing workflows.",
+          "anyOf": [
+            {"type": "string", "minLength": 1},
+            {"type": "null"}
+          ]
+        },
+
+        "secondary_parameters": {
+          "type": "object",
+          "default": {},
+          "description": "Parameters for the secondary preprocessing method. Schema is method-specific.",
           "additionalProperties": true
         }
       }

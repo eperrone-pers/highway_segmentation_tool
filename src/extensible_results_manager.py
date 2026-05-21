@@ -415,6 +415,15 @@ class ExtensibleJsonResultsManager:
                     route_results_list[0], original_data_by_route, route_processing_info
                 )
             }
+            
+            # Add preprocessing results if present (check first result for preprocessing metadata)
+            first_result = route_results_list[0]
+            if hasattr(first_result, 'preprocessing_metadata') and len(first_result.preprocessing_metadata) > 0:
+                route_result["preprocessing_summary"] = self.base_json_manager._build_preprocessing_summary(first_result)
+            
+            if hasattr(first_result, 'preprocessing_modification_log') and len(first_result.preprocessing_modification_log) > 0:
+                route_result["preprocessing_modification_log"] = first_result.preprocessing_modification_log
+            
             route_results.append(route_result)
         
         return route_results

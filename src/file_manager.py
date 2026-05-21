@@ -459,6 +459,11 @@ class FileManager:
                     if isinstance(getattr(self.app, 'must_break_columns', None), (list, tuple))
                     else None
                 ),
+                secondary_break_columns=(
+                    [str(c).strip() for c in getattr(self.app, 'secondary_break_columns', None) if str(c).strip()]
+                    if isinstance(getattr(self.app, 'secondary_break_columns', None), (list, tuple))
+                    else None
+                ),
             )
             self.app.log_message(f"Gap analysis: {len(route_analysis.gap_segments)} gaps detected, {len(route_analysis.mandatory_breakpoints)} mandatory breakpoints")
             
