@@ -10,7 +10,6 @@ Reference: Tukey, J.W. (1977). Exploratory Data Analysis.
 
 from typing import TYPE_CHECKING
 import numpy as np
-import pandas as pd
 
 from preprocessing.base import (
     PreprocessingMethodBase,
@@ -20,6 +19,10 @@ from preprocessing.base import (
 
 if TYPE_CHECKING:
     from data_loader import RouteAnalysis
+
+
+# Statistical constant: minimum points needed to calculate quartiles reliably
+MIN_POINTS_FOR_IQR = 4
 
 
 class TukeyFencesPreprocessor(PreprocessingMethodBase):
@@ -91,7 +94,9 @@ class TukeyFencesPreprocessor(PreprocessingMethodBase):
         
         # Create modification context - REQUIRED for all data changes
         # This ensures automatic logging of all modifications
-        ctx = DataModificationContext(df, x_column, y_column)
+        # Pass mandatory breakpoints to prevent their accidental removal
+        ctx = DataModificationContext(df, x_column, y_column, 
+                                       route_analysis.mandatory_breakpoints)
         
         # Get mandatory breakpoints to process each segment independently
         # This is CRITICAL - different pavement types have different statistical properties
@@ -110,11 +115,10 @@ class TukeyFencesPreprocessor(PreprocessingMethodBase):
             # Get points in this segment
             seg_mask = (x_values >= seg_start) & (x_values <= seg_end)
             seg_y_values = y_values[seg_mask]
-            seg_x_values = x_values[seg_mask]
             seg_indices = np.where(seg_mask)[0]
             
-            if len(seg_y_values) < 4:
-                # Need at least 4 points to calculate quartiles reliably
+            if len(seg_y_values) < MIN_POINTS_FOR_IQR:
+                # Need at least MIN_POINTS_FOR_IQR points to calculate quartiles reliably
                 continue
             
             # Calculate IQR bounds FOR THIS SEGMENT ONLY
@@ -162,11 +166,16 @@ class TukeyFencesPreprocessor(PreprocessingMethodBase):
                 for idx in segment_outlier_indices:
                     # Find neighboring indices WITHIN THIS SEGMENT
                     local_idx = np.where(seg_indices == idx)[0][0]
-                    prev_local_idx = local_idx - 1 if local_idx > 0 else local_idx + 1
-                    next_local_idx = local_idx + 1 if local_idx < len(seg_indices) - 1 else local_idx - 1
                     
-                    prev_idx = seg_indices[prev_local_idx]
-                    next_idx = seg_indices[next_local_idx]
+                    # Skip interpolation at segment boundaries - can't get true neighbors
+                    if local_idx == 0 or local_idx == len(seg_indices) - 1:
+                        # Outlier at segment start/end - leave unchanged
+                        # Can't interpolate without neighbors on both sides
+                        continue
+                    
+                    # Normal case: interpolate between previous and next points
+                    prev_idx = seg_indices[local_idx - 1]
+                    next_idx = seg_indices[local_idx + 1]
                     
                     # Simple linear interpolation between neighbors
                     new_y = (y_values[prev_idx] + y_values[next_idx]) / 2
@@ -177,33 +186,10 @@ class TukeyFencesPreprocessor(PreprocessingMethodBase):
         df_processed = ctx.get_modified_data()
         modifications = ctx.get_modification_log()
         
-        # Import RouteAnalysis here to avoid circular dependency
-        from data_loader import RouteAnalysis
-        
-        # Create new RouteAnalysis with processed data
-        # Preserve all metadata from original analysis
-        processed_analysis = RouteAnalysis(
-            route_id=route_analysis.route_id,
-            route_data=df_processed,
-            gap_segments=route_analysis.gap_segments,
-            mandatory_breakpoints=route_analysis.mandatory_breakpoints,
-            valid_x_values=df_processed[x_column].tolist(),
-            data_range={
-                'x_min': float(df_processed[x_column].min()),
-                'x_max': float(df_processed[x_column].max()),
-                'y_min': float(df_processed[y_column].min()),
-                'y_max': float(df_processed[y_column].max()),
-            },
-            route_stats={
-                **route_analysis.route_stats,
-                'total_points': len(df_processed),
-            },
-            must_break_columns_used=route_analysis.must_break_columns_used,
-            attribute_breakpoints=route_analysis.attribute_breakpoints,
-            attribute_break_events=route_analysis.attribute_break_events,
-            secondary_break_columns_used=getattr(route_analysis, 'secondary_break_columns_used', None),
-            secondary_attribute_breakpoints=getattr(route_analysis, 'secondary_attribute_breakpoints', None),
-            secondary_attribute_break_events=getattr(route_analysis, 'secondary_attribute_break_events', None),
+        # Create new RouteAnalysis with processed data (preserves all metadata)
+        from preprocessing.base import create_processed_route_analysis
+        processed_analysis = create_processed_route_analysis(
+            route_analysis, df_processed, x_column, y_column
         )
         
         # Build metadata for traceability

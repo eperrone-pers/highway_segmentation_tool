@@ -9,6 +9,10 @@ from tkinter import ttk, messagebox
 from typing import Dict, Optional, Callable, Any
 
 
+# UI constant: default height of parameter treeview in rows
+DEFAULT_TREEVIEW_HEIGHT = 4
+
+
 class ParameterTreeView:
     """Reusable Treeview for displaying and editing method parameters with inline editing.
     
@@ -20,13 +24,13 @@ class ParameterTreeView:
     - Auto-formatting based on parameter type
     """
     
-    def __init__(self, parent, app, height: int = 4, on_change_callback: Optional[Callable] = None):
+    def __init__(self, parent, app, height: int = DEFAULT_TREEVIEW_HEIGHT, on_change_callback: Optional[Callable] = None):
         """Initialize the parameter tree view.
         
         Args:
             parent: Parent tkinter widget
             app: Main application instance (for accessing available_columns, etc.)
-            height: Height of the treeview in rows
+            height: Height of the treeview in rows (default: DEFAULT_TREEVIEW_HEIGHT)
             on_change_callback: Optional callback function when parameter values change
         """
         self.app = app
@@ -78,10 +82,18 @@ class ParameterTreeView:
     def refresh(self, method_key: str, method_type: str = "optimization", param_values: Optional[Dict] = None):
         """Refresh the tree with parameters for the specified method.
         
+        Clears existing tree content and populates with parameters from the
+        specified method's configuration. Handles both optimization and 
+        preprocessing methods by querying the appropriate registry.
+        
         Args:
-            method_key: The method key to display parameters for
-            method_type: "optimization" or "preprocessing"
-            param_values: Optional dict of parameter values to display (defaults to method defaults)
+            method_key: Method identifier (e.g., "tukey_fences", "nsga2")
+            method_type: Type of method - "optimization" or "preprocessing"
+            param_values: Optional dict of parameter values to display.
+                         If None, uses default values from method config.
+        
+        Raises:
+            Exception: If method_key not found in configuration registry
         """
         self.current_method_key = method_key
         self.current_method_type = method_type

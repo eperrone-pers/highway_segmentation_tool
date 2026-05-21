@@ -12,14 +12,12 @@ from config import (
     get_method_key_from_display_name,
     get_preprocessing_method_names,
     get_preprocessing_method_key_from_display_name,
-    get_preprocessing_parameters,
-    get_optimization_method,
-    get_method_parameters
+    get_optimization_method
 )
 from value_parsing import parse_optional_float, parse_optional_int
 from logger import create_logger
 from route_utils import ROUTE_COLUMN_NONE_SENTINEL
-from parameter_tree_view import ParameterTreeView
+from parameter_tree_view import ParameterTreeView, DEFAULT_TREEVIEW_HEIGHT
 
 ui_config = UIConfig()
 
@@ -116,7 +114,7 @@ class MethodConfigurationPanel(ttk.Frame):
         self.param_tree_view = ParameterTreeView(
             self.params_container, 
             self.app,
-            height=4,
+            height=DEFAULT_TREEVIEW_HEIGHT,
             on_change_callback=self._on_parameter_change
         )
         self.param_tree_view.frame.grid(row=1, column=0, sticky="nsew")
@@ -176,7 +174,8 @@ class MethodConfigurationPanel(ttk.Frame):
                 self.description_label.grid_remove()
                 
         except Exception as e:
-            print(f"Warning: Could not load method config for {method_name}: {e}")
+            if hasattr(self.app, 'log_message'):
+                self.app.log_message(f"Warning: Could not load method config for {method_name}: {e}")
             return
         
         # Step 5: Refresh parameter tree view
@@ -185,7 +184,8 @@ class MethodConfigurationPanel(ttk.Frame):
             param_values = self._saved_parameters.get(method_key, None)
             self.param_tree_view.refresh(method_key, self.method_registry_type, param_values)
         except Exception as e:
-            print(f"Warning: Could not load parameters for {method_name}: {e}")
+            if hasattr(self.app, 'log_message'):
+                self.app.log_message(f"Warning: Could not load parameters for {method_name}: {e}")
     
     def _on_parameter_change(self):
         """Called when a parameter value changes."""
@@ -216,7 +216,7 @@ class MethodConfigurationPanel(ttk.Frame):
                 return get_preprocessing_method_key_from_display_name(method_name)
             else:
                 return get_method_key_from_display_name(method_name)
-        except:
+        except Exception:
             return None
     
     def get_parameters(self):
@@ -255,7 +255,8 @@ class MethodConfigurationPanel(ttk.Frame):
             self._on_method_changed(auto_expand=expand)
                         
         except Exception as e:
-            print(f"Warning: Could not set method configuration: {e}")
+            if hasattr(self.app, 'log_message'):
+                self.app.log_message(f"Warning: Could not set method configuration: {e}")
     
     def clear_saved_parameters(self):
         """Clear all saved parameter values (useful for reset functionality)."""

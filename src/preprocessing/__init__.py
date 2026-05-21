@@ -22,6 +22,7 @@ from preprocessing.base import (
     DataModificationContext,
     PreprocessingResult,
     PreprocessingMethodBase,
+    create_processed_route_analysis,
 )
 
 __all__ = [
@@ -29,4 +30,5 @@ __all__ = [
     "DataModificationContext",
     "PreprocessingResult",
     "PreprocessingMethodBase",
+    "create_processed_route_analysis",
 ]

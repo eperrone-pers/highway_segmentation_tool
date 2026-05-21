@@ -514,7 +514,7 @@ def process_route_with_preprocessing(
     
     # Phase 2: Gap analysis + attribute breaks
     if log_callback:
-        log_callback(f"=== Phase 2: Gap Analysis & Attribute Breaks ===")
+        log_callback("=== Phase 2: Gap Analysis & Attribute Breaks ===")
     route_analysis = analyze_route_gaps(
         df, x_column, y_column, route_id, gap_threshold,
         must_break_columns=first_attribute_columns,  # First attributes only
@@ -524,7 +524,7 @@ def process_route_with_preprocessing(
     # Phase 3: Primary preprocessing (optional)
     if preprocessing_config.primary_method:
         if log_callback:
-            log_callback(f"=== Phase 3: Primary Preprocessing ===")
+            log_callback("=== Phase 3: Primary Preprocessing ===")
         route_analysis, primary_result = apply_preprocessing_phase(
             route_analysis,
             preprocessing_config.primary_method,
@@ -539,7 +539,7 @@ def process_route_with_preprocessing(
     # Phase 4: Secondary preprocessing (optional)
     if preprocessing_config.secondary_method:
         if log_callback:
-            log_callback(f"=== Phase 4: Secondary Preprocessing (Postprocessing) ===")
+            log_callback("=== Phase 4: Secondary Preprocessing (Postprocessing) ===")
         route_analysis, secondary_result = apply_preprocessing_phase(
             route_analysis,
             preprocessing_config.secondary_method,

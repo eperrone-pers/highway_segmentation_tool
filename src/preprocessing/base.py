@@ -81,9 +81,11 @@ class DataModificationContext:
         _y_column: Name of Y-axis column
         _modifications: List of all modifications made
         _original_df: Preserved original dataframe for comparison
+        _mandatory_breakpoints: Set of x-values that cannot be removed (gaps, route edges, attribute changes)
     """
     
-    def __init__(self, df: pd.DataFrame, x_column: str, y_column: str):
+    def __init__(self, df: pd.DataFrame, x_column: str, y_column: str, 
+                 mandatory_breakpoints: Optional[List[float]] = None):
         """
         Initialize context with data to be modified.
         
@@ -91,12 +93,14 @@ class DataModificationContext:
             df: DataFrame containing route data
             x_column: Name of X-axis column
             y_column: Name of Y-axis column
+            mandatory_breakpoints: List of x-values that must not be removed (gaps, route boundaries, attribute changes)
         """
         self._df = df.copy()  # Work on a copy
         self._x_column = x_column
         self._y_column = y_column
         self._modifications: List[DataModification] = []
         self._original_df = df.copy()  # Preserve original for verification
+        self._mandatory_breakpoints = set(mandatory_breakpoints or [])
     
     def remove_point(self, x_value: float, reason: Optional[str] = None) -> None:
         """
@@ -107,8 +111,16 @@ class DataModificationContext:
             reason: Optional explanation (e.g., "outlier beyond 1.5*IQR upper fence")
         
         Raises:
-            ValueError: If x_value not found in data
+            ValueError: If x_value not found in data or is a mandatory breakpoint
         """
+        # Enforce framework constraint: mandatory breakpoints cannot be removed
+        if x_value in self._mandatory_breakpoints:
+            raise ValueError(
+                f"Cannot remove point at x={x_value}: this is a mandatory breakpoint "
+                f"(gap boundary, route edge, or attribute change). "
+                f"Mandatory breakpoints must be preserved for segmentation."
+            )
+        
         # Find the point
         mask = self._df[self._x_column] == x_value
         if not mask.any():
@@ -391,3 +403,71 @@ class PreprocessingMethodBase(ABC):
             RuntimeError: If mandatory breakpoints would be violated
         """
         pass
+
+
+def create_processed_route_analysis(
+    original: "RouteAnalysis",
+    modified_df: pd.DataFrame,
+    x_column: str,
+    y_column: str
+) -> "RouteAnalysis":
+    """
+    Helper to create processed RouteAnalysis preserving all metadata from original.
+    
+    This eliminates code duplication across preprocessing methods. Every preprocessing
+    method needs to reconstruct a RouteAnalysis object after modifying the data,
+    preserving all metadata from the original. This helper centralizes that logic.
+    
+    Automatically handles:
+    - Copying all original metadata (gaps, breakpoints, attributes)
+    - Recalculating data_range from modified DataFrame
+    - Updating valid_x_values and route_stats
+    - Handling optional fields (secondary attributes) safely with getattr()
+    
+    Args:
+        original: Original RouteAnalysis object before preprocessing
+        modified_df: Modified DataFrame after preprocessing operations
+        x_column: Name of X-axis column in DataFrame
+        y_column: Name of Y-axis column in DataFrame
+    
+    Returns:
+        RouteAnalysis: New analysis object with modified data and preserved metadata
+    
+    Example:
+        ```python
+        ctx = DataModificationContext(route_analysis.route_data, x_column, y_column)
+        # ... modify data ...
+        modified_df = ctx.get_modified_data()
+        
+        # One-line reconstruction instead of 18 lines of boilerplate
+        processed_analysis = create_processed_route_analysis(
+            route_analysis, modified_df, x_column, y_column
+        )
+        ```
+    """
+    # Import here to avoid circular dependency
+    from data_loader import RouteAnalysis
+    
+    return RouteAnalysis(
+        route_id=original.route_id,
+        route_data=modified_df,
+        gap_segments=original.gap_segments,
+        mandatory_breakpoints=original.mandatory_breakpoints,
+        valid_x_values=modified_df[x_column].tolist(),
+        data_range={
+            'x_min': float(modified_df[x_column].min()),
+            'x_max': float(modified_df[x_column].max()),
+            'y_min': float(modified_df[y_column].min()),
+            'y_max': float(modified_df[y_column].max()),
+        },
+        route_stats={
+            **original.route_stats,
+            'total_points': len(modified_df),
+        },
+        must_break_columns_used=original.must_break_columns_used,
+        attribute_breakpoints=original.attribute_breakpoints,
+        attribute_break_events=original.attribute_break_events,
+        secondary_break_columns_used=getattr(original, 'secondary_break_columns_used', None),
+        secondary_attribute_breakpoints=getattr(original, 'secondary_attribute_breakpoints', None),
+        secondary_attribute_break_events=getattr(original, 'secondary_attribute_break_events', None),
+    )
