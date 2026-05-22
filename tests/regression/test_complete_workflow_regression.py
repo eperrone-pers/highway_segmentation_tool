@@ -126,6 +126,7 @@ from parameter_manager import ParameterManager
 from excel_export import HighwaySegmentationExcelExporter
 from config import get_optimization_method
 from route_utils import ROUTE_COLUMN_NONE_SENTINEL
+from tests.regression.conftest import persist_regression_artifact, should_persist_regression_artifacts
 
 
 def _load_regression_template() -> Dict[str, Any]:
@@ -156,6 +157,43 @@ def _get_methods_and_datasets_from_template() -> (List[str], List[str]):
 
 
 METHODS_TO_TEST, DATASETS_TO_TEST = _get_methods_and_datasets_from_template()
+
+
+def _build_gui_regression_cases() -> List[tuple[str, str]]:
+    """Return a representative GUI/controller regression subset.
+
+    The CLI regression suite exercises the full method x dataset matrix. The
+    GUI/controller suite keeps one representative case per major method family so
+    the expensive GUI path still gets covered without repeating the full matrix.
+    """
+    preferred_cases = [
+        ("single", "single_route"),
+        ("multi", "multi_route"),
+        ("constrained", "single_route"),
+        ("constrained_deb", "multi_route"),
+        ("aashto_cda", "single_route_with_outliers"),
+        ("pelt_segmentation", "multi_route_with_outliers"),
+    ]
+
+    available_methods = set(METHODS_TO_TEST)
+    available_datasets = set(DATASETS_TO_TEST)
+    cases = [
+        (method_key, dataset)
+        for method_key, dataset in preferred_cases
+        if method_key in available_methods and dataset in available_datasets
+    ]
+
+    if cases:
+        return cases
+
+    return [
+        (method_key, DATASETS_TO_TEST[0])
+        for method_key in METHODS_TO_TEST
+        if DATASETS_TO_TEST
+    ]
+
+
+GUI_REGRESSION_CASES = _build_gui_regression_cases()
 
 
 def _get_dataset_config(dataset_key: str) -> Dict[str, Any]:
@@ -806,8 +844,11 @@ class TestCompleteWorkflowRegression:
             - Automated cleanup and artifact management
     """
     
-    @pytest.mark.parametrize("method_key", METHODS_TO_TEST)
-    @pytest.mark.parametrize("dataset", DATASETS_TO_TEST)
+    @pytest.mark.parametrize(
+        ("method_key", "dataset"),
+        GUI_REGRESSION_CASES,
+        ids=[f"{method_key}-{dataset}" for method_key, dataset in GUI_REGRESSION_CASES],
+    )
     def test_complete_workflow(self, method_key, dataset, tmp_path):
         """
         Execute complete optimization workflow using production code paths.
@@ -924,13 +965,9 @@ class TestCompleteWorkflowRegression:
         json_file = tmp_path / get_result_filename(method_key, dataset, "json")
         excel_file = tmp_path / get_result_filename(method_key, dataset, "xlsx")
         
-        # Also create persistent outputs in the outputs directory for inspection
-        outputs_dir = Path(__file__).parent / "outputs"
-        outputs_dir.mkdir(exist_ok=True)
-        (outputs_dir / "json").mkdir(exist_ok=True)
-        (outputs_dir / "excel").mkdir(exist_ok=True)
-        persistent_json = outputs_dir / "json" / get_result_filename(method_key, dataset, "json")
-        persistent_excel = outputs_dir / "excel" / get_result_filename(method_key, dataset, "xlsx")
+        persistent_outputs_enabled = should_persist_regression_artifacts()
+        persistent_json = Path(__file__).parent / "outputs" / "json" / get_result_filename(method_key, dataset, "json")
+        persistent_excel = Path(__file__).parent / "outputs" / "excel" / get_result_filename(method_key, dataset, "xlsx")
             
         # Step 1: Setup mock GUI app with production interfaces (no core code changes)
         print(f"\n🔧 Setting up mock GUI app with {dataset} data and {method_key} method...")
@@ -985,7 +1022,7 @@ class TestCompleteWorkflowRegression:
         if actual_json_path.exists():
             import shutil
             shutil.copy2(actual_json_path, json_file)
-            shutil.copy2(actual_json_path, persistent_json)
+            persist_regression_artifact(actual_json_path, persistent_json)
             print("✅ JSON output copied to test locations")
         
         # Step 4: Validate JSON structure and schema compliance (using production output)
@@ -1005,13 +1042,14 @@ class TestCompleteWorkflowRegression:
         print("\n📊 Exporting to Excel using production exporter...")
         exporter = HighwaySegmentationExcelExporter(json_data, str(data_file))
         excel_success, _ = exporter.export_to_excel(str(excel_file))
-        
-        # Also create persistent Excel
-        persistent_exporter = HighwaySegmentationExcelExporter(json_data, str(data_file))
-        persistent_excel_success, _ = persistent_exporter.export_to_excel(str(persistent_excel))
-        
+
         assert excel_success, f"Excel export failed for {method_key}"
-        assert persistent_excel_success, f"Persistent Excel export failed for {method_key}"
+
+        if persistent_outputs_enabled:
+            persistent_exporter = HighwaySegmentationExcelExporter(json_data, str(data_file))
+            persistent_excel_success, _ = persistent_exporter.export_to_excel(str(persistent_excel))
+            assert persistent_excel_success, f"Persistent Excel export failed for {method_key}"
+
         print("✅ Excel export completed successfully")
         
         # Step 6: Final validation
@@ -1051,157 +1089,3 @@ class TestRegressionValidation:
         # Check if at least one data file exists
         if not single_route_file.exists() and not multi_route_file.exists():
             pytest.skip("No test data files found - this is expected in some environments")
-
-
-class TestSchemaValidation:
-    """
-    Schema Validation Tests for Regression Output Files
-    
-    Validates that all regression test outputs conform to the highway
-    segmentation results schema and Excel export requirements.
-    """
-    
-    @classmethod
-    def setup_class(cls):
-        """Load schema for validation"""
-        cls.schema = cls._load_schema()
-        cls.has_jsonschema = cls._check_jsonschema()
-        
-    @staticmethod
-    def _load_schema():
-        """Load the highway segmentation results schema"""
-        schema_path = Path("src/highway_segmentation_results_schema.json")
-        
-        if not schema_path.exists():
-            pytest.fail(f"Schema file not found: {schema_path}")
-        
-        try:
-            with open(schema_path, 'r') as f:
-                return json.load(f)
-        except Exception as e:
-            pytest.fail(f"Failed to load schema: {e}")
-    
-    @staticmethod    
-    def _check_jsonschema():
-        """Check if jsonschema library is available"""
-        try:
-            from jsonschema import Draft202012Validator
-            return Draft202012Validator is not None
-        except ImportError:
-            return False
-    
-    def test_all_json_outputs_exist(self):
-        """Verify all expected JSON output files exist"""
-        json_dir = Path("tests/regression/outputs/json")
-
-        expected_files = [
-            get_result_filename(method, dataset, "json")
-            for method in METHODS_TO_TEST
-            for dataset in DATASETS_TO_TEST
-        ]
-        
-        for filename in expected_files:
-            file_path = json_dir / filename
-            assert file_path.exists(), f"Missing JSON output: {filename}"
-            assert file_path.stat().st_size > 1000, f"JSON file too small: {filename}"
-    
-    def test_all_excel_outputs_exist(self):
-        """Verify all expected Excel output files exist"""  
-        excel_dir = Path("tests/regression/outputs/excel")
-
-        expected_files = [
-            get_result_filename(method, dataset, "xlsx")
-            for method in METHODS_TO_TEST
-            for dataset in DATASETS_TO_TEST
-        ]
-        
-        for filename in expected_files:
-            file_path = excel_dir / filename
-            assert file_path.exists(), f"Missing Excel output: {filename}"
-            assert file_path.stat().st_size > 10000, f"Excel file too small: {filename}"
-    
-    @pytest.mark.parametrize(
-        "json_file",
-        [
-            get_result_filename(method, dataset, "json")
-            for method in METHODS_TO_TEST
-            for dataset in DATASETS_TO_TEST
-        ],
-    )
-    def test_json_schema_validation(self, json_file):
-        """Validate individual JSON files against schema"""
-        json_path = Path("tests/regression/outputs/json") / json_file
-        
-        # Load JSON data
-        try:
-            with open(json_path, 'r') as f:
-                data = json.load(f)
-        except json.JSONDecodeError as e:
-            pytest.fail(f"Invalid JSON in {json_file}: {e}")
-        except Exception as e:
-            pytest.fail(f"Failed to load JSON {json_file}: {e}")
-        
-        # Schema validation
-        if self.has_jsonschema:
-            from jsonschema import Draft202012Validator
-            
-            validator = Draft202012Validator(self.schema)
-            errors = list(validator.iter_errors(data))
-            
-            if errors:
-                error_messages = []
-                for error in errors[:3]:  # Show first 3 errors
-                    path = " -> ".join(str(p) for p in error.absolute_path)
-                    error_messages.append(f"Path: {path}, Error: {error.message}")
-                
-                pytest.fail(f"Schema validation failed for {json_file}:\n" + 
-                           "\n".join(error_messages) + 
-                           (f"\n... and {len(errors) - 3} more errors" if len(errors) > 3 else ""))
-        else:
-            # Basic structure validation without jsonschema
-            required_keys = ["analysis_metadata", "input_parameters", "route_results"]
-            missing = [key for key in required_keys if key not in data]
-            
-            if missing:
-                pytest.fail(f"Missing required keys in {json_file}: {missing}")
-    
-    def test_json_content_structure(self):
-        """Validate JSON content structure across all output files"""
-        json_dir = Path("tests/regression/outputs/json") 
-        json_files = list(json_dir.glob("*.json"))
-        
-        expected_min = len(METHODS_TO_TEST) * len(DATASETS_TO_TEST)
-        assert len(json_files) >= expected_min, f"Expected at least {expected_min} JSON files, found {len(json_files)}"
-        
-        for json_file in json_files:
-            with open(json_file, 'r') as f:
-                data = json.load(f)
-            
-            # Validate top-level structure
-            assert "analysis_metadata" in data, f"Missing analysis_metadata in {json_file.name}"
-            assert "input_parameters" in data, f"Missing input_parameters in {json_file.name}"  
-            assert "route_results" in data, f"Missing route_results in {json_file.name}"
-            
-            # Validate route_results is array with content
-            route_results = data["route_results"]
-            assert isinstance(route_results, list), f"route_results must be array in {json_file.name}"
-            assert len(route_results) > 0, f"route_results is empty in {json_file.name}"
-            
-            # Validate each route has required structure
-            for i, route in enumerate(route_results):
-                assert "route_info" in route, f"Missing route_info in route {i} of {json_file.name}"
-                assert "input_data_analysis" in route, f"Missing input_data_analysis in route {i} of {json_file.name}"
-                assert "processing_results" in route, f"Missing processing_results in route {i} of {json_file.name}"
-                
-                # Validate pareto_points exist and have content  
-                processing_results = route["processing_results"]
-                assert "pareto_points" in processing_results, f"Missing pareto_points in route {i} of {json_file.name}"
-                
-                pareto_points = processing_results["pareto_points"]
-                assert len(pareto_points) > 0, f"No pareto points in route {i} of {json_file.name}"
-
-    def test_validate_regression_outputs_script(self):
-        """Run the standalone schema validator script as part of regression suite."""
-        from tests.regression import validate_regression_outputs
-
-        assert validate_regression_outputs.main(), "validate_regression_outputs.py reported schema validation failures"

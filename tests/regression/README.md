@@ -1,85 +1,127 @@
-# Highway Segmentation GA - Regression Test Suite
+# Highway Segmentation Tool - Regression Test Suite
 
 Comprehensive regression tests that validate the complete workflow for all optimization methods and data configurations.
 
 ## Overview
 
-This test suite runs an end-to-end regression matrix covering:
+This suite is split into two layers:
 
-- **Methods**: always includes `single` and `multi`, plus any additional `method_key` entries present under `method_specific` in `tests/regression/test_parameters_template.json`.
-- **Datasets**: `single_route` (test_data_single_route.csv) and `multi_route` (TestMultiRoute.csv)
+- **CLI regression**: exhaustive method x dataset matrix
+- **GUI/controller regression**: representative subset of the same behaviors
+
+The goal is to keep the regression gate comprehensive without rerunning the full matrix through the slowest path twice.
+
+The full CLI regression matrix covers:
+
+- **Methods**: derived from `tests/regression/test_parameters_template.json`; currently `single`, `multi`, `aashto_cda`, `constrained`, `constrained_deb`, and `pelt_segmentation`.
+- **Datasets**: derived from the same template; currently `single_route`, `multi_route`, `single_route_with_outliers`, and `multi_route_with_outliers`.
 
 ## Test Structure
 
 ```text
 tests/regression/
-├── test_complete_workflow_regression.py    # Main test file (8 parametrized tests)
-├── test_parameters_template.json          # Standardized test parameters
-├── conftest.py                            # Test fixtures and utilities
-├── outputs/                               # Test artifacts (gitignored)
-│   ├── json/                             # JSON results
-│   └── excel/                            # Excel exports
-└── README.md                             # This file
+├── test_complete_workflow_regression.py      # GUI / controller representative regression subset
+├── test_cli_workflow_regression.py           # CLI exhaustive regression matrix
+├── test_preprocessing_workflow_regression.py # Preprocessing-focused regression coverage
+├── test_zz_cli_gui_structure_equivalence.py  # CLI/GUI output structure equivalence
+├── test_pelt_segmentation_method.py          # PELT-specific regression checks
+├── regression_matrix.py                      # Derives methods/datasets from template
+├── test_parameters_template.json             # Standardized regression parameters
+├── conftest.py                               # Fixtures and utilities
+├── outputs/                                  # Test artifacts (gitignored)
+│   ├── json/                                 # JSON results
+│   └── excel/                                # Excel exports
+└── README.md                                 # This file
 ```
 
 ## What Each Test Does
 
-For each method/dataset combination:
+For each GUI/controller regression case:
 
 1. **Load Data**: Verify test data exists and has correct columns
 2. **Configure Parameters**: Apply method-specific standardized parameters  
 3. **Run Optimization**: Execute complete optimization workflow
-4. **Save JSON**: Save results to `outputs/json/regression_{method}_{dataset}.json`
-    - CLI regression tests also write separate artifacts as `outputs/json/cli_regression_{method}_{dataset}.json`
+4. **Save JSON**: Produce results JSON in an isolated temporary directory
 5. **Validate Schema**: Check JSON against schema specification
-6. **Export Excel**: Create Excel file in `outputs/excel/regression_{method}_{dataset}.xlsx`
+6. **Export Excel**: Create Excel file in an isolated temporary directory
 7. **Validate Export**: Verify Excel content matches JSON data
 8. **Assert Success**: Confirm all steps completed successfully
+
+Additional regression modules cover:
+
+- CLI run-spec execution via `cli.main()`
+- preprocessing workflow invariants on outlier-containing datasets
+- optional GUI/CLI output structure equivalence checks
+- method-specific regression cases such as PELT segmentation
 
 ## Running the Tests
 
 ### Run All Regression Tests
 
 ```bash
-cd tests/regression
-pytest test_complete_workflow_regression.py -v
+python run_tests.py --regression
 ```
 
 ### Run Specific Method
 
 ```bash
-pytest test_complete_workflow_regression.py -k "single" -v
+python -m pytest tests/regression/test_complete_workflow_regression.py -k "single" -v
 ```
 
 ### Run Specific Dataset
 
 ```bash
-pytest test_complete_workflow_regression.py -k "multi_route" -v  
+python -m pytest tests/regression/test_complete_workflow_regression.py -k "multi_route" -v
 ```
 
 ### Run Single Test Case
 
 ```bash
-pytest test_complete_workflow_regression.py -k "single and single_route" -v
+python -m pytest tests/regression/test_complete_workflow_regression.py -k "single and single_route" -v
+```
+
+### Run CLI Regression Coverage
+
+```bash
+python -m pytest tests/regression/test_cli_workflow_regression.py -v
+```
+
+### Run GUI/Controller Regression Coverage
+
+```bash
+python -m pytest tests/regression/test_complete_workflow_regression.py -v
+```
+
+### Run Preprocessing Regression Coverage
+
+```bash
+python -m pytest tests/regression/test_preprocessing_workflow_regression.py -v
 ```
 
 ## Test Data Configuration
 
-### Single Route Data (test_data_single_route.csv)
+### Single Route Data (`test_data_single_route.csv`)
 
 - **X Column**: `milepoint`  
 - **Y Column**: `structural_strength_ind`
 - **Route Column**: `null` (no route separation)
 
-### Multi Route Data (TestMultiRoute.csv)  
+### Multi Route Data (`TestMultiRoute.csv`)
 
 - **X Column**: `BDFO`
 - **Y Column**: `D60`
 - **Route Column**: `RDB`
 
+### Outlier Regression Datasets
+
+- `single_route_with_outliers`: `test_data_single_route_with_outliers.csv`
+- `multi_route_with_outliers`: `TestMultiRoute_with_outliers.csv`
+
 ## Expected Outputs
 
-After successful test run, you'll find:
+By default, regression tests write outputs into per-test temporary directories and validate them in-place.
+
+If you explicitly enable artifact persistence, you'll also find:
 
 ```text
 outputs/
@@ -94,8 +136,24 @@ outputs/
 
 Notes:
 
-- The **GUI regression suite** writes JSON (`outputs/json/regression_{method}_{dataset}.json`) and Excel (`outputs/excel/regression_{method}_{dataset}.xlsx`).
-- The **CLI regression suite** writes JSON (`outputs/json/cli_regression_{method}_{dataset}.json`).
+- Persistent artifacts are optional and disabled by default.
+- Enable them only when you want to inspect generated JSON/Excel files manually.
+- The **GUI regression suite** writes persisted JSON/Excel only when artifact persistence is enabled.
+- The **CLI regression suite** writes persisted JSON only when artifact persistence is enabled.
+- The active method/dataset matrix is derived dynamically from `test_parameters_template.json` via `regression_matrix.py`.
+
+To enable persisted artifacts:
+
+```bash
+HST_KEEP_REGRESSION_ARTIFACTS=1
+```
+
+On Windows PowerShell:
+
+```powershell
+$env:HST_KEEP_REGRESSION_ARTIFACTS = "1"
+python run_tests.py --regression
+```
 
 Examples (names will vary with the active method matrix):
 
@@ -130,7 +188,7 @@ See `test_parameters_template.json` for full configuration.
 
 **Import Errors**: Ensure you're running from the correct directory and have all dependencies installed.
 
-**Missing Test Data**: Verify `tests/test_data/test_data_single_route.csv` and `TestMultiRoute.csv` exist.
+**Missing Test Data**: Verify the datasets referenced in `tests/regression/test_parameters_template.json` exist under `tests/test_data/`.
 
 **Schema Validation Fails**: Check that `src/highway_segmentation_results_schema.json` exists and is valid.
 
@@ -148,12 +206,18 @@ To keep test artifacts for inspection, comment out cleanup in `conftest.py`:
 
 ## Integration with CI/CD
 
-This test suite is perfect for:
+This test suite is best suited for:
 
 - **Pre-commit hooks**: Validate changes don't break core functionality
 - **Pull request validation**: Ensure new features don't introduce regressions  
 - **Release verification**: Confirm all workflows work before deployment
 - **Performance benchmarking**: Track optimization performance over time
+
+Recommended split:
+
+- Local development: `python run_tests.py --smoke`
+- Branch/PR gate: `python run_tests.py --regression`
+- Broad verification: `python run_tests.py --full`
 
 ## Documentation Architecture
 
@@ -163,7 +227,11 @@ The regression test suite includes comprehensive documentation across all compon
 
 - **`__init__.py`**: Package overview, test matrix, and integration guidelines
 - **`test_complete_workflow_regression.py`**: Detailed workflow architecture and test design philosophy
+- **`test_cli_workflow_regression.py`**: CLI run-spec regression coverage
+- **`test_preprocessing_workflow_regression.py`**: preprocessing regression scenarios
+- **`test_zz_cli_gui_structure_equivalence.py`**: structural parity checks for CLI vs GUI outputs
 - **`conftest.py`**: Fixture documentation and validation framework explanation
+- **`regression_matrix.py`**: method/dataset derivation helpers
 - **`validate_regression_outputs.py`**: Schema validation utility with comprehensive error reporting
 
 ### Class and Method Documentation
@@ -176,6 +244,7 @@ The regression test suite includes comprehensive documentation across all compon
 ### Testing Methodology
 
 - **Production Equivalence**: Same code paths as GUI application
-- **Comprehensive Coverage**: All method/dataset combinations validated
+- **Comprehensive CLI Coverage**: Full method/dataset matrix validated through the headless path
+- **Representative GUI Coverage**: GUI/controller path validated without duplicating the full matrix
 - **Error Handling**: Detailed diagnostics and troubleshooting guidance
 - **Integration Support**: CI/CD pipeline integration and automated quality assurance

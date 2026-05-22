@@ -30,6 +30,139 @@ In practice, each analysis method produces:
 
 You can implement **your own breakpoint-selection method** (GA, NSGA-II, statistical CDA, ML, rules-based, etc.) and register it so it appears in the GUI, runs under the controller, exports JSON, and visualizes correctly.
 
+### 1.1 Where analysis methods fit in the processing chain
+
+Analysis methods operate on **preprocessed, segmented route data** and produce optimal breakpoint locations. Understanding where they fit in the overall pipeline helps clarify what inputs they receive and what preprocessing has already occurred.
+
+```text
+┌───────────────────────────────────────────────────────────────────────┐
+│ 1. DATA LOADING                                                       │
+│    - Load CSV/Excel file                                              │
+│    - Convert columns, filter invalid values                           │
+└────────────────────┬──────────────────────────────────────────────────┘
+                     │
+                     ▼
+┌───────────────────────────────────────────────────────────────────────┐
+│ 2. ROUTE FILTERING                                                    │
+│    - filter_data_by_route()                                           │
+│    - Separate data by route_column                                    │
+└────────────────────┬──────────────────────────────────────────────────┘
+                     │
+                     ▼
+        ╔═══════════════════════════════════════════════════════════╗
+        ║  FOR EACH ROUTE (per-route processing):                   ║
+        ╚═══════════════════════════════════════════════════════════╝
+                     │
+                     ▼
+┌───────────────────────────────────────────────────────────────────────┐
+│ 3. PRE-GAP PREPROCESSING (optional)                                   │
+│    Phase: "pre_gap"                                                   │
+│    Configuration: preprocessing.pre_gap_method                        │
+│    - Applied to raw route data before gap analysis                    │
+│    - Rare use case: data cleaning, interpolation preparation          │
+└────────────────────┬──────────────────────────────────────────────────┘
+                     │
+                     ▼
+┌───────────────────────────────────────────────────────────────────────┐
+│ 4. GAP ANALYSIS                                                       │
+│    - Detect data gaps using gap_threshold                             │
+│    - Create mandatory breakpoints at gap boundaries                   │
+│    - Identify valid_x_values (excluding gap interiors)                │
+│    - Build initial RouteAnalysis object                               │
+└────────────────────┬──────────────────────────────────────────────────┘
+                     │
+                     ▼
+┌───────────────────────────────────────────────────────────────────────┐
+│ 5. EARLY ATTRIBUTE BREAKS                                             │
+│    Configuration: input.early_attribute_columns                       │
+│    - Early set of attribute-based breakpoints                         │
+│    - Examples: Pavement_Type, Functional_Class, Lanes                 │
+│    - Creates mandatory breakpoints at attribute changes               │
+│    - Used for per-segment preprocessing statistics                    │
+└────────────────────┬──────────────────────────────────────────────────┘
+                     │
+                     ▼
+┌───────────────────────────────────────────────────────────────────────┐
+│ 6. PRIMARY PREPROCESSING (optional)                                   │
+│    Phase: "primary"                                                   │
+│    Configuration: preprocessing.primary_method                        │
+│    - Applied after gaps and early attribute breaks                    │
+│    - Operates within segments defined by gaps + early attributes      │
+│    - Example: Tukey Fences outlier detection/removal                  │
+└────────────────────┬──────────────────────────────────────────────────┘
+                     │
+                     ▼
+┌───────────────────────────────────────────────────────────────────────┐
+│ 7. LATE ATTRIBUTE BREAKS                                              │
+│    Configuration: input.late_attribute_columns                        │
+│    - Late set of attribute-based breakpoints                          │
+│    - Examples: County, District, Maintenance_Zone                     │
+│    - Creates final mandatory segment boundaries                       │
+└────────────────────┬──────────────────────────────────────────────────┘
+                     │
+                     ▼
+┌───────────────────────────────────────────────────────────────────────┐
+│ 8. SECONDARY PREPROCESSING / POSTPROCESSING (optional)                │
+│    Phase: "secondary" (shown as "Postprocessing" in the UI)         │
+│    Configuration: preprocessing.secondary_method                      │
+│    - Applied after all attribute breaks                               │
+│    - Final data preparation before analysis                           │
+└────────────────────┬──────────────────────────────────────────────────┘
+                     │
+                     ▼
+┌───────────────────────────────────────────────────────────────────────┐
+│ 9. FINALIZE RouteAnalysis OBJECT                                      │
+│    - route_data: DataFrame (preprocessed if enabled)                  │
+│    - gap_segments, mandatory_breakpoints, valid_x_values              │
+│    - preprocessing_results: List[PreprocessingResult] (if used)       │
+└────────────────────┬──────────────────────────────────────────────────┘
+                     │
+                     ▼
+╔═══════════════════════════════════════════════════════════════════════╗
+║ 10. ANALYSIS METHOD EXECUTION ← YOUR NEW METHOD RUNS HERE             ║
+║     - Receives finalized RouteAnalysis with preprocessed data         ║
+║     - Receives mandatory_breakpoints (cannot place breakpoints here)  ║
+║     - Receives valid_x_values (candidate breakpoint locations)        ║
+║     - Produces optimal breakpoint locations                           ║
+║     - Returns AnalysisResult with solutions                           ║
+╚═══════════════════════════════════════════════════════════════════════╝
+                     │
+                     ▼
+┌───────────────────────────────────────────────────────────────────────┐
+│ 11. RESULTS & VISUALIZATION                                           │
+│     - JSON export with complete metadata                              │
+│     - Enhanced visualization with segmentation plot                   │
+│     - Pareto plot (if multi-objective method)                         │
+│     - Preprocessing overlay (if preprocessing was used)               │
+└───────────────────────────────────────────────────────────────────────┘
+```
+
+**Key points for analysis method developers:**
+
+- **Your method receives a `RouteAnalysis` object** that contains:
+  - `route_data`: DataFrame with preprocessed data (if preprocessing was enabled)
+  - `mandatory_breakpoints`: Set of x-values where breakpoints are required (gaps, route edges, attribute changes)
+  - `valid_x_values`: List of all valid x-coordinates where breakpoints can be placed
+  - `gap_segments`: List of data gaps (periods with no measurements)
+  - `preprocessing_results`: List of preprocessing operations applied (if any)
+
+- **Mandatory breakpoints are non-negotiable**: Your method must include these in any solution. They represent:
+  - Gap boundaries (no data collection periods)
+  - Route edges (start and end)
+  - Early attribute change points (structural boundaries like pavement type changes)
+  - Late attribute change points (administrative boundaries like county lines)
+
+- **Understanding Early vs Late attribute breaks**:
+  - **Early attribute breaks** (Step 3 in the UI) are applied **before primary preprocessing** to create segments based on **structural characteristics** like `Pavement_Type`, `Functional_Class`, or `Lanes`. These define the segments within which preprocessing operates, ensuring that outlier detection and data cleaning are performed separately for each structural type (preventing inappropriate statistical mixing across different pavement types, lane configurations, etc.).
+  - **Late attribute breaks** (Step 5 in the UI) are applied **after primary preprocessing** to create **administrative boundaries** like `County`, `District`, or `Maintenance_Zone`. These define the final segment boundaries for analysis and reporting purposes, not for preprocessing statistics.
+  - **Why this matters for your method**: The `mandatory_breakpoints` you receive include both types. Early breaks ensure data within each segment is statistically homogeneous (same structural characteristics), while late breaks ensure your segmentation respects administrative reporting boundaries. Your analysis method optimizes breakpoint placement within these constraints.
+
+- **Data is already cleaned**: If preprocessing was configured, outliers may have been removed, values capped, or data smoothed. Your method works with the final processed data.
+
+- **Analysis is per-route**: The framework calls your method once per route. Multi-route datasets are processed independently, then combined in results.
+
+**Backward compatibility:** All preprocessing is optional. If no preprocessing is configured, your method receives the original data as in previous versions.
+
 ## 2) Files and configuration involved
 
 The application is split into:
@@ -66,7 +199,7 @@ The application is split into:
      - The method list is configuration-driven from `OPTIMIZATION_METHODS` in `src/config.py` and filtered
          to methods with an existing README at the path above.
 
-### 1.1 Runtime flow
+### 2.1 Runtime flow
 
 ```mermaid
 flowchart TD
@@ -88,7 +221,7 @@ flowchart TD
 
 ---
 
-### 1.2 AASHTO CDA integration (single-objective example)
+### 2.2 AASHTO CDA integration (single-objective example)
 
 This diagram focuses on the **AASHTO CDA** method and the configuration points it uses.
 
@@ -1190,9 +1323,9 @@ class <NewMethodClass>(AnalysisMethodBase):
 
 This repo already has a regression-testing framework that exercises methods end-to-end via:
 
-1. **GUI / production controller path** (uses `OptimizationController` + consolidated save)
+1. **GUI / production controller path** (uses `OptimizationController` + consolidated save on a representative subset)
 2. **CLI run-spec path** (uses `cli.main([...])` + `run_spec` + `cli_runner`)
-3. **Structure parity check** (ensures CLI and GUI JSON outputs have the same nested key/type shape)
+3. **Optional structure parity check** (ensures CLI and GUI JSON outputs have the same nested key/type shape when persisted artifacts are enabled)
 
 The key design goal is:
 
@@ -1244,6 +1377,11 @@ This test:
 - Writes results using `ExtensibleJsonResultsManager`
 - Validates output structure and schema compliance
 
+Notes:
+
+- The GUI regression suite is intentionally a representative subset, not the exhaustive matrix.
+- The CLI regression suite is the exhaustive method x dataset coverage.
+
 When your method is included in the template (see C.1), it will be picked up automatically.
 
 ### C.3 CLI regression test (run-spec path)
@@ -1257,7 +1395,8 @@ This test:
 - Builds a run-spec from `tests/regression/test_parameters_template.json`
 - Calls `cli.main(["run", "--spec", ...])` (no subprocess)
 - Validates the output JSON against the schema
-- Persists artifacts under `tests/regression/outputs/json/` with a `cli_` filename prefix
+- Uses isolated temporary outputs by default
+- Persists artifacts under `tests/regression/outputs/json/` with a `cli_` filename prefix only when `HST_KEEP_REGRESSION_ARTIFACTS=1`
 
 When your method is included in the template (see C.1), it will be picked up automatically.
 
@@ -1270,14 +1409,27 @@ There is an additional regression check to ensure the CLI and GUI results are st
 Notes:
 
 - It compares **shape only** (keys/types), not values.
-- The filename is prefixed with `zz_` so it runs after the two suites that generate artifacts.
-  - This matters because regression outputs are cleaned once per pytest session.
+- It is skipped unless `HST_KEEP_REGRESSION_ARTIFACTS=1` is enabled, because it compares persisted GUI/CLI outputs.
+- The filename is prefixed with `zz_` so it runs after the two suites that generate persisted artifacts.
 
-### C.5 One command to validate everything together
+### C.5 Recommended commands
 
-Because regression outputs are cleaned once per pytest session, run these in a *single* pytest invocation:
+For the normal branch-quality gate, run:
 
 ```powershell
+& .venv\Scripts\python.exe run_tests.py --regression
+```
+
+If you are actively developing a method and want the faster local lane first, run:
+
+```powershell
+& .venv\Scripts\python.exe run_tests.py --smoke
+```
+
+If you specifically need the persisted-artifact parity check, enable artifact retention and run the regression suite in a single invocation:
+
+```powershell
+$env:HST_KEEP_REGRESSION_ARTIFACTS = "1"
 & .venv\Scripts\python.exe -m pytest -q tests\regression\test_complete_workflow_regression.py tests\regression\test_cli_workflow_regression.py tests\regression\test_zz_cli_gui_structure_equivalence.py
 ```
 
@@ -1299,14 +1451,15 @@ If your method fails regression tests, typical causes are:
   - This usually means the CLI and GUI pipelines are feeding different-shaped solution dicts into the results writer.
   - Fix: ensure both pathways provide solutions with consistent fields (and rely on the shared JSON writer to build derived sections like `segmentation` and `segment_details`).
 
-- **Windows file locking during cleanup**
-  - Excel/OneDrive can lock files under `tests/regression/outputs/excel`.
+- **Windows file locking during persisted-artifact runs**
+  - Excel/OneDrive can lock files under `tests/regression/outputs/excel` when `HST_KEEP_REGRESSION_ARTIFACTS=1` is enabled.
   - Fix: close any open spreadsheets and rerun.
 
 ### C.7 Optional: validate regression artifacts after a run
 
-You can validate all JSON outputs under `tests/regression/outputs/json` with:
+You can validate all JSON outputs under `tests/regression/outputs/json` after a persisted-artifact run with:
 
 ```powershell
+$env:HST_KEEP_REGRESSION_ARTIFACTS = "1"
 & .venv\Scripts\python.exe tests\regression\validate_regression_outputs.py
 ```

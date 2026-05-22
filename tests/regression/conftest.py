@@ -45,6 +45,7 @@ Version: 1.95+ (Enhanced Regression Testing)
 import pytest
 import json
 import shutil
+import os
 from pathlib import Path
 import sys
 import time
@@ -56,6 +57,21 @@ src_path = project_root / 'src'
 
 if str(src_path) not in sys.path:
     sys.path.insert(0, str(src_path))
+
+
+def should_persist_regression_artifacts() -> bool:
+    """Return True when regression tests should keep shared output artifacts."""
+    value = os.environ.get("HST_KEEP_REGRESSION_ARTIFACTS", "")
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def persist_regression_artifact(source: Path, destination: Path) -> None:
+    """Copy an artifact only when persistent regression outputs are enabled."""
+    if not should_persist_regression_artifacts():
+        return
+
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, destination)
 
 
 def get_optimization_methods():

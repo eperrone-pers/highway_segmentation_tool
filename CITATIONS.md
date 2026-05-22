@@ -32,7 +32,7 @@ This method uses the open-source Python package **`ruptures`** for change-point 
 
 The AASHTO CDA method implementation (`src/analysis/methods/aashto_cda.py`) is distributed under the BSD 2-Clause License:
 
-Copyright (c) 2025, Samer Katicha**
+Copyright (c) 2025, Samer Katicha
 
 Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
 
@@ -64,14 +64,14 @@ The AASHTO CDA method is based on:
 When using this software in academic research, please:
 
 1. Cite the primary research (Katicha & Flintsch, 2025) when using AASHTO CDA results
-2. Acknowledge the software if using the complete Highway Segmentation GA framework
-3. Respect the BSD license terms** for any code redistribution
+2. Acknowledge the software if using the complete Highway Segmentation Tool framework
+3. Respect the BSD license terms for any code redistribution
 
 ## Additional Documentation
 
 For detailed technical information about the AASHTO CDA method:
 
-- See `docs/AASHTO_CDA_USER_GUIDE.md` for implementation details
+- See `src/analysis/methods/docs/aashto_cda/README.md` for the bundled implementation guide
 - See `src/analysis/methods/docs/aashto_cda/` for the bundled reference implementation files
 
 ---

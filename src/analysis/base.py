@@ -86,6 +86,11 @@ class AnalysisResult:
     timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
     analysis_version: str = "1.95.1"   # Version for compatibility tracking
     
+    # Preprocessing metadata (added in framework v1.95+)
+    preprocessing_metadata: List[Dict[str, Any]] = field(default_factory=list)  # Metadata from each preprocessing phase
+    preprocessing_summary: List[str] = field(default_factory=list)  # Human-readable summaries
+    preprocessing_modification_log: List[List[Dict[str, Any]]] = field(default_factory=list)  # Complete modification logs
+    
     def get_solution_count(self) -> int:
         """Get number of solutions found (1 for single-obj, N for multi-obj)"""
         return len(self.all_solutions)

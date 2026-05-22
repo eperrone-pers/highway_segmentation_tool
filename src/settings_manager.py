@@ -60,9 +60,19 @@ class SettingsManager:
                 'last_save_directory': '',
                 'x_column': '',
                 'y_column': '',
+                'route_column': '',
+                'gap_threshold': 0.5,
                 # Multi-select list of input columns that force mandatory breakpoints
                 # whenever their value changes (attribute-based must-break).
-                'must_break_columns': []
+                'must_break_columns': [],
+                'secondary_break_columns': []
+            },
+            'preprocessing': {
+                # Preprocessing panel configurations: method selection + parameters
+                # Each key stores {method: str, parameters: dict}
+                'pregap_config': {'method': None, 'parameters': {}},
+                'primary_config': {'method': None, 'parameters': {}},
+                'secondary_config': {'method': None, 'parameters': {}}
             },
             'advanced': {
                 'nsga2_settings': {

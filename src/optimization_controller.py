@@ -8,6 +8,7 @@ import threading
 import time
 import os
 import json
+from dataclasses import asdict
 from datetime import datetime
 from tkinter import messagebox
 from config import get_optimization_method, resolve_method_class
@@ -38,6 +39,7 @@ class OptimizationController:
         self.optimization_thread = None
         self.is_running = False
         self._optimization_start_time = None
+        self.preprocessed_data_by_route = {}  # Store preprocessed route data for accurate segment statistics
 
     def reset_state(self):
         """
@@ -299,6 +301,53 @@ class OptimizationController:
             else:
                 self.app.log_message(f"Processing single route: {routes_to_process[0]}")
             
+            # Collect preprocessing configuration from GUI panels
+            from config import PreprocessingRunConfig
+            preprocessing_config = PreprocessingRunConfig(
+                pre_gap_method=None,
+                pre_gap_parameters={},
+                primary_method=None,
+                primary_parameters={},
+                secondary_method=None,
+                secondary_parameters={}
+            )
+
+            # Get pre-gap preprocessing config (if panel exists and method selected)
+            if hasattr(self.app, 'pregap_preprocess_panel') and self.app.pregap_preprocess_panel:
+                try:
+                    pre_gap_method_key = self.app.pregap_preprocess_panel.get_method_key()
+                    if pre_gap_method_key:
+                        preprocessing_config.pre_gap_method = pre_gap_method_key
+                        preprocessing_config.pre_gap_parameters = self.app.pregap_preprocess_panel.get_parameters()
+                        self.app.log_message(f"Pre-gap preprocessing enabled: {pre_gap_method_key}")
+                except Exception as e:
+                    self.app.log_message(f"Warning: Could not load pre-gap preprocessing config: {e}")
+            
+            # Get primary preprocessing config (if panel exists and method selected)
+            if hasattr(self.app, 'primary_preprocess_panel') and self.app.primary_preprocess_panel:
+                try:
+                    primary_method_key = self.app.primary_preprocess_panel.get_method_key()
+                    if primary_method_key:
+                        preprocessing_config.primary_method = primary_method_key
+                        preprocessing_config.primary_parameters = self.app.primary_preprocess_panel.get_parameters()
+                        self.app.log_message(f"Primary preprocessing enabled: {primary_method_key}")
+                except Exception as e:
+                    self.app.log_message(f"Warning: Could not load primary preprocessing config: {e}")
+            
+            # Get secondary preprocessing config (if panel exists and method selected)
+            if hasattr(self.app, 'secondary_preprocess_panel') and self.app.secondary_preprocess_panel:
+                try:
+                    secondary_method_key = self.app.secondary_preprocess_panel.get_method_key()
+                    if secondary_method_key:
+                        preprocessing_config.secondary_method = secondary_method_key
+                        preprocessing_config.secondary_parameters = self.app.secondary_preprocess_panel.get_parameters()
+                        self.app.log_message(f"Secondary preprocessing enabled: {secondary_method_key}")
+                except Exception as e:
+                    self.app.log_message(f"Warning: Could not load secondary preprocessing config: {e}")
+            
+            # Clear any previous preprocessed data
+            self.preprocessed_data_by_route = {}
+            
             prepared_routes = self._prepare_multi_route_analyses(
                 self.app.data,
                 actual_route_column,
@@ -307,6 +356,7 @@ class OptimizationController:
                 self.app.y_column.get(),
                 gap_threshold=gap_threshold,
                 is_single_route_mode=is_single_route_mode,
+                preprocessing_config=preprocessing_config,
             )
             if not prepared_routes:
                 self.app.log_message("ERROR: No routes could be analyzed successfully")
@@ -320,7 +370,7 @@ class OptimizationController:
 
             all_route_results = []
             total_routes = len(prepared_routes)
-            for route_idx, (route_id, route_data) in enumerate(prepared_routes, 1):
+            for route_idx, (route_id, route_data, preprocessing_results) in enumerate(prepared_routes, 1):
                 if self.app.stop_requested:
                     self.app.log_message("Optimization stopped by user request")
                     break
@@ -333,7 +383,7 @@ class OptimizationController:
                 result = self._run_single_route_optimization(
                     route_data, method_config, method_key, params,
                     x_column, y_column, min_length, max_length, gap_threshold,
-                    route_id, route_idx, total_routes
+                    route_id, route_idx, total_routes, preprocessing_results
                 )
                 
                 if result:
@@ -378,7 +428,7 @@ class OptimizationController:
     
     def _run_single_route_optimization(self, data, method_config, method_key, params,
                                      x_column, y_column, min_length, max_length, gap_threshold,
-                                     route_id, route_idx=1, total_routes=1):
+                                     route_id, route_idx=1, total_routes=1, preprocessing_results=None):
         """Run the configured analysis method for one route and return a result dict.
 
         Resolves the method class from ``method_key``, strips framework-level keys
@@ -470,6 +520,45 @@ class OptimizationController:
 
             best_solution = analysis_result.best_solution
             input_parameters = analysis_result.input_parameters or {}
+            
+            # Enrich data_summary with attribute break analysis from RouteAnalysis
+            if not analysis_result.data_summary:
+                analysis_result.data_summary = {}
+            
+            # Import attribute break builders
+            from data_loader import build_attribute_break_analysis, build_secondary_attribute_break_analysis
+            
+            # Add primary attribute break analysis if present
+            attr_analysis = build_attribute_break_analysis(data)
+            if attr_analysis:
+                analysis_result.data_summary['attribute_break_analysis'] = attr_analysis
+            
+            # Add secondary attribute break analysis if present
+            sec_attr_analysis = build_secondary_attribute_break_analysis(data)
+            if sec_attr_analysis:
+                analysis_result.data_summary['secondary_attribute_break_analysis'] = sec_attr_analysis
+            
+            # Attach preprocessing results if available (preprocessing_results is a list of PreprocessingResult objects)
+            if preprocessing_results and isinstance(preprocessing_results, list) and len(preprocessing_results) > 0:
+                for preproc_result in preprocessing_results:
+                    # Extract metadata dict
+                    if hasattr(preproc_result, 'preprocessing_metadata'):
+                        analysis_result.preprocessing_metadata.append(preproc_result.preprocessing_metadata)
+                    
+                    # Extract summary string
+                    if hasattr(preproc_result, 'modifications_summary'):
+                        analysis_result.preprocessing_summary.append(preproc_result.modifications_summary)
+                    
+                    # Extract modification log (convert DataModification dataclass objects to dicts)
+                    if hasattr(preproc_result, 'modification_log'):
+                        mod_log_dicts = []
+                        for mod in preproc_result.modification_log:
+                            # DataModification is a dataclass, convert to dict
+                            if hasattr(mod, '__dataclass_fields__'):
+                                mod_log_dicts.append(asdict(mod))
+                            elif isinstance(mod, dict):
+                                mod_log_dicts.append(mod)
+                        analysis_result.preprocessing_modification_log.append(mod_log_dicts)
 
             def _get_numeric(value, default=0.0):
                 if isinstance(value, (int, float)):
@@ -494,6 +583,11 @@ class OptimizationController:
                 'performance_metrics': analysis_result.optimization_stats.get('performance_metrics', {}),
                 'final_population_fitness': analysis_result.optimization_stats.get('final_population_fitness', []),
                 'generation_stats': analysis_result.optimization_stats.get('generation_stats', []),
+                
+                # Include preprocessing results if available (flatten nested lists for compatibility)
+                'preprocessing_metadata': getattr(analysis_result, 'preprocessing_metadata', []),
+                'preprocessing_summary': getattr(analysis_result, 'preprocessing_summary', []),
+                'preprocessing_modification_log': self._flatten_preprocessing_log(getattr(analysis_result, 'preprocessing_modification_log', [])),
             }
 
             # Derive segment count consistently when available
@@ -547,6 +641,29 @@ class OptimizationController:
             else:
                 self.app.log_message(f"Optimization error: {str(e)}")
             return None
+    
+    def _flatten_preprocessing_log(self, nested_log):
+        """
+        Flatten nested preprocessing modification log (list of lists) into a single flat list.
+        
+        Args:
+            nested_log: List of lists of modification dicts (one list per preprocessing phase)
+            
+        Returns:
+            Flat list of modification dicts
+        """
+        if not nested_log:
+            return []
+        
+        flattened = []
+        for phase_log in nested_log:
+            if isinstance(phase_log, list):
+                flattened.extend(phase_log)
+            elif isinstance(phase_log, dict):
+                # Single dict entry, add it directly
+                flattened.append(phase_log)
+        
+        return flattened
     
     def _finalize_optimization(self, stopped_early=False):
         """Reset UI state after optimization completes or is stopped.
@@ -663,7 +780,12 @@ class OptimizationController:
                     input_parameters=route_result.get('input_parameters', {}),
                     data_summary=route_result.get('data_summary', {
                         'total_data_points': route_result.get('num_data_points', 0)
-                    })
+                    }),
+                    
+                    # Include preprocessing results
+                    preprocessing_metadata=route_result.get('preprocessing_metadata', []),
+                    preprocessing_summary=route_result.get('preprocessing_summary', []),
+                    preprocessing_modification_log=route_result.get('preprocessing_modification_log', [])
                 )
                 analysis_results.append(result)
             
@@ -736,12 +858,21 @@ class OptimizationController:
                 'custom_save_name': params.get('custom_save_name')
             }
             
+            # Add attribute break columns if configured
+            must_break_cols = getattr(self.app, 'must_break_columns', None)
+            if must_break_cols and isinstance(must_break_cols, list) and any(must_break_cols):
+                route_processing_config['must_break_columns'] = [str(c).strip() for c in must_break_cols if str(c).strip()]
+            
+            secondary_break_cols = getattr(self.app, 'secondary_break_columns', None)
+            if secondary_break_cols and isinstance(secondary_break_cols, list) and any(secondary_break_cols):
+                route_processing_config['secondary_break_columns'] = [str(c).strip() for c in secondary_break_cols if str(c).strip()]
+            
             json_output_path = manager.save_analysis_results(
                 analysis_results,
                 json_path,
                 input_file_info=input_file_info,
                 route_processing_info=route_processing_config,
-                original_data_by_route=self._build_original_data_by_route(analysis_results)
+                original_data_by_route=self._build_data_by_route_for_export(analysis_results)
             )
             
             self.app.log_message(f"Results saved: {json_output_path}")
@@ -765,19 +896,32 @@ class OptimizationController:
                 self.app.log_message(f"❌ Error saving consolidated results: {e}")
             return None
     
-    def _build_original_data_by_route(self, analysis_results):
-        """Build original data dictionary by route ID for segment statistics calculation.
+    def _build_data_by_route_for_export(self, analysis_results):
+        """Build data dictionary by route ID for segment statistics calculation.
+        
+        Uses preprocessed data if available (when preprocessing was applied),
+        otherwise falls back to original CSV data. This ensures segment statistics
+        match the data that the GA actually optimized against.
         
         Args:
             analysis_results: List of AnalysisResult objects
             
         Returns:
-            Dict[str, DataFrame]: Original CSV data by route ID
+            Dict[str, DataFrame]: Preprocessed (if available) or original CSV data by route ID
         """
-        if not self.app.data or not analysis_results:
+        if not analysis_results:
             return {}
         
         try:
+            # Prefer preprocessed data if available (from recent optimization with preprocessing)
+            if self.preprocessed_data_by_route:
+                self.app.log_message(f"Using preprocessed data for {len(self.preprocessed_data_by_route)} route(s) segment statistics")
+                return self.preprocessed_data_by_route.copy()
+            
+            # Fallback to original CSV data if no preprocessing was applied
+            if not self.app.data:
+                return {}
+            
             from data_loader import filter_data_by_route
             
             original_data_by_route = {}
@@ -801,7 +945,7 @@ class OptimizationController:
                     self.app.log_message(f"Warning: Could not extract data for route {route_id}: {e}")
                     continue
             
-            self.app.log_message(f"Built original data for {len(original_data_by_route)} route(s)")
+            self.app.log_message(f"Using original CSV data for {len(original_data_by_route)} route(s) segment statistics")
             return original_data_by_route
             
         except Exception as e:
@@ -905,7 +1049,7 @@ class OptimizationController:
         except Exception as e:
             self.app.log_message(f"[ERROR] Error showing multi-route visualization: {str(e)}")
 
-    def _prepare_multi_route_analyses(self, original_data, route_column, selected_routes, x_column, y_column, gap_threshold=0.5, is_single_route_mode=False):
+    def _prepare_multi_route_analyses(self, original_data, route_column, selected_routes, x_column, y_column, gap_threshold=0.5, is_single_route_mode=False, preprocessing_config=None):
         """Filter and gap-analyse each selected route, returning ready-to-optimize objects.
 
         Separating this step from optimization allows early detection of per-route
@@ -922,6 +1066,11 @@ class OptimizationController:
                 single-route mode.
             selected_routes: Ordered list of route ID strings to process.
             x_column: Column name for the x-axis (milepoint / distance).
+            y_column: Column name for the y-axis (condition value)
+            gap_threshold: Maximum gap size in ``x_column`` units. Larger gaps
+                triggers a mandatory segment break. Forwarded to ``analyze_route_gaps``.
+            is_single_route_mode: Boolean indicating if processing a single route
+            preprocessing_config: PreprocessingRunConfig with preprocessing methods and parameters
             y_column: Column name for the y-axis (pavement metric).
             gap_threshold: Minimum x-axis distance between consecutive points that
                 triggers a mandatory segment break. Forwarded to ``analyze_route_gaps``.
@@ -933,7 +1082,16 @@ class OptimizationController:
             containing only the routes that were successfully prepared. Returns an
             empty list if every route failed.
         """
-        from data_loader import filter_data_by_route, analyze_route_gaps
+        from data_loader import filter_data_by_route, analyze_route_gaps, process_route_with_preprocessing
+        
+        # Check if preprocessing is configured
+        has_preprocessing = False
+        if preprocessing_config:
+            has_preprocessing = (
+                preprocessing_config.pre_gap_method or 
+                preprocessing_config.primary_method or 
+                preprocessing_config.secondary_method
+            )
         
         prepared_routes = []
         self.app.log_message("Preparing route analyses...")
@@ -954,20 +1112,40 @@ class OptimizationController:
                 # Sort within this route only — mixing rows across routes corrupts gap detection.
                 route_data_df = route_data_df.sort_values(x_column).reset_index(drop=True)
 
-                route_analysis = analyze_route_gaps(
-                    route_data_df, 
-                    x_column, 
-                    y_column, 
-                    route_id=route_id,
-                    gap_threshold=gap_threshold,
-                    must_break_columns=getattr(self.app, 'must_break_columns', None),
-                )
+                # Use preprocessing pipeline if configured, otherwise standard gap analysis
+                preprocessing_results = None
+                if has_preprocessing:
+                    route_analysis, preprocessing_results = process_route_with_preprocessing(
+                        route_data_df,
+                        x_column,
+                        y_column,
+                        route_id=route_id,
+                        gap_threshold=gap_threshold,
+                        preprocessing_config=preprocessing_config,
+                        first_attribute_columns=getattr(self.app, 'must_break_columns', None),
+                        second_attribute_columns=getattr(self.app, 'secondary_break_columns', None),
+                        log_callback=self.app.log_message
+                    )
+                else:
+                    route_analysis = analyze_route_gaps(
+                        route_data_df, 
+                        x_column, 
+                        y_column, 
+                        route_id=route_id,
+                        gap_threshold=gap_threshold,
+                        must_break_columns=getattr(self.app, 'must_break_columns', None),
+                        secondary_break_columns=getattr(self.app, 'secondary_break_columns', None),
+                    )
                 
-                self.app.log_message(f"Route {route_id}: {len(route_data_df)} points, "
+                self.app.log_message(f"Route {route_id}: {len(route_analysis.route_data)} points, "
                                    f"{len(route_analysis.gap_segments)} gaps, "
                                    f"{len(route_analysis.mandatory_breakpoints)} mandatory breakpoints")
                 
-                prepared_routes.append((route_id, route_analysis))
+                # Store preprocessed route data for accurate segment statistics calculation
+                self.preprocessed_data_by_route[route_id] = route_analysis.route_data.copy()
+                
+                # Store preprocessing_results along with route data for later attachment to AnalysisResult
+                prepared_routes.append((route_id, route_analysis, preprocessing_results))
                 
             except Exception as e:
                 self.app.log_message(f"Error analyzing route {route_id}: {str(e)}")

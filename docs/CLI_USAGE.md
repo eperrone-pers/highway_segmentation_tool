@@ -65,29 +65,29 @@ OK
 
 **Common validation errors:**
 
-1. **Missing required field:**
+- **Missing required field:**
 
-   ```text
-   'csv_path' is a required property at $.input
-   ```
+```text
+'data_file_path' is a required property at $.input
+```
 
-   **Fix:** Add the required field to your run spec.
+Fix: add the required field to your run spec.
 
-2. **Invalid method_key:**
+- **Invalid method_key:**
 
-   ```text
-   'unknown_method' is not one of ['single', 'multi', 'aashto_cda', 'constrained', 'constrained_deb']
-   ```
+```text
+'unknown_method' is not one of ['single', 'multi', 'constrained', 'constrained_deb', 'aashto_cda', 'pelt_segmentation']
+```
 
-   **Fix:** Use a valid method_key from the [Available Methods](#available-methods) table.
+Fix: use a valid `method_key` from the [Available Methods](#available-methods) table.
 
-3. **Invalid parameter value:**
+- **Invalid parameter value:**
 
-   ```text
-   0.5 is not of type 'integer' at $.method.parameters.population_size
-   ```
+```text
+0.5 is not of type 'integer' at $.method.method_parameters.population_size
+```
 
-   **Fix:** Ensure parameter types match expectations (e.g., population_size must be an integer).
+Fix: ensure parameter types match expectations, for example `population_size` must be an integer.
 
 ## CLI Command Reference
 
@@ -128,6 +128,8 @@ highway-seg run --spec <path>
 **Options:**
 
 - `--spec`: Path to the run spec JSON file (required)
+- `--no-validate-spec`: Skip JSON schema validation before execution
+- `--quiet`: Suppress progress logging and print only the final output path
 
 **Output:** Writes results JSON to the path specified in `output.output_json_path`.
 
@@ -157,14 +159,15 @@ A run spec JSON contains three main sections: `input`, `method`, and `output`.
 ```json
 {
   "input": {
-    "csv_path": "data/my_highway_data.csv",
+    "data_file_path": "data/my_highway_data.csv",
     "route_column": "ROUTE_ID",
     "x_column": "MILEPOINT",
-    "y_column": "IRI"
+    "y_column": "IRI",
+    "gap_threshold": 0.5
   },
   "method": {
     "method_key": "single",
-    "parameters": {
+    "method_parameters": {
       "population_size": 50,
       "num_generations": 100,
       "min_length": 0.5,
@@ -183,15 +186,15 @@ A run spec JSON contains three main sections: `input`, `method`, and `output`.
 
 **`input` section:**
 
-- `csv_path`: Path to input CSV file
-- `route_column`: Column name containing route identifiers
+- `data_file_path`: Path to input CSV/XLSX file
 - `x_column`: Column name for x-axis values (typically milepoints)
 - `y_column`: Column name for y-axis values (the metric to analyze, e.g., IRI, rutting)
+- `gap_threshold`: Positive gap threshold used to create mandatory breakpoints
 
 **`method` section:**
 
 - `method_key`: Analysis method identifier (see [Available Methods](#available-methods) below)
-- `parameters`: Method-specific parameters (see examples below)
+- `method_parameters`: Method-specific parameters (see examples below)
 
 **`output` section:**
 
@@ -202,6 +205,16 @@ A run spec JSON contains three main sections: `input`, `method`, and `output`.
 **`input` section:**
 
 - `must_break_columns`: Array of column names that trigger mandatory breakpoints on value changes (see [below](#optional-force-breaks-on-attribute-changes-inputmust_break_columns))
+- `secondary_break_columns`: Secondary attribute columns that also trigger mandatory breakpoints
+- `route_column`: Column name containing route identifiers for multi-route data; omit or set `null` for single-route input
+- `selected_routes`: Explicit subset of routes to analyze; omit or set `null` to process all routes
+
+**`preprocessing` section:**
+
+- `enabled`: Master switch for preprocessing stages
+- `pre_gap_method` / `pre_gap_parameters`: Optional method applied before gap analysis
+- `primary_method` / `primary_parameters`: Optional main preprocessing method
+- `secondary_method` / `secondary_parameters`: Optional later-stage preprocessing method
 
 ## Available Methods
 
@@ -211,9 +224,10 @@ The following `method_key` values are available (must match entries in `OPTIMIZA
 | ---------- | ------------ | ---- | ----------- |
 | `single` | Single-Objective GA | Genetic Algorithm | Minimizes total deviation using standard GA |
 | `multi` | Multi-Objective NSGA-II | Genetic Algorithm | Returns Pareto front trading off deviation vs segment length |
-| `aashto_cda` | AASHTO CDA Statistical Analysis | Statistical | Deterministic change-point detection using cumulative difference approach |
 | `constrained` | Constrained GA (Penalty) | Genetic Algorithm | GA with penalty-based constraint handling |
 | `constrained_deb` | Constrained GA (Deb Rules) | Genetic Algorithm | GA with Deb feasibility constraint domination |
+| `aashto_cda` | AASHTO CDA Statistical Analysis | Statistical | Deterministic change-point detection using cumulative difference approach |
+| `pelt_segmentation` | PELT Segmentation (ruptures) | Statistical | Deterministic change-point detection using PELT with optional smoothing |
 
 ## Run Spec Examples by Method
 
@@ -222,14 +236,15 @@ The following `method_key` values are available (must match entries in `OPTIMIZA
 ```json
 {
   "input": {
-    "csv_path": "data/highway_condition.csv",
+    "data_file_path": "data/highway_condition.csv",
     "route_column": "ROUTE",
     "x_column": "MILEPOINT",
-    "y_column": "IRI"
+    "y_column": "IRI",
+    "gap_threshold": 0.5
   },
   "method": {
     "method_key": "aashto_cda",
-    "parameters": {
+    "method_parameters": {
       "alpha": 0.05,
       "method": 2,
       "use_segment_length": true,
@@ -258,14 +273,15 @@ The following `method_key` values are available (must match entries in `OPTIMIZA
 ```json
 {
   "input": {
-    "csv_path": "data/pavement_data.csv",
+    "data_file_path": "data/pavement_data.csv",
     "route_column": "ROUTE_ID",
     "x_column": "STATION",
-    "y_column": "RUTTING"
+    "y_column": "RUTTING",
+    "gap_threshold": 0.25
   },
   "method": {
     "method_key": "multi",
-    "parameters": {
+    "method_parameters": {
       "population_size": 100,
       "num_generations": 200,
       "min_length": 0.25,
@@ -294,15 +310,16 @@ The following `method_key` values are available (must match entries in `OPTIMIZA
 ```json
 {
   "input": {
-    "csv_path": "data/multi_attribute_highway.csv",
+    "data_file_path": "data/multi_attribute_highway.csv",
     "route_column": "ROUTE",
     "x_column": "MILEPOINT",
     "y_column": "PSI",
+    "gap_threshold": 0.5,
     "must_break_columns": ["PAVEMENT_TYPE", "LANE_COUNT"]
   },
   "method": {
     "method_key": "constrained",
-    "parameters": {
+    "method_parameters": {
       "population_size": 80,
       "num_generations": 150,
       "min_length": 0.5,
@@ -314,6 +331,45 @@ The following `method_key` values are available (must match entries in `OPTIMIZA
   },
   "output": {
     "output_json_path": "results/constrained_segmentation.json"
+  }
+}
+```
+
+### Example 4: PELT with Preprocessing
+
+```json
+{
+  "input": {
+    "data_file_path": "data/pavement_data.csv",
+    "route_column": "ROUTE_ID",
+    "x_column": "MILEPOINT",
+    "y_column": "IRI",
+    "gap_threshold": 0.5,
+    "must_break_columns": ["PAVEMENT_TYPE"],
+    "secondary_break_columns": ["SURFACE_CLASS"]
+  },
+  "preprocessing": {
+    "enabled": true,
+    "primary_method": "tukey_fences",
+    "primary_parameters": {
+      "k_factor": 1.5,
+      "action": "cap"
+    }
+  },
+  "method": {
+    "method_key": "pelt_segmentation",
+    "method_parameters": {
+      "model": "l2",
+      "penalty": 12.0,
+      "jump": 1,
+      "min_length": 0.5,
+      "smooth_window_miles": 1.0,
+      "smoothing_method": "median"
+    }
+  },
+  "output": {
+    "output_json_path": "results/pelt_results.json",
+    "overwrite": true
   }
 }
 ```
@@ -362,12 +418,13 @@ The results file contains:
 1. **`analysis_metadata`**: Method used, timestamp, version info
 2. **`input_parameters`**: Complete record of all inputs (data file, columns, method parameters, route processing settings)
 3. **`route_results`**: Array of per-route analysis results
-   - Each route contains:
-     - `route_id`: Route identifier
-     - `segmentation`: Optimal breakpoint locations and segment details
-     - `solutions` (multi-objective only): Full Pareto front
-     - `input_data_analysis`: Gap analysis, data quality metrics, attribute break analysis
-     - `optimization_stats`: Algorithm performance metrics
+
+Each route result typically includes:
+
+- `route_info`: Route identifier and route-level summary
+- `processing_results.pareto_points`: One or more solutions with segmentation payloads
+- `input_data_analysis`: Gap analysis, data quality metrics, and attribute break analysis
+- Method-specific statistics and preprocessing metadata when available
 
 ### Viewing Results
 
@@ -391,10 +448,11 @@ To visualize the results:
    
    # Access route results
    for route in results['route_results']:
-       print(f"Route: {route['route_id']}")
-       print(f"Segments: {route['segmentation']['num_segments']}")
-       breakpoints = route['segmentation']['breakpoints']
-       print(f"Breakpoints: {breakpoints}")
+       route_id = route['route_info']['route_id']
+       point = route['processing_results']['pareto_points'][0]
+       print(f"Route: {route_id}")
+       print(f"Segments: {point['segmentation']['segment_count']}")
+       print(f"Breakpoints: {point['segmentation']['breakpoints']}")
    ```
 
 ### Example Output Excerpt
@@ -404,14 +462,14 @@ To visualize the results:
   "analysis_metadata": {
     "analysis_method": "single",
     "timestamp": "2026-05-15T10:30:00",
-    "application_version": "1.0.0"
+    "software_version": {
+      "application": "Highway Segmentation",
+      "version": "1.0.0"
+    }
   },
   "input_parameters": {
-    "data_source": {
-      "csv_path": "data/my_highway_data.csv",
-      "route_column": "ROUTE_ID",
-      "x_column": "MILEPOINT",
-      "y_column": "IRI"
+    "optimization_method_config": {
+      "method_key": "single"
     },
     "method_parameters": {
       "population_size": 50,
@@ -420,17 +478,26 @@ To visualize the results:
   },
   "route_results": [
     {
-      "route_id": "I-40",
-      "segmentation": {
-        "breakpoints": [0.0, 2.5, 5.3, 8.7, 12.0],
-        "num_segments": 4,
-        "segment_details": [
+      "route_info": {
+        "route_id": "I-40"
+      },
+      "processing_results": {
+        "pareto_points": [
           {
-            "segment_id": 1,
-            "start": 0.0,
-            "end": 2.5,
-            "length": 2.5,
-            "mean_value": 95.2
+            "point_id": 0,
+            "objective_values": [2.47],
+            "segmentation": {
+              "breakpoints": [0.0, 2.5, 5.3, 8.7, 12.0],
+              "segment_count": 4,
+              "segment_details": [
+                {
+                  "segment_index": 0,
+                  "start": 0.0,
+                  "end": 2.5,
+                  "length": 2.5
+                }
+              ]
+            }
           }
         ]
       }
@@ -451,7 +518,7 @@ FileNotFoundError: [Errno 2] No such file or directory: 'data/missing.csv'
 
 **Solution:**
 
-- Check that `csv_path` in your run spec points to an existing file
+- Check that `data_file_path` in your run spec points to an existing file
 - Use absolute paths or ensure relative paths are correct relative to the run spec location
 - Verify file permissions
 
@@ -475,7 +542,7 @@ ValueError: Unknown method key: 'invalid_method'
 
 **Solution:**
 
-- Use one of the valid method keys: `single`, `multi`, `aashto_cda`, `constrained`, `constrained_deb`
+- Use one of the valid method keys: `single`, `multi`, `constrained`, `constrained_deb`, `aashto_cda`, `pelt_segmentation`
 - Check for typos in the `method_key` field
 
 #### 4. Schema Validation Failure
@@ -512,8 +579,8 @@ FileNotFoundError: No such file or directory: 'nonexistent_dir/results.json'
 
 **Solution:**
 
-- Create the output directory before running: `mkdir -p results/`
-- Or use an existing directory in `output.output_json_path`
+- Check that the parent path in `output.output_json_path` is valid
+- The CLI creates the output directory automatically, so failures usually indicate an invalid path or permissions issue
 
 #### 7. Insufficient Data
 
@@ -541,6 +608,7 @@ If you encounter issues not covered here:
 - **Path handling:** Paths are quoted in generated commands to support spaces (Windows and macOS/Linux).
 - **Relative path resolution:** Relative paths in a run spec are resolved relative to the run spec file location.
 - **Method registry:** The CLI runner uses the same method registry as the GUI (`OPTIMIZATION_METHODS` in `src/config.py`).
+- **Preprocessing:** The optional `preprocessing` block uses the same preprocessing registry as the GUI workflow.
 - **Results format:** The runner writes results using `ExtensibleJsonResultsManager`, producing schema-compliant results JSON.
 - **Multi-route datasets:** If your CSV contains multiple routes (identified by the `route_column`), the CLI automatically processes all routes and includes all results in the output JSON.
 
@@ -566,6 +634,7 @@ If you encounter issues not covered here:
 | Use Case | Recommended Method | Key Benefit |
 | -------- | ------------------ | ----------- |
 | Fast, deterministic segmentation | `aashto_cda` | Statistical rigor, no tuning needed |
+| Deterministic change-point detection with penalty tuning | `pelt_segmentation` | Fast segmentation with optional smoothing |
 | Single optimal solution | `single` | Simple, well-understood GA optimization |
 | Trade-off analysis | `multi` | Explore multiple solutions on Pareto front |
 | Hard constraints on segment count | `constrained` or `constrained_deb` | Enforces min/max segment limits |

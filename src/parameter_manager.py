@@ -389,8 +389,12 @@ class ParameterManager:
                 if k not in allowed_names:
                     per_method.pop(k, None)
 
-            # Refresh the Treeview grid if present
-            if hasattr(self.app.ui_builder, 'refresh_dynamic_params_grid'):
+            # Refresh the parameter UI (MethodConfigurationPanel or legacy dynamic params)
+            if hasattr(self.app, 'analysis_method_panel') and self.app.analysis_method_panel:
+                # Use the new MethodConfigurationPanel
+                self.app.analysis_method_panel.set_method(current_method, parameters=per_method, expand=False)
+            elif hasattr(self.app.ui_builder, 'refresh_dynamic_params_grid'):
+                # Fallback to legacy dynamic params grid
                 self.app.ui_builder.refresh_dynamic_params_grid(current_method)
 
         except Exception as e:

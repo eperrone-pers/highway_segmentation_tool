@@ -270,7 +270,50 @@
             "must_break_columns": {
               "type": ["array", "null"],
               "items": {"type": "string", "minLength": 1},
-              "description": "Optional list of attribute columns that force a mandatory breakpoint when their value changes. When null/omitted, no attribute must-breaks are applied."
+              "description": "Optional list of primary attribute columns that force a mandatory breakpoint when their value changes. When null/omitted, no primary attribute must-breaks are applied."
+            },
+            "secondary_break_columns": {
+              "type": ["array", "null"],
+              "items": {"type": "string", "minLength": 1},
+              "description": "Optional list of secondary attribute columns that force a mandatory breakpoint when their value changes. When null/omitted, no secondary attribute must-breaks are applied."
+            }
+          }
+        },
+        "preprocessing_config": {
+          "type": "object",
+          "title": "Preprocessing Configuration (Optional)",
+          "description": "Preprocessing configuration used for this analysis. Only present when preprocessing was enabled.",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Whether preprocessing was enabled"
+            },
+            "pre_gap_method": {
+              "type": ["string", "null"],
+              "description": "Pre-gap preprocessing method key"
+            },
+            "pre_gap_parameters": {
+              "type": "object",
+              "description": "Pre-gap method parameters",
+              "additionalProperties": true
+            },
+            "primary_method": {
+              "type": ["string", "null"],
+              "description": "Primary preprocessing method key"
+            },
+            "primary_parameters": {
+              "type": "object",
+              "description": "Primary method parameters",
+              "additionalProperties": true
+            },
+            "secondary_method": {
+              "type": ["string", "null"],
+              "description": "Secondary preprocessing method key"
+            },
+            "secondary_parameters": {
+              "type": "object",
+              "description": "Secondary method parameters",
+              "additionalProperties": true
             }
           }
         }
@@ -421,6 +464,159 @@
                   }
                 },
                 "additionalProperties": true
+              },
+              "secondary_attribute_break_analysis": {
+                "type": "object",
+                "title": "Secondary Attribute-Based Must-Break Analysis (Optional)",
+                "description": "Optional metadata describing mandatory breakpoints caused by configured secondary must-break columns. Applied after primary preprocessing and tracked separately for reporting.",
+                "properties": {
+                  "columns_used": {
+                    "type": "array",
+                    "items": {"type": "string", "minLength": 1},
+                    "description": "List of secondary must-break column headers that were found in the input data and used to compute attribute breaks."
+                  },
+                  "break_events": {
+                    "type": "array",
+                    "description": "Deterministic list of attribute-change events. Each event occurs at an x where one or more configured columns changed.",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "x": {"type": "number"},
+                        "changed_columns": {
+                          "type": "array",
+                          "items": {"type": "string", "minLength": 1}
+                        },
+                        "signature": {"type": "string"}
+                      },
+                      "additionalProperties": true
+                    }
+                  },
+                  "breakpoints": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "description": "List of x breakpoints caused by secondary attribute changes (mandatory)."
+                  },
+                  "total_attribute_breaks": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Count of secondary attribute breakpoints."
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          },
+          "preprocessing_summary": {
+            "type": "object",
+            "title": "Preprocessing Summary (Optional)",
+            "description": "Summary of data preprocessing operations applied before analysis. Only present when preprocessing was enabled.",
+            "properties": {
+              "preprocessing_applied": {
+                "type": "boolean",
+                "description": "Whether any preprocessing was applied to this route"
+              },
+              "phases": {
+                "type": "array",
+                "description": "List of preprocessing phases applied (pre_gap, primary, secondary)",
+                "items": {
+                  "type": "object",
+                  "required": ["phase_name", "method_key", "method_name"],
+                  "properties": {
+                    "phase_name": {
+                      "type": "string",
+                      "enum": ["pre_gap", "primary", "secondary"],
+                      "description": "Preprocessing phase identifier"
+                    },
+                    "method_key": {
+                      "type": "string",
+                      "description": "Preprocessing method key (e.g., 'tukey_fences')"
+                    },
+                    "method_name": {
+                      "type": "string",
+                      "description": "Human-readable method name"
+                    },
+                    "parameters": {
+                      "type": "object",
+                      "description": "Parameters used for this preprocessing phase",
+                      "additionalProperties": true
+                    },
+                    "modifications_summary": {
+                      "type": "string",
+                      "description": "Human-readable summary of modifications made"
+                    },
+                    "outliers_detected": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "description": "Number of outliers detected (method-specific)"
+                    },
+                    "points_before": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "description": "Data points before preprocessing"
+                    },
+                    "points_after": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "description": "Data points after preprocessing"
+                    }
+                  }
+                }
+              },
+              "total_modifications": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Total number of data modifications across all phases"
+              },
+              "original_data_points": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Original data point count before any preprocessing"
+              },
+              "final_data_points": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Final data point count after all preprocessing"
+              }
+            }
+          },
+          "preprocessing_modification_log": {
+            "type": "array",
+            "title": "Detailed Preprocessing Modification Log (Optional)",
+            "description": "Detailed log of all data modifications. Array of arrays - outer array is per phase, inner array is per modification within that phase.",
+            "items": {
+              "type": "array",
+              "description": "Modifications for a single preprocessing phase",
+              "items": {
+                "type": "object",
+                "required": ["modification_type", "x_value"],
+                "properties": {
+                  "modification_type": {
+                    "type": "string",
+                    "enum": ["point_removed", "y_value_modified", "y_value_capped", "point_interpolated"],
+                    "description": "Type of modification applied"
+                  },
+                  "x_value": {
+                    "type": "number",
+                    "description": "X-coordinate of modified point"
+                  },
+                  "original_y_value": {
+                    "type": ["number", "null"],
+                    "description": "Original Y value before modification"
+                  },
+                  "new_y_value": {
+                    "type": ["number", "null"],
+                    "description": "New Y value after modification (null for removed points)"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "description": "Reason for modification (e.g., 'outlier above upper bound')"
+                  },
+                  "timestamp": {
+                    "type": ["string", "null"],
+                    "format": "date-time",
+                    "description": "Timestamp when modification was applied"
+                  }
+                }
               }
             }
           },

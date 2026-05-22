@@ -1,4 +1,9 @@
+import pytest
+
 import route_filter_dialog
+
+
+pytestmark = pytest.mark.ui
 
 
 def test_route_filter_dialog_returns_selected_routes(monkeypatch):

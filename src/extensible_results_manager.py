@@ -415,6 +415,15 @@ class ExtensibleJsonResultsManager:
                     route_results_list[0], original_data_by_route, route_processing_info
                 )
             }
+            
+            # Add preprocessing results if present (check first result for preprocessing metadata)
+            first_result = route_results_list[0]
+            if hasattr(first_result, 'preprocessing_metadata') and len(first_result.preprocessing_metadata) > 0:
+                route_result["preprocessing_summary"] = self.base_json_manager._build_preprocessing_summary(first_result)
+            
+            if hasattr(first_result, 'preprocessing_modification_log') and len(first_result.preprocessing_modification_log) > 0:
+                route_result["preprocessing_modification_log"] = first_result.preprocessing_modification_log
+            
             route_results.append(route_result)
         
         return route_results
@@ -616,96 +625,36 @@ class ExtensibleJsonResultsManager:
         For single-objective: converts best_solution to single pareto point
         For multi-objective: uses all_solutions as pareto points directly
         """
-        
-        # Import config system to detect multi-objective methods dynamically  
-        from config import is_multi_objective_method
-        
-        # Check if this is a multi-objective method using dynamic config lookup
-        is_multi_obj = is_multi_objective_method(result.method_key)
-        
-        if is_multi_obj and hasattr(result, 'all_solutions') and result.all_solutions:
-            # Multi-objective: use ALL solutions from all_solutions (even if just 1!)
-            pareto_points = []
-            for i, solution in enumerate(result.all_solutions):
-                point = {
-                    "point_id": i,
-                    "objective_values": solution.get('objective_values', [solution.get('fitness', 0.0)])
-                }
-                
-                # Add segmentation info if available
-                if 'segmentation' in solution:
-                    point["segmentation"] = solution['segmentation']
-                elif 'chromosome' in solution:
-                    # Convert chromosome to segmentation format
-                    breakpoints = solution['chromosome']
-                    if isinstance(breakpoints, list) and len(breakpoints) >= 2:
-                        segment_lengths = [breakpoints[i+1] - breakpoints[i] for i in range(len(breakpoints)-1)]
-                        
-                        # Calculate segment details with Y-value statistics
-                        segment_details = []
-                        if original_data_by_route and route_processing_info:
-                            route_data = original_data_by_route.get(result.route_id)
-                            x_column = route_processing_info.get('x_column', 'x')
-                            y_column = route_processing_info.get('y_column', 'y')
-                            gap_segments = result.data_summary.get('gap_analysis', {}).get('gap_segments', [])
-                            mandatory_breakpoints = result.mandatory_breakpoints or []
-                            
-                            segment_details = self._calculate_segment_details(
-                                breakpoints, route_data, x_column, y_column, gap_segments, mandatory_breakpoints
-                            )
-                        
-                        point["segmentation"] = {
-                            "breakpoints": breakpoints,
-                            "segment_count": len(segment_lengths),
-                            "segment_lengths": segment_lengths,
-                            "total_length": breakpoints[-1] - breakpoints[0] if len(breakpoints) >= 2 else 0.0,
-                            "average_segment_length": sum(segment_lengths) / len(segment_lengths) if segment_lengths else 0.0,
-                            "segment_details": segment_details
-                        }
-                
-                pareto_points.append(point)
-            
-            return {"pareto_points": pareto_points}
-        else:
-            # Single-objective: convert best_solution to single pareto point
-            best_sol = result.best_solution
-            pareto_point = {
-                "point_id": 0,
-                "objective_values": [best_sol.get('objective_value', best_sol.get('fitness', 0.0))]
-            }
-            
-            # Add segmentation info
-            if 'segmentation' in best_sol:
-                pareto_point["segmentation"] = best_sol['segmentation']
-            elif 'chromosome' in best_sol:
-                # Convert chromosome to segmentation format
-                breakpoints = best_sol['chromosome']
-                if isinstance(breakpoints, list) and len(breakpoints) >= 2:
-                    segment_lengths = [breakpoints[i+1] - breakpoints[i] for i in range(len(breakpoints)-1)]
-                    
-                    # Calculate segment details with Y-value statistics
-                    segment_details = []
-                    if original_data_by_route and route_processing_info:
-                        route_data = original_data_by_route.get(result.route_id)
-                        x_column = route_processing_info.get('x_column', 'x')
-                        y_column = route_processing_info.get('y_column', 'y')
-                        gap_segments = result.data_summary.get('gap_analysis', {}).get('gap_segments', [])
-                        mandatory_breakpoints = result.mandatory_breakpoints or []
-                        
-                        segment_details = self._calculate_segment_details(
-                            breakpoints, route_data, x_column, y_column, gap_segments, mandatory_breakpoints
-                        )
-                    
-                    pareto_point["segmentation"] = {
-                        "breakpoints": breakpoints,
-                        "segment_count": len(segment_lengths),
-                        "segment_lengths": segment_lengths,
-                        "total_length": breakpoints[-1] - breakpoints[0] if len(breakpoints) >= 2 else 0.0,
-                        "average_segment_length": sum(segment_lengths) / len(segment_lengths) if segment_lengths else 0.0,
-                        "segment_details": segment_details
-                    }
-            
-            return {"pareto_points": [pareto_point]}
+        processing_results = self.base_json_manager._build_processing_results(result)
+
+        if not original_data_by_route or not route_processing_info:
+            return processing_results
+
+        route_data = original_data_by_route.get(result.route_id)
+        x_column = route_processing_info.get('x_column', 'x')
+        y_column = route_processing_info.get('y_column', 'y')
+        gap_segments = result.data_summary.get('gap_analysis', {}).get('gap_segments', [])
+        mandatory_breakpoints = result.mandatory_breakpoints or []
+
+        for pareto_point in processing_results.get("pareto_points", []):
+            segmentation = pareto_point.get("segmentation")
+            if not isinstance(segmentation, dict):
+                continue
+
+            breakpoints = segmentation.get("breakpoints")
+            if not isinstance(breakpoints, list) or len(breakpoints) < 2:
+                continue
+
+            segmentation["segment_details"] = self._calculate_segment_details(
+                breakpoints,
+                route_data,
+                x_column,
+                y_column,
+                gap_segments,
+                mandatory_breakpoints,
+            )
+
+        return processing_results
 
 
 # ===== CONVENIENCE FUNCTIONS =====

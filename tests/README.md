@@ -1,32 +1,64 @@
-# Highway Segmentation GA - Test Suite
+# Highway Segmentation Tool - Test Suite
 
-This directory contains comprehensive test suites for the Highway Segmentation Genetic Algorithm application.
+This directory contains the automated test suites for the Highway Segmentation Tool application.
 
 ## Test Structure
 
 ```text
 tests/
-├── conftest.py                 # Test configuration and fixtures
-├── test_genetic_algorithm.py   # Legacy GA tests (converted to pytest)
-├── unit/                      # Unit tests for individual components
-│   ├── test_parameter_manager.py
-│   ├── test_file_manager.py
-│   └── test_optimization_algorithms.py
-├── integration/               # Integration tests
-│   └── test_component_integration.py
-├── ui/                       # GUI tests (future expansion)
-└── test_data/                # Sample test datasets
-    └── sample_highway_data.csv
+├── conftest.py                         # Shared fixtures and test helpers
+├── unit/                              # Focused unit tests
+├── integration/                       # End-to-end and workflow integration tests
+├── regression/                        # Regression gates and output validation
+├── ui/                                # GUI-focused tests
+├── test_data/                         # Sample datasets used by tests
+├── test_cli_*.py                      # CLI / run-spec coverage
+├── test_preprocessing_*.py            # Preprocessing framework coverage
+├── test_visualization_*.py            # Visualization data-prep and rendering logic
+├── test_*controller*.py               # Controller behavior across methods and flows
+└── run_phase*_tests.py / run_*.py     # Legacy convenience scripts for targeted suites
 ```
 
 ## Running Tests
 
-## Regression Gate (Primary CI/Quality Signal)
+## Recommended Test Lanes
 
-Run this first after setup (it should be green before sharing results/changes):
+Use the lightest lane that answers the question you have:
+
+### Smoke Suite (default local workflow)
+
+Fast local gate for active development. Excludes regression and performance suites.
+
+```bash
+python run_tests.py --smoke
+```
+
+Equivalent pytest command:
+
+```bash
+python -m pytest tests/ -m "not regression and not performance"
+```
+
+### Regression Gate (primary branch quality signal)
+
+Run this before sharing results or merging behavior changes:
+
+```bash
+python run_tests.py --regression
+```
+
+Equivalent pytest command:
 
 ```bash
 python -m pytest tests/regression -q
+```
+
+### Full Suite
+
+Runs the full suite except performance benchmarks:
+
+```bash
+python run_tests.py --full
 ```
 
 ### Prerequisites
@@ -40,12 +72,22 @@ pip install -r requirements.txt
 ### Quick Start
 
 ```bash
-# Run all tests
-python run_tests.py --all
+# Default fast local run
+python run_tests.py
+
+# Explicit fast local run
+python run_tests.py --smoke
+
+# Regression gate
+python run_tests.py --regression
+
+# Full suite except performance
+python run_tests.py --full
 
 # Run specific test categories
 python run_tests.py --unit
 python run_tests.py --integration
+python run_tests.py --ui
 
 # Run with coverage report
 python run_tests.py --coverage
@@ -60,20 +102,29 @@ python run_tests.py --pattern "test_validate"
 ### Using pytest directly
 
 ```bash
-# All tests
-pytest
+# Default root run uses pytest.ini defaults
+python -m pytest
+
+# Full suite except performance
+python -m pytest tests/ -m "not performance"
+
+# Fast local suite
+python -m pytest tests/ -m "not regression and not performance"
 
 # Unit tests only
-pytest -m unit tests/unit/
+python -m pytest -m unit tests/unit/
 
 # Integration tests
-pytest -m integration tests/integration/
+python -m pytest -m integration tests/integration/
+
+# UI tests
+python -m pytest -m ui tests/ui/
 
 # With verbose output
-pytest -v
+python -m pytest -v
 
 # With coverage
-pytest --cov=src --cov-report=html
+python -m pytest --cov=src --cov-report=html
 ```
 
 ## Test Categories
@@ -82,9 +133,9 @@ pytest --cov=src --cov-report=html
 
 Test individual components in isolation:
 
-- **ParameterManager**: Parameter validation, settings persistence, method-specific parameters
-- **FileManager**: Data loading, validation, file operations, result display
-- **Optimization Algorithms**: NSGA-II, single-objective, constrained optimization core functions
+- **Parameter and settings logic**: parameter validation, defaults, JSON round-tripping, settings behavior
+- **Method-specific behavior**: AASHTO CDA, attribute-must-break handling, numeric parameter parsing
+- **Results/export helpers**: JSON result shaping, Excel export, parameter restoration
 
 **Markers**: `@pytest.mark.unit`
 
@@ -92,20 +143,43 @@ Test individual components in isolation:
 
 Test component interactions and end-to-end workflows:
 
-- Complete optimization workflow (load data → set parameters → optimize → save results)
-- Settings persistence across components
-- JSON results generation and validation workflow
-- Error propagation between components
+- Analysis method objective integration
+- JSON validation workflow
+- Complete workflow coverage across routes and preprocessing
+- Gap-analysis demos and cross-component interactions
 
 **Markers**: `@pytest.mark.integration`
+
+### Regression Tests (`tests/regression/`)
+
+Regression tests are the primary branch-quality gate for this repo:
+
+- Complete workflow regression across representative GUI/controller cases
+- Full CLI workflow regression across the complete method/dataset matrix
+- Preprocessing workflow regression
+- PELT regression coverage
+
+Notes:
+
+- The CLI regression suite is the exhaustive matrix.
+- The GUI/controller regression suite is intentionally smaller and representative.
+- The CLI/GUI structure-equivalence test is opt-in and only runs when persisted artifacts are enabled.
+
+Primary command:
+
+```bash
+python run_tests.py --regression
+```
+
+See `tests/regression/README.md` for the detailed regression matrix and artifact layout.
 
 ### Performance Tests
 
 Long-running tests for performance benchmarking:
 
 - Large dataset optimization
-- Memory usage validation
-- Algorithm convergence analysis  
+- Performance-oriented controller / algorithm checks
+- Slow-running scenarios separated via markers
 
 **Markers**: `@pytest.mark.performance`, `@pytest.mark.slow`
 
@@ -130,16 +204,7 @@ Long-running tests for performance benchmarking:
 ### Test File Structure
 
 ```python
-"""
-Test description.
-"""
-
 import pytest
-import sys
-import os
-
-# Add src to path
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
 from your_module import YourClass
 
@@ -153,6 +218,8 @@ class TestYourClass:
         result = instance.some_method()
         assert result == expected_value
 ```
+
+Note: the shared `tests/conftest.py` already adds `src/` to `sys.path`, so most new tests do not need to modify `sys.path` manually.
 
 ### Best Practices
 
@@ -192,7 +259,7 @@ The test suite is designed to run in CI/CD environments:
 - name: Run Tests
   run: |
     pip install -r requirements.txt
-    python run_tests.py --coverage
+        python run_tests.py --regression
 ```
 
 ## Troubleshooting
@@ -201,14 +268,31 @@ The test suite is designed to run in CI/CD environments:
 
 1. **Import errors**: Ensure `src` directory is in Python path
 2. **Missing dependencies**: Install `requirements.txt`
-3. **Slow tests**: Use `pytest -m "not slow"` to skip performance tests
+3. **Slow tests**: Use `python run_tests.py --smoke` for the normal local lane, or `python -m pytest -m "not slow and not regression"`
 4. **GUI test issues**: Use headless mode: `export DISPLAY=:99` (Linux)
+
+### Regression Artifacts
+
+Regression tests now default to isolated `tmp_path` outputs so stale files do not affect later runs.
+
+To keep JSON/Excel artifacts under `tests/regression/outputs/` for manual inspection, enable:
+
+```bash
+HST_KEEP_REGRESSION_ARTIFACTS=1
+```
+
+On Windows PowerShell:
+
+```powershell
+$env:HST_KEEP_REGRESSION_ARTIFACTS = "1"
+python run_tests.py --regression
+```
 
 ### Debug Mode
 
 ```bash
 # Run with debug output
-pytest -vvv -s tests/unit/test_your_test.py::TestClass::test_method
+python -m pytest -vvv -s tests/unit/test_your_test.py::TestClass::test_method
 ```
 
 ### Test Coverage

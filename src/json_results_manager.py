@@ -246,11 +246,17 @@ class JsonResultsManager:
             if value is not None
         }
         
-        return {
+        result = {
             "optimization_method_config": method_config,
             "method_parameters": method_parameters,
             "route_processing": route_processing
         }
+        
+        # Add preprocessing configuration if present
+        if route_processing_info and "preprocessing_config" in route_processing_info:
+            result["preprocessing_config"] = route_processing_info["preprocessing_config"]
+        
+        return result
     
     def _build_route_processing_config(self, 
                                      results_list: List[AnalysisResult],
@@ -315,6 +321,14 @@ class JsonResultsManager:
                 "input_data_analysis": self._build_input_data_analysis(result),
                 "processing_results": self._build_processing_results(result)
             }
+            
+            # Add preprocessing results if present (check for preprocessing_metadata which is the source)
+            if hasattr(result, 'preprocessing_metadata') and len(result.preprocessing_metadata) > 0:
+                route_data["preprocessing_summary"] = self._build_preprocessing_summary(result)
+            
+            if hasattr(result, 'preprocessing_modification_log') and len(result.preprocessing_modification_log) > 0:
+                route_data["preprocessing_modification_log"] = result.preprocessing_modification_log
+            
             route_results.append(route_data)
         
         return route_results
@@ -393,7 +407,76 @@ class JsonResultsManager:
         except Exception:
             pass
         
+        # Optional: secondary attribute-based must-break metadata
+        try:
+            sec_attr = data_summary.get("secondary_attribute_break_analysis")
+            if isinstance(sec_attr, dict) and sec_attr:
+                analysis["secondary_attribute_break_analysis"] = sec_attr
+        except Exception:
+            pass
+        
         return analysis
+    
+    def _build_preprocessing_summary(self, result: AnalysisResult) -> Dict[str, Any]:
+        """
+        Build preprocessing summary section from AnalysisResult.
+        
+        Extracts preprocessing metadata and converts it to schema format.
+        Returns an object containing phases array and aggregate statistics.
+        """
+        phases = []
+        total_modifications = 0
+        original_points = 0
+        final_points = 0
+        
+        if hasattr(result, 'preprocessing_metadata') and result.preprocessing_metadata:
+            for i, metadata in enumerate(result.preprocessing_metadata):
+                phase_name = metadata.get("phase_name") if isinstance(metadata, dict) else None
+                if not phase_name:
+                    phase_name = "unknown"
+                    if i == 0:
+                        phase_name = "pre_gap"
+                    elif i == 1:
+                        phase_name = "primary"
+                    elif i == 2:
+                        phase_name = "secondary"
+                
+                points_before = metadata.get("points_before", 0)
+                points_after = metadata.get("points_after", 0)
+                modifications = metadata.get("points_modified", 0)
+                
+                # Track aggregate statistics
+                if i == 0:
+                    original_points = points_before
+                final_points = points_after
+                total_modifications += modifications
+                
+                phase_entry = {
+                    "phase_name": phase_name,
+                    "method_key": metadata.get("method_key", "unknown"),
+                    "method_name": metadata.get("method_name", "Unknown Method"),
+                    "points_before": points_before,
+                    "points_after": points_after,
+                    "modifications_summary": f"Modified {modifications} point(s)",
+                    "parameters": {
+                        k: v for k, v in metadata.items() 
+                        if k not in ["method_key", "method_name", "points_before", "points_after", "points_modified"]
+                    }
+                }
+                
+                # Add outliers_detected if present
+                if "outliers_detected" in metadata:
+                    phase_entry["outliers_detected"] = metadata["outliers_detected"]
+                
+                phases.append(phase_entry)
+        
+        return {
+            "preprocessing_applied": len(phases) > 0,
+            "phases": phases,
+            "total_modifications": total_modifications,
+            "original_data_points": original_points,
+            "final_data_points": final_points
+        }
     
     def _build_processing_results(self, result: AnalysisResult) -> Dict[str, Any]:
         """

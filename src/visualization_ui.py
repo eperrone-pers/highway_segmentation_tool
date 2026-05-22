@@ -113,6 +113,7 @@ class EnhancedVisualizationWindow:
         self._seg_x_zoom_enabled = False
         self._seg_xzoom_var = tk.BooleanVar(value=False)
         self._show_break_lanes_var = tk.BooleanVar(value=True)
+        self._show_preprocessing_changes_var = tk.BooleanVar(value=False)
         self._seg_default_xlim = None
         self._seg_default_ylim = None
         self._seg_default_ylim_secondary = None
@@ -476,7 +477,7 @@ class EnhancedVisualizationWindow:
 
         self.break_lanes_button = ttk.Checkbutton(
             right_controls_container,
-            text="Show Break Attributes Diagram",
+            text="Break Attributes",
             variable=self._show_break_lanes_var,
             command=self.update_visualizations,
             takefocus=False,
@@ -487,6 +488,21 @@ class EnhancedVisualizationWindow:
             pass
         self._break_lanes_pack_opts = dict(side='left', padx=(8, 0), pady=2)
         # Visibility is controlled dynamically per-route; default to hidden.
+        
+        self.preprocessing_changes_button = ttk.Checkbutton(
+            right_controls_container,
+            text="Preprocessing",
+            variable=self._show_preprocessing_changes_var,
+            command=self.update_visualizations,
+            takefocus=False,
+        )
+        try:
+            self.preprocessing_changes_button.configure(cursor='arrow')
+        except Exception:
+            pass
+        self._preprocessing_changes_pack_opts = dict(side='left', padx=(8, 0), pady=2)
+        # Visibility is controlled dynamically based on whether preprocessing was used.
+        
         try:
             self.break_lanes_button.pack_forget()
         except Exception:
@@ -2098,6 +2114,37 @@ class EnhancedVisualizationWindow:
         attribute_breakpoints = extract_attribute_breakpoints(route_results)
         extract_attribute_break_signatures(route_results)
 
+        preprocessed_gap_breakpoints = set()
+        try:
+            from visualization.gap_analysis_data import extract_gap_analysis
+
+            gap_info = extract_gap_analysis(route_results)
+            if (
+                raw_route_data is not None
+                and not raw_route_data.empty
+                and x_col in raw_route_data.columns
+                and gap_info.gap_segments
+            ):
+                raw_x_series = pd.to_numeric(raw_route_data[x_col], errors='coerce').dropna()
+                if not raw_x_series.empty:
+                    raw_x_values = raw_x_series.astype(float).tolist()
+                    for seg in gap_info.gap_segments:
+                        if not isinstance(seg, dict):
+                            continue
+                        try:
+                            gap_start = float(seg.get('start'))
+                            gap_end = float(seg.get('end'))
+                        except (TypeError, ValueError):
+                            continue
+
+                        # If the original loaded data still has points inside the rendered
+                        # gap interval, the gap was introduced by preprocessing removals.
+                        if any(gap_start < x_value < gap_end for x_value in raw_x_values):
+                            preprocessed_gap_breakpoints.add(gap_start)
+                            preprocessed_gap_breakpoints.add(gap_end)
+        except Exception:
+            preprocessed_gap_breakpoints = set()
+
         # Keep artists so we can remove/redraw the lane overlay cleanly.
         if not hasattr(self, '_break_lane_artists'):
             self._break_lane_artists = []
@@ -2142,11 +2189,12 @@ class EnhancedVisualizationWindow:
                         label=spec.label,
                     )
                 elif spec.kind == 'mandatory_gap':
+                    is_preprocessed_gap = spec.x in preprocessed_gap_breakpoints
                     self.ax_right.axvline(
                         x=spec.x,
                         color=COLORS['mandatory_bp'],
-                        linestyle='-',
-                        linewidth=1.9,
+                        linestyle='--' if is_preprocessed_gap else '-',
+                        linewidth=1.1 if is_preprocessed_gap else 1.9,
                         alpha=0.95,
                         zorder=3,
                         label=spec.label,
@@ -2181,17 +2229,23 @@ class EnhancedVisualizationWindow:
 
         try:
             attr_block = None
+            secondary_attr_block = None
             input_analysis = route_results.get('input_data_analysis') if isinstance(route_results, dict) else None
             if isinstance(input_analysis, dict):
                 attr_block = input_analysis.get('attribute_break_analysis')
+                secondary_attr_block = input_analysis.get('secondary_attribute_break_analysis')
 
-            # Only show the lanes toggle when must-break columns exist.
+            # Only show the lanes toggle when must-break columns exist (primary or secondary).
             try:
                 cols_used_for_toggle = []
                 if isinstance(attr_block, dict):
-                    cols_used_for_toggle = attr_block.get('columns_used')
-                if not isinstance(cols_used_for_toggle, list):
-                    cols_used_for_toggle = []
+                    primary_cols = attr_block.get('columns_used')
+                    if isinstance(primary_cols, list):
+                        cols_used_for_toggle.extend(primary_cols)
+                if isinstance(secondary_attr_block, dict):
+                    secondary_cols = secondary_attr_block.get('columns_used')
+                    if isinstance(secondary_cols, list):
+                        cols_used_for_toggle.extend(secondary_cols)
                 cols_used_for_toggle = [str(c).strip() for c in cols_used_for_toggle if str(c).strip()]
 
                 toggle_visible = bool(cols_used_for_toggle)
@@ -2213,11 +2267,51 @@ class EnhancedVisualizationWindow:
             except Exception:
                 pass
 
-            if show_lanes and isinstance(attr_block, dict) and route_data is not None:
-                cols_used = attr_block.get('columns_used')
-                if not isinstance(cols_used, list):
-                    cols_used = []
-                cols_used = [str(c).strip() for c in cols_used if str(c).strip()]
+            # Control preprocessing changes toggle visibility based on whether preprocessing was used
+            try:
+                preprocessing_log = route_results.get('preprocessing_modification_log') if isinstance(route_results, dict) else None
+                has_preprocessing = isinstance(preprocessing_log, list) and len(preprocessing_log) > 0
+                
+                if hasattr(self, 'preprocessing_changes_button'):
+                    if has_preprocessing:
+                        # Show if currently hidden
+                        if self.preprocessing_changes_button.winfo_manager() != 'pack':
+                            self.preprocessing_changes_button.pack(**getattr(self, '_preprocessing_changes_pack_opts', {}))
+                    else:
+                        # Hide and force off
+                        try:
+                            self._show_preprocessing_changes_var.set(False)
+                        except Exception:
+                            pass
+                        try:
+                            self.preprocessing_changes_button.pack_forget()
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+
+            if show_lanes and (isinstance(attr_block, dict) or isinstance(secondary_attr_block, dict)) and route_data is not None:
+                # Collect columns from both primary and secondary attribute breaks
+                cols_used = []
+                bp_by_col = {}
+                
+                # Primary attribute breaks
+                if isinstance(attr_block, dict):
+                    primary_cols = attr_block.get('columns_used')
+                    if isinstance(primary_cols, list):
+                        cols_used.extend([str(c).strip() for c in primary_cols if str(c).strip()])
+                    # Get breakpoints for primary columns
+                    primary_bp = attribute_breakpoints_by_column(attr_block)
+                    bp_by_col.update(primary_bp)
+                
+                # Secondary attribute breaks
+                if isinstance(secondary_attr_block, dict):
+                    secondary_cols = secondary_attr_block.get('columns_used')
+                    if isinstance(secondary_cols, list):
+                        cols_used.extend([str(c).strip() for c in secondary_cols if str(c).strip()])
+                    # Get breakpoints for secondary columns
+                    secondary_bp = attribute_breakpoints_by_column(secondary_attr_block)
+                    bp_by_col.update(secondary_bp)
 
                 # Prefer per-route x-range from results; fall back to dataframe.
                 x_min = None
@@ -2241,7 +2335,7 @@ class EnhancedVisualizationWindow:
                         x_max = None
 
                 if cols_used and x_min is not None and x_max is not None:
-                    bp_by_col = attribute_breakpoints_by_column(attr_block)
+                    # bp_by_col already computed above from both primary and secondary blocks
 
                     total_height = 0.16
                     top = 0.995
@@ -2515,12 +2609,108 @@ class EnhancedVisualizationWindow:
                 zorder=2,
             )
             
+            # Preprocessing changes overlay - show original vs preprocessed points
+            try:
+                show_preprocessing = bool(self._show_preprocessing_changes_var.get()) if hasattr(self, '_show_preprocessing_changes_var') else False
+            except Exception:
+                show_preprocessing = False
+            
+            # Initialize preprocessing overlay variables
+            original_filtered_x = []
+            original_filtered_y = []
+            preprocessed_data_x = []
+            preprocessed_data_y = []
+            
+            if show_preprocessing:
+                route_results = self.get_route_results(route_id)
+                preprocessing_log = route_results.get('preprocessing_modification_log') if isinstance(route_results, dict) else None
+                
+                if isinstance(preprocessing_log, list) and preprocessing_log:
+                    # Collect original data points (before preprocessing)
+                    original_data_x = []
+                    original_data_y = []
+                    
+                    # Collect preprocessed data points (after preprocessing) 
+                    preprocessed_data_x = []
+                    preprocessed_data_y = []
+                    
+                    for entry in preprocessing_log:
+                        if not isinstance(entry, dict):
+                            continue
+                        
+                        mod_type = entry.get('modification_type')
+                        x_val = entry.get('x_value')
+                        original_y = entry.get('original_y_value')
+                        new_y = entry.get('new_y_value')
+                        
+                        try:
+                            x_float = float(x_val)
+                            
+                            if mod_type == 'point_removed' and original_y is not None:
+                                # Point was removed - only show original
+                                original_data_x.append(x_float)
+                                original_data_y.append(float(original_y))
+                            elif mod_type in ('y_value_changed', 'y_value_capped', 'point_interpolated') and original_y is not None and new_y is not None:
+                                # Point was modified - show both original and new
+                                original_data_x.append(x_float)
+                                original_data_y.append(float(original_y))
+                                preprocessed_data_x.append(x_float)
+                                preprocessed_data_y.append(float(new_y))
+                        except (TypeError, ValueError):
+                            continue
+                    
+                    # Show ALL outliers in the overlay without filtering
+                    # If they're visible in the main plot, they must be visible in the overlay
+                    # Otherwise it creates confusion where tall spikes don't have red markers
+                    original_filtered_x = original_data_x
+                    original_filtered_y = original_data_y
+                    
+                    # Plot original data points (distinctive red)
+                    if original_filtered_x:
+                        self.ax_right.scatter(
+                            original_filtered_x,
+                            original_filtered_y,
+                            marker='o',
+                            s=40,
+                            color='#DC2626',
+                            alpha=0.6,
+                            edgecolors='#991B1B',
+                            linewidths=0.5,
+                            label='Original Data (Outliers)',
+                            zorder=4,
+                        )
+                    
+                    # Plot preprocessed data points (distinctive cyan)
+                    if preprocessed_data_x:
+                        self.ax_right.scatter(
+                            preprocessed_data_x,
+                            preprocessed_data_y,
+                            marker='o',
+                            s=40,
+                            color='#06B6D4',
+                            alpha=0.8,
+                            edgecolors='#0891B2',
+                            linewidths=0.5,
+                            label='Preprocessed Data',
+                            zorder=4.5,
+                        )
+            
             x_data = prepared_series.x_data
             y_data = prepared_series.y_data
 
             # Cache current series for X-zoom autoscaling
+            # Include preprocessing overlay points in y-data for proper autoscaling
             self._current_seg_x = x_data
-            self._current_seg_y = y_data
+            if show_preprocessing and (original_filtered_x or preprocessed_data_x):
+                # Combine main data with preprocessing overlay for complete y-range
+                all_y_values = list(y_data)
+                if original_filtered_y:
+                    all_y_values.extend(original_filtered_y)
+                if preprocessed_data_y:
+                    all_y_values.extend(preprocessed_data_y)
+                self._current_seg_y = np.array(all_y_values)
+            else:
+                self._current_seg_y = y_data
             
             # Ensure route endpoints are included in mandatory breakpoints
             route_start = np.min(x_data)

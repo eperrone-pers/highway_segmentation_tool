@@ -69,7 +69,7 @@ For the run spec format, see:
 | `pareto_points` length | 1 | 2+ |
 | `objective_values` length | 1 | 2+ |
 | Use case | Find one best solution | Explore trade-off solutions |
-| Method keys | `single`, `aashto_cda`, `constrained`, `constrained_deb` | `multi` |
+| Method keys | `single`, `aashto_cda`, `constrained`, `constrained_deb`, `pelt_segmentation` | `multi` |
 
 ### **Common Reading Tasks**
 
@@ -219,6 +219,7 @@ Notes:
 
 - `attribute_break_analysis` is optional and is only present when the run was configured with must-break columns.
 - `attribute_break_analysis.breakpoints` represent mandatory breakpoint locations caused by attribute value changes.
+- `secondary_attribute_break_analysis` may also be present when a second attribute-break pass is configured during preprocessing/postprocessing.
 
 **Processing Results** (*Unified Pareto Structure*):
 
@@ -724,12 +725,12 @@ Constrained/single-objective methods typically emit a single point; multi-object
 
 ## **Implementation Guidance**
 
-### **Phase 2 Integration Points**
+### **Current Integration Points**
 
-1. **Unified Results Structure**: Direct mapping from JSON schema to Python dataclasses
-2. **StandardResultsWriter**: Use this schema as output format specification
-3. **Validation Framework**: Implement JSON Schema validation for data integrity
-4. **Visualization Loading**: Parse results using predictable schema structure
+1. **Unified Results Structure**: Results writers map exported data to this schema structure
+2. **Results Writers**: JSON export code should treat this schema as the output contract
+3. **Validation Framework**: Schema validation scripts and regression tests enforce data integrity
+4. **Visualization Loading**: Visualization code can parse results using predictable schema structure
 5. **Hidden Parameter Support**: Configuration system controls UI visibility while preserving full reproducibility
 
 ### **Configuration System Integration**
@@ -1050,12 +1051,32 @@ else:
 - Value ranges must be respected (non-negative lengths, valid percentages)
 - Referential integrity must be maintained (segmentation ↔ pareto point links)
 
-### **Sample JSON Files** (*To Be Created*)
+### **Available Validation Paths**
 
-- Single-objective analysis with 1 route
-- Multi-objective analysis with pareto front  
-- Multi-route processing with 3+ routes
-- Constrained optimization with constraint details
+- **Schema file**: `src/highway_segmentation_results_schema.json`
+- **Sample/manual validation script**: `docs/validate_json_schema.py`
+- **Regression output validation script**: `tests/regression/validate_regression_outputs.py`
+
+### **Recommended Validation Workflow**
+
+For normal branch verification:
+
+```powershell
+& .venv\Scripts\python.exe run_tests.py --regression
+```
+
+To validate a specific JSON file against the schema:
+
+```powershell
+& .venv\Scripts\python.exe docs\validate_json_schema.py path\to\results.json
+```
+
+To validate persisted regression artifacts after an artifact-retaining run:
+
+```powershell
+$env:HST_KEEP_REGRESSION_ARTIFACTS = "1"
+& .venv\Scripts\python.exe tests\regression\validate_regression_outputs.py
+```
 
 ### **Migration Strategy**
 
@@ -1068,15 +1089,14 @@ else:
 
 ## **Next Steps**
 
-1. **Create sample JSON files** validating the schema design (Step 1.5.6)
-2. **Implement JSON Schema validation** in Python code
-3. **Design Python dataclasses** matching the JSON structure  
-4. **Create StandardResultsWriter** using this format specification
-5. **Update visualization loading** to parse JSON results structure
+1. Keep this document aligned with `src/highway_segmentation_results_schema.json`
+2. Add or refresh concrete sample JSON files when new schema sections are introduced
+3. Extend regression coverage when new result sections or method-specific fields are added
+4. Run schema validation after changes to results writers or exported metadata
 
 ---
 
-**Status**: **Design Complete** - Ready for Phase 2 implementation using this specification as the authoritative guide.
+**Status**: **Implemented and in active use** - this document describes the current results schema and should stay aligned with the schema file and regression coverage.
 
 ## **Recent Updates** *(v1.1.0 - April 13, 2026)*
 

@@ -22,8 +22,8 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, TYPE_CHECKING
 import pandas as pd
 import jsonschema
 
-from config import OptionalNumericParameter, get_optimization_method, resolve_method_class
-from data_loader import RouteAnalysis, analyze_route_gaps, filter_data_by_route
+from config import OptionalNumericParameter, get_optimization_method, resolve_method_class, PreprocessingRunConfig
+from data_loader import RouteAnalysis, analyze_route_gaps, filter_data_by_route, process_route_with_preprocessing
 from extensible_results_manager import ExtensibleJsonResultsManager
 from route_utils import INTERNAL_ROUTE_IDS_TO_SKIP_LOWER, normalize_route_id
 from value_parsing import coerce_none_like
@@ -116,6 +116,8 @@ class ResolvedRunSpec:
             (e.g., ``"single_objective"``, ``"multi_objective"``, ``"aashto_cda"``).
         method_parameters: Method-specific parameters, merged with per-method
             defaults so every parameter has a value.
+        preprocessing_config: Optional preprocessing configuration. ``None`` means
+            no preprocessing is applied.
         output_json_path: Absolute path where the results JSON file will be written.
         overwrite: When ``True``, overwrite an existing output file. When ``False``,
             ``run_analysis_from_spec_file`` raises ``RunSpecError`` if the file exists.
@@ -131,9 +133,12 @@ class ResolvedRunSpec:
     route_column: Optional[str]
     selected_routes: Optional[List[str]]
     must_break_columns: Optional[List[str]]
+    secondary_break_columns: Optional[List[str]]
 
     method_key: str
     method_parameters: Dict[str, Any]
+    
+    preprocessing_config: Optional[PreprocessingRunConfig]
 
     output_json_path: Path
     overwrite: bool
@@ -236,10 +241,68 @@ def load_and_resolve_run_spec(spec_path: str | os.PathLike[str], *, validate: bo
             raise RunSpecError("input.must_break_columns must be an array of strings or null")
         must_break_columns = [str(c).strip() for c in must_break_raw if str(c).strip()]
 
+    secondary_break_raw = input_block.get("secondary_break_columns", None)
+    secondary_break_columns: Optional[List[str]]
+    if secondary_break_raw is None:
+        secondary_break_columns = None
+    else:
+        if not isinstance(secondary_break_raw, list):
+            raise RunSpecError("input.secondary_break_columns must be an array of strings or null")
+        secondary_break_columns = [str(c).strip() for c in secondary_break_raw if str(c).strip()]
+
     method_key = str(method_block["method_key"]).strip()
     method_parameters = method_block.get("method_parameters") or {}
     if not isinstance(method_parameters, dict):
         raise RunSpecError("method.method_parameters must be an object")
+
+    # Parse preprocessing configuration (optional section)
+    preprocessing_block = instance.get("preprocessing", None)
+    preprocessing_config: Optional[PreprocessingRunConfig]
+    if preprocessing_block is None or not isinstance(preprocessing_block, dict):
+        preprocessing_config = None
+    else:
+        enabled = bool(preprocessing_block.get("enabled", True))
+        if not enabled:
+            preprocessing_config = None
+        else:
+            # Extract preprocessing methods and parameters
+            pre_gap_method = preprocessing_block.get("pre_gap_method", None)
+            if pre_gap_method is not None:
+                pre_gap_method = str(pre_gap_method).strip() or None
+            
+            primary_method = preprocessing_block.get("primary_method", None)
+            if primary_method is not None:
+                primary_method = str(primary_method).strip() or None
+            
+            secondary_method = preprocessing_block.get("secondary_method", None)
+            if secondary_method is not None:
+                secondary_method = str(secondary_method).strip() or None
+            
+            pre_gap_params = preprocessing_block.get("pre_gap_parameters", {})
+            if not isinstance(pre_gap_params, dict):
+                raise RunSpecError("preprocessing.pre_gap_parameters must be an object")
+            
+            primary_params = preprocessing_block.get("primary_parameters", {})
+            if not isinstance(primary_params, dict):
+                raise RunSpecError("preprocessing.primary_parameters must be an object")
+            
+            secondary_params = preprocessing_block.get("secondary_parameters", {})
+            if not isinstance(secondary_params, dict):
+                raise RunSpecError("preprocessing.secondary_parameters must be an object")
+            
+            # Create PreprocessingRunConfig if any method is specified
+            if pre_gap_method or primary_method or secondary_method:
+                preprocessing_config = PreprocessingRunConfig(
+                    pre_gap_method=pre_gap_method,
+                    pre_gap_parameters=pre_gap_params,
+                    primary_method=primary_method,
+                    primary_parameters=primary_params,
+                    secondary_method=secondary_method,
+                    secondary_parameters=secondary_params,
+                    enabled=True
+                )
+            else:
+                preprocessing_config = None
 
     output_json_path = _resolve_path(base_dir, str(output_block["output_json_path"]))
     overwrite = bool(output_block.get("overwrite", False))
@@ -254,8 +317,10 @@ def load_and_resolve_run_spec(spec_path: str | os.PathLike[str], *, validate: bo
         route_column=route_column,
         selected_routes=selected_routes,
         must_break_columns=must_break_columns,
+        secondary_break_columns=secondary_break_columns,
         method_key=method_key,
         method_parameters=method_parameters,
+        preprocessing_config=preprocessing_config,
         output_json_path=output_json_path,
         overwrite=overwrite,
     )
@@ -563,6 +628,7 @@ def run_analysis_from_spec_file(
 
     prepared: List[Tuple[str, RouteAnalysis]] = []
     original_data_by_route: Dict[str, pd.DataFrame] = {}
+    preprocessing_results_by_route: Dict[str, List] = {}  # Store preprocessing results
 
     for route_id in routes_to_process:
         if actual_route_column:
@@ -576,16 +642,35 @@ def run_analysis_from_spec_file(
 
         route_df = route_df.sort_values(spec.x_column).reset_index(drop=True)
 
-        route_analysis = analyze_route_gaps(
-            route_df,
-            spec.x_column,
-            spec.y_column,
-            route_id=route_id,
-            gap_threshold=spec.gap_threshold,
-            must_break_columns=spec.must_break_columns,
-        )
+        # Apply preprocessing if configured
+        if spec.preprocessing_config:
+            log(f"Applying preprocessing to route {route_id!r}...")
+            route_analysis, preprocessing_results = process_route_with_preprocessing(
+                route_df,
+                spec.x_column,
+                spec.y_column,
+                route_id=route_id,
+                gap_threshold=spec.gap_threshold,
+                preprocessing_config=spec.preprocessing_config,
+                first_attribute_columns=spec.must_break_columns,
+                second_attribute_columns=spec.secondary_break_columns,
+                log_callback=log
+            )
+            preprocessing_results_by_route[route_id] = preprocessing_results
+        else:
+            # No preprocessing - use standard gap analysis
+            route_analysis = analyze_route_gaps(
+                route_df,
+                spec.x_column,
+                spec.y_column,
+                route_id=route_id,
+                gap_threshold=spec.gap_threshold,
+                must_break_columns=spec.must_break_columns,
+                secondary_break_columns=spec.secondary_break_columns,
+            )
+        
         prepared.append((route_id, route_analysis))
-        original_data_by_route[route_id] = route_analysis.route_data.copy()
+        original_data_by_route[route_id] = route_df.copy()
 
     if not prepared:
         raise RunSpecError("No routes could be analyzed successfully")
@@ -610,6 +695,32 @@ def run_analysis_from_spec_file(
             float(spec.gap_threshold),
             **analysis_kwargs,
         )
+
+        # Attach preprocessing metadata if preprocessing was applied
+        if route_id in preprocessing_results_by_route:
+            preprocess_results = preprocessing_results_by_route[route_id]
+            if preprocess_results:
+                # Add preprocessing metadata to result
+                res.preprocessing_metadata = [
+                    r.preprocessing_metadata for r in preprocess_results
+                ]
+                res.preprocessing_summary = [
+                    r.modifications_summary for r in preprocess_results
+                ]
+                res.preprocessing_modification_log = [
+                    [
+                        {
+                            'modification_type': m.modification_type,
+                            'x_value': m.x_value,
+                            'original_y_value': m.original_y_value,
+                            'new_y_value': m.new_y_value,
+                            'reason': m.reason,
+                            'timestamp': m.timestamp  # Already ISO format string
+                        }
+                        for m in r.modification_log
+                    ]
+                    for r in preprocess_results
+                ]
 
         _normalize_analysis_result_for_json_parity(res, method_params=method_params)
         results.append(res)
@@ -652,6 +763,21 @@ def run_analysis_from_spec_file(
     # Structural parity: the GUI omits must_break_columns when not set.
     if spec.must_break_columns is not None:
         route_processing_info["must_break_columns"] = spec.must_break_columns
+    
+    if spec.secondary_break_columns is not None:
+        route_processing_info["secondary_break_columns"] = spec.secondary_break_columns
+    
+    # Add preprocessing config to route_processing_info for JSON export
+    if spec.preprocessing_config is not None:
+        route_processing_info["preprocessing_config"] = {
+            "enabled": spec.preprocessing_config.enabled,
+            "pre_gap_method": spec.preprocessing_config.pre_gap_method,
+            "pre_gap_parameters": spec.preprocessing_config.pre_gap_parameters,
+            "primary_method": spec.preprocessing_config.primary_method,
+            "primary_parameters": spec.preprocessing_config.primary_parameters,
+            "secondary_method": spec.preprocessing_config.secondary_method,
+            "secondary_parameters": spec.preprocessing_config.secondary_parameters,
+        }
 
     manager = ExtensibleJsonResultsManager()
     json_output_path = manager.save_analysis_results(

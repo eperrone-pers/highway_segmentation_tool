@@ -24,6 +24,12 @@ python src/run.py
 
 Launches the GUI interface directly.
 
+### Option 2: Direct GUI Launch
+
+```bash
+python src/gui_main.py
+```
+
 ### Option 3: Headless CLI (Run Spec)
 
 You can run an analysis without the GUI using a **run spec JSON**.
@@ -37,12 +43,6 @@ highway-seg run --spec path/to/your.run_spec.json
 ```
 
 See `docs/CLI_USAGE.md` for details.
-
-### Option 2: Direct GUI Launch
-
-```bash
-python src/gui_main.py
-```
 
 ## Developer Quickstart (Recommended for Delivery)
 
@@ -77,8 +77,14 @@ Notes:
 ### 3) Run the regression gate (must be green)
 
 ```bash
-python -m pytest tests/regression -q
+python run_tests.py --regression
 ```
+
+Recommended test lanes:
+
+- Fast local development: `python run_tests.py --smoke`
+- Regression gate: `python run_tests.py --regression`
+- Full suite except performance: `python run_tests.py --full`
 
 ### 4) Run the GUI
 
@@ -91,8 +97,6 @@ More details:
 - **For pavement engineers**: See `USER_GUIDE.md` for pavement-specific guidance, parameter selection, and practical scenarios
 - **For developers**: See `SETUP_ENVIRONMENT.md`, `docs/`, and `tests/README.md` for technical details
 - **For CLI usage**: See `docs/CLI_USAGE.md`
-
-To create a re-distributable zip package (excluding generated outputs), run `scripts/package_deliverable.ps1`.
 
 ## GUI Interface Features
 
@@ -163,7 +167,7 @@ milepoint,structural_strength_ind
 ### Canonical output: schema-compliant JSON
 
 - Results are written as JSON (one file per run) to the selected save location (default is `Results/`).
-- `Results/` and `test_results/` are intentionally git-ignored; they’re generated outputs.
+- `Results/` contains generated output artifacts and is git-ignored in this repo.
 
 ### Optional: Excel export
 
@@ -204,7 +208,7 @@ milepoint,structural_strength_ind
 
 ## Requirements
 
-- Python 3.8+
+- Python 3.9+
 - Install all dependencies via:
 
 ```bash
@@ -223,7 +227,7 @@ pip install -r requirements.txt
 ## File Structure
 
 ```text
-highway-segmentation-ga/
+highway_segmentation_tool/
 ├── src/
 │   ├── run.py                     # Launcher
 │   ├── gui_main.py                # Tkinter GUI

@@ -6,12 +6,265 @@ Separates widget creation logic from the main application class.
 import tkinter as tk
 from tkinter import ttk
 from tkinter import messagebox
-from config import UIConfig, get_optimization_method_names, get_method_key_from_display_name
+from config import (
+    UIConfig, 
+    get_optimization_method_names, 
+    get_method_key_from_display_name,
+    get_preprocessing_method_names,
+    get_preprocessing_method_key_from_display_name,
+    get_optimization_method
+)
 from value_parsing import parse_optional_float, parse_optional_int
 from logger import create_logger
 from route_utils import ROUTE_COLUMN_NONE_SENTINEL
+from parameter_tree_view import ParameterTreeView, DEFAULT_TREEVIEW_HEIGHT
 
 ui_config = UIConfig()
+
+
+class MethodConfigurationPanel(ttk.Frame):
+    """
+    Reusable collapsible panel for configuring a preprocessing or optimization method.
+    
+    Features:
+    - Method dropdown at top with collapsible arrow
+    - Parameters displayed in Treeview with inline editing (double-click to edit)
+    - Collapsible sections (▶/▼) to reduce clutter
+    - Auto-expands when method is selected
+    - Consistent look and feel across all configurations
+    """
+    
+    def __init__(self, parent, panel_title, app, method_registry_type="preprocessing", **kwargs):
+        """
+        Initialize a method configuration panel.
+        
+        Args:
+            parent: Parent widget
+            panel_title: Display title for the panel (e.g., "Primary Preprocessing")
+            app: Main application instance
+            method_registry_type: "preprocessing" or "optimization" (determines which methods to list)
+            **kwargs: Additional arguments passed to ttk.Frame
+        """
+        super().__init__(parent, **kwargs)
+        
+        self.panel_title = panel_title
+        self.app = app
+        self.method_registry_type = method_registry_type
+        self.is_expanded = False  # Start collapsed
+        self.method_var = tk.StringVar(value="None")
+        self._saved_parameters = {}  # {method_key: {param_name: value}} - persist params when switching
+        self._current_method_key = None
+        
+        # Will be created in _create_ui
+        self.param_tree_view = None
+        
+        self._create_ui()
+    
+    def _create_ui(self):
+        """Create the panel UI elements."""
+        self.columnconfigure(0, weight=1)
+        
+        # Header frame with arrow and method dropdown
+        header_frame = ttk.Frame(self)
+        header_frame.grid(row=0, column=0, sticky="ew", pady=(0, 5))
+        header_frame.columnconfigure(2, weight=1)  # Dropdown column expands
+        
+        # Collapsible arrow (clickable label)
+        self.arrow_label = ttk.Label(header_frame, text="▶", cursor="hand2", width=2)
+        self.arrow_label.grid(row=0, column=0, sticky="w")
+        self.arrow_label.bind("<Button-1>", lambda e: self.toggle_collapse())
+        
+        # Panel title and method selection dropdown
+        title_method_label = ttk.Label(header_frame, text=f"{self.panel_title}")
+        title_method_label.grid(row=0, column=1, sticky="w", padx=(5, 5))
+        
+        # Get method names from registry
+        if self.method_registry_type == "preprocessing":
+            method_names = ["None"] + get_preprocessing_method_names()
+        else:  # optimization
+            method_names = get_optimization_method_names()
+        
+        self.method_dropdown = ttk.Combobox(header_frame, textvariable=self.method_var,
+                                            values=method_names, state="readonly", width=30)
+        self.method_dropdown.grid(row=0, column=2, sticky="ew", padx=(0, 5))
+        self.method_dropdown.bind('<<ComboboxSelected>>', self._on_method_changed)
+        
+        # Method description (dynamic based on selection)
+        self.description_label = ttk.Label(header_frame, text="", foreground="gray", 
+                                          wraplength=400, justify="left")
+        self.description_label.grid(row=1, column=1, columnspan=2, sticky="ew", pady=(3, 0))
+        # Start hidden - will show when method is selected
+        self.description_label.grid_remove()
+        
+        # Parameters container (collapsible)
+        self.params_container = ttk.Frame(self)
+        self.params_container.grid(row=1, column=0, sticky="nsew", padx=(20, 0))
+        self.params_container.grid_columnconfigure(0, weight=1)
+        self.params_container.grid_rowconfigure(1, weight=1)
+        
+        # Start collapsed - hide the content
+        self.params_container.grid_remove()
+        
+        # Parameters label
+        params_label = ttk.Label(self.params_container, text="Parameters (double-click value to edit):", 
+                                font=("TkDefaultFont", 9))
+        params_label.grid(row=0, column=0, sticky="w", pady=(0, 2))
+        
+        # Create Parameter TreeView
+        self.param_tree_view = ParameterTreeView(
+            self.params_container, 
+            self.app,
+            height=DEFAULT_TREEVIEW_HEIGHT,
+            on_change_callback=self._on_parameter_change
+        )
+        self.param_tree_view.frame.grid(row=1, column=0, sticky="nsew")
+        
+        # Reset button
+        button_frame = ttk.Frame(self.params_container)
+        button_frame.grid(row=2, column=0, sticky="ew", pady=(5, 0))
+        ttk.Button(button_frame, text="Reset Selected to Default", 
+                  command=self.param_tree_view.reset_selected_to_default).pack(side="left")
+    
+    def _on_method_changed(self, event=None, auto_expand=True):
+        """Handle method selection change.
+        
+        Args:
+            event: Event object from Combobox selection (optional)
+            auto_expand: Whether to auto-expand the panel when method is selected (default True)
+        """
+        method_name = self.method_var.get()
+        
+        # Step 1: Persist current method's parameters before switching
+        if self._current_method_key and self.param_tree_view:
+            self._saved_parameters[self._current_method_key] = self.param_tree_view.get_values()
+        
+        # Step 2: Handle "None" selection
+        if method_name == "None":
+            self._current_method_key = None
+            self.description_label.config(text="")
+            self.description_label.grid_remove()  # Hide description
+            if self.param_tree_view:
+                self.param_tree_view.tree.delete(*self.param_tree_view.tree.get_children())
+            if self.is_expanded:
+                self.toggle_collapse()
+            return
+        
+        # Step 3: Auto-expand when method is selected (if enabled)
+        if auto_expand and not self.is_expanded:
+            self.toggle_collapse()
+        
+        # Step 4: Get method config and update description
+        try:
+            if self.method_registry_type == "preprocessing":
+                method_key = get_preprocessing_method_key_from_display_name(method_name)
+                from config import get_preprocessing_method
+                method_config = get_preprocessing_method(method_key)
+            else:  # optimization
+                method_key = get_method_key_from_display_name(method_name)
+                method_config = get_optimization_method(method_key)
+            
+            self._current_method_key = method_key
+            
+            # Update description and show it if there's content (visible even when collapsed)
+            if hasattr(method_config, 'description') and method_config.description:
+                self.description_label.config(text=method_config.description)
+                self.description_label.grid()  # Show description even when collapsed
+            else:
+                self.description_label.config(text="")
+                self.description_label.grid_remove()
+                
+        except Exception as e:
+            if hasattr(self.app, 'log_message'):
+                self.app.log_message(f"Warning: Could not load method config for {method_name}: {e}")
+            return
+        
+        # Step 5: Refresh parameter tree view
+        try:
+            # Use saved parameters if available, otherwise defaults
+            param_values = self._saved_parameters.get(method_key, None)
+            self.param_tree_view.refresh(method_key, self.method_registry_type, param_values)
+        except Exception as e:
+            if hasattr(self.app, 'log_message'):
+                self.app.log_message(f"Warning: Could not load parameters for {method_name}: {e}")
+    
+    def _on_parameter_change(self):
+        """Called when a parameter value changes."""
+        # Can be extended to trigger validation, updates, etc.
+        pass
+    
+    def toggle_collapse(self):
+        """Toggle the collapsed/expanded state."""
+        if self.is_expanded:
+            # Collapse: hide parameters only (keep description visible)
+            self.params_container.grid_remove()
+            self.arrow_label.config(text="▶")
+            self.is_expanded = False
+        else:
+            # Expand: show parameters
+            self.params_container.grid()
+            self.arrow_label.config(text="▼")
+            self.is_expanded = True
+    
+    def get_method_key(self):
+        """Get the selected method key (or None)."""
+        method_name = self.method_var.get()
+        if method_name == "None":
+            return None
+        
+        try:
+            if self.method_registry_type == "preprocessing":
+                return get_preprocessing_method_key_from_display_name(method_name)
+            else:
+                return get_method_key_from_display_name(method_name)
+        except Exception:
+            return None
+    
+    def get_parameters(self):
+        """Get the current parameter values as a dictionary."""
+        if not self.param_tree_view or not self._current_method_key:
+            return {}
+        return self.param_tree_view.get_values()
+    
+    def set_method(self, method_key, parameters=None, expand=False):
+        """
+        Set the method and parameters programmatically.
+        
+        Args:
+            method_key: Method key to select (or None for "None")
+            parameters: Optional dict of parameter values
+            expand: Whether to auto-expand the panel (default False for programmatic calls)
+        """
+        if not method_key:
+            self.method_var.set("None")
+            self._on_method_changed(auto_expand=False)
+            return
+        
+        try:
+            if self.method_registry_type == "preprocessing":
+                from config import get_preprocessing_method
+                method_config = get_preprocessing_method(method_key)
+                self.method_var.set(method_config.display_name)
+            else:  # optimization
+                method_config = get_optimization_method(method_key)
+                self.method_var.set(method_config.display_name)
+            
+            # Store parameters if provided
+            if parameters:
+                self._saved_parameters[method_key] = parameters
+            
+            self._on_method_changed(auto_expand=expand)
+                        
+        except Exception as e:
+            if hasattr(self.app, 'log_message'):
+                self.app.log_message(f"Warning: Could not set method configuration: {e}")
+    
+    def clear_saved_parameters(self):
+        """Clear all saved parameter values (useful for reset functionality)."""
+        self._saved_parameters.clear()
+    
+    def get_saved_parameters(self, method_key):
+        """Get saved parameters for a specific method key."""
+        return self._saved_parameters.get(method_key, {})
 
 
 class UIBuilder:
@@ -33,7 +286,7 @@ class UIBuilder:
         main_frame = ttk.Frame(self.app.root, padding=ui_config.main_padding)
         main_frame.grid(row=0, column=0, sticky="nsew")
         main_frame.grid_rowconfigure(1, weight=1)
-        main_frame.grid_columnconfigure(0, weight=0)  # Left pane: auto-size to fit content
+        main_frame.grid_columnconfigure(0, weight=0, minsize=550)  # Left pane: wider for better layout
         main_frame.grid_columnconfigure(1, weight=0)  # Scrollbar column (fixed width when visible)
         main_frame.grid_columnconfigure(2, weight=1)  # Right pane gets all remaining space
 
@@ -45,30 +298,76 @@ class UIBuilder:
         return main_frame
     
     def create_scrollable_left_pane(self, parent):
-        """Create the left pane with fixed required controls and a dynamic parameter area.
+        """Create the left pane with scrollable content area.
 
-        The required controls stay visible. The dynamic parameters area below will
-        host a native-scrollable grid (Treeview) to avoid cross-platform mousewheel
-        quirks with scrollable frames on macOS.
+        Uses a Canvas with a Scrollbar to allow all panels to be visible even when expanded.
         """
 
         left_container = ttk.Frame(parent)
         left_container.grid(row=1, column=0, sticky="nsew", padx=ui_config.standard_padding_x)
-        left_container.grid_rowconfigure(0, weight=0)
-        left_container.grid_rowconfigure(1, weight=1)
+        left_container.grid_rowconfigure(0, weight=1)
         left_container.grid_columnconfigure(0, weight=1)
 
-        required_frame = ttk.Frame(left_container)
-        required_frame.grid(row=0, column=0, sticky="ew")
+        # Create canvas for scrolling
+        canvas = tk.Canvas(left_container, highlightthickness=0)
+        canvas.grid(row=0, column=0, sticky="nsew")
+        
+        # Create scrollbar
+        scrollbar = ttk.Scrollbar(left_container, orient="vertical", command=canvas.yview)
+        scrollbar.grid(row=0, column=1, sticky="ns")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        # Create frame inside canvas
+        required_frame = ttk.Frame(canvas)
+        canvas_window = canvas.create_window((0, 0), window=required_frame, anchor="nw")
+        
+        # Configure canvas scrolling
+        def on_frame_configure(event=None):
+            """Update scroll region when frame size changes."""
+            canvas.update_idletasks()
+            bbox = canvas.bbox("all")
+            if bbox:
+                canvas.configure(scrollregion=bbox)
+                # Only show scrollbar if content exceeds canvas height
+                canvas_height = canvas.winfo_height()
+                content_height = bbox[3] - bbox[1]
+                if content_height > canvas_height and canvas_height > 1:
+                    scrollbar.grid()
+                else:
+                    scrollbar.grid_remove()
+        
+        def on_canvas_configure(event):
+            """Update frame width when canvas size changes."""
+            canvas.itemconfig(canvas_window, width=event.width)
+            # Re-check if scrollbar is needed when canvas resizes
+            on_frame_configure()
+        
+        required_frame.bind("<Configure>", on_frame_configure)
+        canvas.bind("<Configure>", on_canvas_configure)
+        
+        # Enable mousewheel scrolling only when content exceeds canvas height
+        def on_mousewheel(event):
+            # Check if scrolling is actually needed
+            bbox = canvas.bbox("all")
+            if bbox:
+                canvas_height = canvas.winfo_height()
+                content_height = bbox[3] - bbox[1]
+                if content_height > canvas_height:
+                    canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        
+        def bind_mousewheel(event):
+            canvas.bind_all("<MouseWheel>", on_mousewheel)
+        
+        def unbind_mousewheel(event):
+            canvas.unbind_all("<MouseWheel>")
+        
+        canvas.bind("<Enter>", bind_mousewheel)
+        canvas.bind("<Leave>", unbind_mousewheel)
+        
         required_frame.grid_columnconfigure(0, weight=1)
-
-        dynamic_frame = ttk.LabelFrame(left_container, text="Method Parameters (double click on parameter value to edit)", padding="6")
-        dynamic_frame.grid(row=1, column=0, sticky="nsew", pady=(8, 0))
-        dynamic_frame.grid_rowconfigure(0, weight=1)
-        dynamic_frame.grid_columnconfigure(0, weight=1)
-
-        # Expose the dynamic params parent so gui_main can populate it.
-        self.app.dynamic_params_parent = dynamic_frame
+        
+        # Store canvas reference for potential future use
+        self.app.left_pane_canvas = canvas
 
         return required_frame
     
@@ -81,162 +380,175 @@ class UIBuilder:
         
         return right_pane
     
-    def create_file_operations_section(self, parent, row):
-        """Create the unified file operations section (data loading, column selection, and results saving)."""
-        file_ops_frame = ttk.LabelFrame(parent, text="📁 File Operations", padding="6")  # Reduced from 10
-        file_ops_frame.grid(row=row, column=0, sticky="ew", pady=3)  # Reduced from 5
-        # Configure columns for proper widget spacing
-        file_ops_frame.columnconfigure(1, weight=1)  # Entry fields expand
-        file_ops_frame.columnconfigure(2, weight=0)  # Buttons maintain natural size
-        file_ops_frame.columnconfigure(0, weight=0)  # Labels maintain natural size
+    def create_basic_setup_section(self, parent, row):
+        """Create the Basic Setup section with file operations and column selections."""
+        setup_frame = ttk.LabelFrame(parent, text="📋 Basic Setup", padding="6")
+        setup_frame.grid(row=row, column=0, sticky="ew", pady=3)
+        setup_frame.columnconfigure(1, weight=1)
         
-        # === DATA LOADING SECTION ===
-        # File selection
-        ttk.Label(file_ops_frame, text="Data File:").grid(row=0, column=0, sticky="w")
-        self.app.data_entry = ttk.Entry(file_ops_frame, textvariable=self.app.data_file, 
+        # Input Data File
+        ttk.Label(setup_frame, text="Input Data File:").grid(row=0, column=0, sticky="w")
+        self.app.data_entry = ttk.Entry(setup_frame, textvariable=self.app.data_file, 
                                        width=ui_config.entry_field_width_large)
         self.app.data_entry.grid(row=0, column=1, sticky="ew", padx=ui_config.standard_padding_x)
-        
-        ttk.Button(file_ops_frame, text="Browse...", 
+        ttk.Button(setup_frame, text="Browse...", 
                   command=self.app.browse_data_file).grid(row=0, column=2, padx=ui_config.standard_padding_x, sticky="w")
         
         # Route column selection (for multi-route data files)
-        ttk.Label(file_ops_frame, text="Route Column (Optional):").grid(row=1, column=0, sticky="w", pady=(5, 0))  # Reduced from (10, 0)
-        
-        # Create a frame to hold combobox and filter button together
-        route_controls_frame = ttk.Frame(file_ops_frame)
-        route_controls_frame.grid(row=1, column=1, sticky="w", pady=(5, 0), padx=ui_config.standard_padding_x)
+        ttk.Label(setup_frame, text="Route Column (Optional):").grid(row=1, column=0, sticky="w", pady=(5, 0))
+        route_controls_frame = ttk.Frame(setup_frame)
+        route_controls_frame.grid(row=1, column=1, columnspan=2, sticky="w", pady=(5, 0), padx=ui_config.standard_padding_x)
         
         self.app.route_column_combo = ttk.Combobox(route_controls_frame, textvariable=self.app.route_column,
-                                                  width=20)
+                                                  width=20, state="readonly")
         self.app.route_column_combo.set(ROUTE_COLUMN_NONE_SENTINEL)
         self.app.route_column_combo.grid(row=0, column=0, sticky="w")
         self.app.route_column_combo.bind('<<ComboboxSelected>>', self.app.on_route_column_change)
         
-        # Filter button - compact text, positioned right next to dropdown
         self.app.filter_routes_button = ttk.Button(route_controls_frame, text="Filter", 
                                                   command=self.app.open_route_filter_dialog,
-                                                  state="disabled")  # Start disabled
+                                                  state="disabled")
         self.app.filter_routes_button.grid(row=0, column=1, padx=(3, 0))
         
-        # Route selection status display - more compact text
-        self.app.route_info_label = ttk.Label(file_ops_frame, text="", foreground="blue")
-        self.app.route_info_label.grid(row=1, column=2, pady=(5, 0), padx=(5, 0), sticky="ew")
+        self.app.route_info_label = ttk.Label(route_controls_frame, text="", foreground="blue")
+        self.app.route_info_label.grid(row=0, column=2, padx=(5, 0), sticky="w")
         
-        # Column selection
-        ttk.Label(file_ops_frame, text="X Column (Distance):").grid(row=2, column=0, sticky="w")
-        self.app.x_column_combo = ttk.Combobox(file_ops_frame, textvariable=self.app.x_column, 
-                                              width=20)
+        # X Column (Distance)
+        ttk.Label(setup_frame, text="X Column (Distance):").grid(row=2, column=0, sticky="w", pady=(5, 0))
+        self.app.x_column_combo = ttk.Combobox(setup_frame, textvariable=self.app.x_column, 
+                                              width=20, state="readonly")
         self.app.x_column_combo.set("Load data first...")
-        self.app.x_column_combo.grid(row=2, column=1, sticky="w", padx=ui_config.standard_padding_x)
+        self.app.x_column_combo.grid(row=2, column=1, sticky="w", padx=ui_config.standard_padding_x, pady=(5, 0))
         self.app.x_column_combo.bind('<<ComboboxSelected>>', self.app.on_column_change)
-        self.app.x_column_combo.bind('<KeyRelease>', lambda e: self.app.on_column_keyrelease(e, self.app.x_column_combo))
         
-        ttk.Label(file_ops_frame, text="Y Column (Data Values):").grid(row=3, column=0, sticky="w")
-        self.app.y_column_combo = ttk.Combobox(file_ops_frame, textvariable=self.app.y_column, 
-                                              width=20)
+        # Y Column (Data Values)
+        ttk.Label(setup_frame, text="Y Column (Data Values):").grid(row=3, column=0, sticky="w", pady=(5, 0))
+        self.app.y_column_combo = ttk.Combobox(setup_frame, textvariable=self.app.y_column, 
+                                              width=20, state="readonly")
         self.app.y_column_combo.set("Load data first...")
-        self.app.y_column_combo.grid(row=3, column=1, sticky="w", padx=ui_config.standard_padding_x)
+        self.app.y_column_combo.grid(row=3, column=1, sticky="w", padx=ui_config.standard_padding_x, pady=(5, 0))
         self.app.y_column_combo.bind('<<ComboboxSelected>>', self.app.on_column_change)
-        self.app.y_column_combo.bind('<KeyRelease>', lambda e: self.app.on_column_keyrelease(e, self.app.y_column_combo))
         
-        # Framework Parameters (shared across all methods)
-        ttk.Label(file_ops_frame, text="Gap Threshold (miles):").grid(row=4, column=0, sticky="w")
-        self.app.gap_threshold_entry = ttk.Entry(file_ops_frame, textvariable=self.app.gap_threshold, 
-                                                width=10)
-        self.app.gap_threshold_entry.grid(row=4, column=1, sticky="w", padx=ui_config.standard_padding_x)
-
-        # Must-break attribute columns (framework-level)
-        ttk.Label(file_ops_frame, text="Must Break Column List:").grid(row=5, column=0, sticky="w")
-        must_break_frame = ttk.Frame(file_ops_frame)
-        must_break_frame.grid(row=5, column=1, sticky="w", padx=ui_config.standard_padding_x)
-
-        self.app.must_break_columns_summary = ttk.Label(must_break_frame, text="None", foreground="blue")
-        self.app.must_break_columns_summary.grid(row=0, column=0, sticky="w")
-        ttk.Button(
-            must_break_frame,
-            text="Select...",
-            command=self.app.open_must_break_columns_dialog,
-        ).grid(row=0, column=1, padx=(8, 0))
-        
-        # === SEPARATOR ===
-        separator = ttk.Separator(file_ops_frame, orient='horizontal')
-        separator.grid(row=6, column=0, columnspan=3, sticky="ew", pady=(8, 5))  # Reduced from (15, 10)
-        
-        # === RESULTS SAVING SECTION ===
-        # Info about auto-save
-        info_label = ttk.Label(file_ops_frame, text="Parameters auto-save when optimization starts and on exit.", 
-                              font=("Arial", 8), foreground="gray")
-        info_label.grid(row=7, column=0, columnspan=3, sticky="w", pady=(0, 3))  # Reduced from (0, 5)
+        # Output Data File (Results)
+        ttk.Label(setup_frame, text="Output Data File:").grid(row=4, column=0, sticky="w", pady=(10, 0))
+        self.app.save_name_entry = ttk.Entry(setup_frame, textvariable=self.app.custom_save_name,
+                                       width=ui_config.entry_field_width_large)
+        self.app.save_name_entry.grid(row=4, column=1, sticky="ew", padx=ui_config.standard_padding_x, pady=(10, 0))
+        ttk.Button(setup_frame, text="Browse...",
+                  command=self.app.browse_save_location).grid(row=4, column=2, padx=ui_config.standard_padding_x, pady=(10, 0), sticky="w")
         
         # Reset button
-        ttk.Button(file_ops_frame, text="Reset to Defaults", 
-                  command=self.app.reset_parameters).grid(row=8, column=0, sticky="w", pady=(0, 5))  # Reduced from (0, 10)
+        ttk.Button(setup_frame, text="Reset to Defaults", 
+                  command=self.app.reset_parameters).grid(row=5, column=0, sticky="w", pady=(10, 0))
         
-        # Results save location
-        ttk.Label(file_ops_frame, text="Results File (Required):").grid(row=9, column=0, sticky="w", pady=(3, 0))  # Reduced from (5, 0)
+        # Info about auto-save
+        info_label = ttk.Label(setup_frame, text="Parameters auto-save when optimization starts and on exit.", 
+                              font=("Arial", 8), foreground="gray")
+        info_label.grid(row=5, column=1, columnspan=2, sticky="w", pady=(10, 0))
         
-        # Save location selection frame
-        save_frame = ttk.Frame(file_ops_frame)
-        save_frame.grid(row=10, column=0, columnspan=3, sticky="ew", pady=(3, 0))  # Reduced from (5, 0)
-        save_frame.columnconfigure(0, weight=1)
-        
-        self.app.save_name_entry = ttk.Entry(save_frame, textvariable=self.app.custom_save_name, 
-                                            width=ui_config.entry_field_width_medium)
-        self.app.save_name_entry.grid(row=0, column=0, sticky="ew", padx=(0, 5))
-        
-        ttk.Button(save_frame, text="Browse...", 
-                  command=self.app.browse_save_location).grid(row=0, column=1)
-
-        return row + 1
-
-    def create_cli_command_section(self, parent, row):
-        """Create the CLI command copy button above File Operations."""
-        cli_frame = ttk.Frame(parent)
-        cli_frame.grid(row=row, column=0, sticky="ew", pady=(0, 3))
-        cli_frame.columnconfigure(0, weight=1)
-
-        ttk.Button(
-            cli_frame,
-            text="Copy CLI command",
-            command=self.app.copy_command_line_for_analysis,
-        ).grid(row=0, column=0, sticky="ew")
-
         return row + 1
     
     # create_parameters_section method removed - now using dynamic parameter generation
     
-    def create_method_section(self, parent, row):
-        """Create the extensible optimization method selection section using dropdown."""
-        method_frame = ttk.LabelFrame(parent, text="🔬 Optimization Method", padding="6")  # Reduced from 10
-        method_frame.grid(row=row, column=0, sticky="ew", pady=3)  # Reduced from 5
-        method_frame.columnconfigure(1, weight=1)
-        method_frame.columnconfigure(0, weight=0)  # Labels should not expand
+    def create_pregap_preprocessing_section(self, parent, row):
+        """Create the Pre-Gap Preprocessing configuration panel (Step 1)."""
+        self.app.pregap_preprocess_panel = MethodConfigurationPanel(
+            parent,
+            panel_title="1. Pre-Gap Preprocessing (optional)",
+            app=self.app,
+            method_registry_type="preprocessing"
+        )
+        self.app.pregap_preprocess_panel.grid(row=row, column=0, sticky="ew", pady=3)
+        return row + 1
+    
+    def create_gap_analysis_section(self, parent, row):
+        """Create the Gap Analysis Settings section (Step 2)."""
+        gap_frame = ttk.Frame(parent)
+        gap_frame.grid(row=row, column=0, sticky="ew", pady=3)
+        gap_frame.columnconfigure(1, weight=1)
         
-        # Method selection dropdown (replaces radio buttons for extensibility)
-        ttk.Label(method_frame, text="Optimization Method:").grid(row=0, column=0, sticky="w")
+        ttk.Label(gap_frame, text=" 2. Gap Analysis - Gap Threshold (in x units):").grid(row=0, column=0, sticky="w")
+        self.app.gap_threshold_entry = ttk.Entry(gap_frame, textvariable=self.app.gap_threshold, width=20)
+        self.app.gap_threshold_entry.grid(row=0, column=1, sticky="w", padx=ui_config.standard_padding_x)
         
-        # Get method names from configuration for dynamic population
+        return row + 1
+    
+    def create_primary_attribute_breaks_section(self, parent, row):
+        """Create the Primary Attribute Breaks section (Step 3)."""
+        attr_frame = ttk.Frame(parent)
+        attr_frame.grid(row=row, column=0, sticky="ew", pady=3)
+        attr_frame.columnconfigure(1, weight=1)
+        
+        ttk.Label(attr_frame, text=" 3. Early Attribute Break Columns (optional):").grid(row=0, column=0, sticky="w")
+        
+        columns_frame = ttk.Frame(attr_frame)
+        columns_frame.grid(row=0, column=1, sticky="w", padx=ui_config.standard_padding_x)
+        
+        self.app.must_break_columns_summary = ttk.Label(columns_frame, text="None selected", foreground="blue")
+        self.app.must_break_columns_summary.grid(row=0, column=0, sticky="w")
+        
+        ttk.Button(columns_frame, text="Select...",
+                  command=self.app.open_must_break_columns_dialog).grid(row=0, column=1, padx=(8, 0))
+        
+        return row + 1
+    
+    def create_primary_preprocessing_section(self, parent, row):
+        """Create the Primary Preprocessing configuration panel (Step 4)."""
+        self.app.primary_preprocess_panel = MethodConfigurationPanel(
+            parent,
+            panel_title="4. Primary Preprocessing (optional)",
+            app=self.app,
+            method_registry_type="preprocessing"
+        )
+        self.app.primary_preprocess_panel.grid(row=row, column=0, sticky="ew", pady=3)
+        return row + 1
+    
+    def create_secondary_attribute_breaks_section(self, parent, row):
+        """Create the Secondary Attribute Breaks section (Step 5)."""
+        attr_frame = ttk.Frame(parent)
+        attr_frame.grid(row=row, column=0, sticky="ew", pady=3)
+        attr_frame.columnconfigure(1, weight=1)
+        
+        ttk.Label(attr_frame, text=" 5. Late Attribute Break Columns (optional):").grid(row=0, column=0, sticky="w")
+        
+        columns_frame = ttk.Frame(attr_frame)
+        columns_frame.grid(row=0, column=1, sticky="w", padx=ui_config.standard_padding_x)
+        
+        # Secondary attribute breaks selection
+        self.app.secondary_break_columns_summary = ttk.Label(columns_frame, text="None", foreground="blue")
+        self.app.secondary_break_columns_summary.grid(row=0, column=0, sticky="w")
+        
+        ttk.Button(columns_frame, text="Select...",
+                  command=self.app.open_secondary_break_columns_dialog).grid(row=0, column=1, padx=(8, 0))
+        
+        return row + 1
+    
+    def create_secondary_preprocessing_section(self, parent, row):
+        """Create the Postprocessing configuration panel (Step 6)."""
+        self.app.secondary_preprocess_panel = MethodConfigurationPanel(
+            parent,
+            panel_title="6. Postprocessing (optional)",
+            app=self.app,
+            method_registry_type="preprocessing"
+        )
+        self.app.secondary_preprocess_panel.grid(row=row, column=0, sticky="ew", pady=3)
+        return row + 1
+    
+    def create_analysis_method_section(self, parent, row):
+        """Create the Analysis Method configuration panel (Step 7)."""
+        self.app.analysis_method_panel = MethodConfigurationPanel(
+            parent,
+            panel_title="7. Analysis Method",
+            app=self.app,
+            method_registry_type="optimization"
+        )
+        self.app.analysis_method_panel.grid(row=row, column=0, sticky="ew", pady=3)
+        
+        # Set default method (first in list) and expand by default
         method_names = get_optimization_method_names()
-        
-        self.app.method_dropdown = ttk.Combobox(method_frame, values=method_names, 
-                                               state="readonly", width=35)
-        self.app.method_dropdown.set(method_names[0] if method_names else "No methods available")
-        self.app.method_dropdown.grid(row=0, column=1, sticky="ew", padx=ui_config.standard_padding_x)
-        self.app.method_dropdown.bind('<<ComboboxSelected>>', self.app.on_method_change)
-        
-        # Method description (dynamic based on selection)
-        self.app.method_description = ttk.Label(method_frame, text="", foreground="gray", wraplength=500)
-        self.app.method_description.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(5, 0))  # Reduced from (10, 0)
-
-        # Initialize description for the current selection
-        try:
-            method_key = get_method_key_from_display_name(self.app.method_dropdown.get())
-            from config import get_optimization_method
-            self.app.method_description.config(text=get_optimization_method(method_key).description)
-        except Exception:
-            # Non-fatal; description will be updated on method change.
-            pass
+        if method_names:
+            method_key = get_method_key_from_display_name(method_names[0])
+            self.app.analysis_method_panel.set_method(method_key, expand=True)
         
         return row + 1
 
@@ -284,6 +596,18 @@ class UIBuilder:
 
         tree.bind("<Double-1>", self._on_dynamic_param_double_click)
         tree.bind("<Button-1>", self._on_dynamic_param_single_click)
+        
+        # Fix mousewheel scrolling to work within treeview instead of parent
+        def on_mousewheel(event):
+            if event.num == 4 or event.delta > 0:  # Scroll up
+                tree.yview_scroll(-1, "units")
+            elif event.num == 5 or event.delta < 0:  # Scroll down
+                tree.yview_scroll(1, "units")
+            return "break"
+        
+        tree.bind("<MouseWheel>", on_mousewheel)
+        tree.bind("<Button-4>", on_mousewheel)  # Linux scroll up
+        tree.bind("<Button-5>", on_mousewheel)  # Linux scroll down
 
         # Initial population based on the currently selected method (if available)
         try:
@@ -331,6 +655,11 @@ class UIBuilder:
 
         This is used by controller/parameter save/load paths; it must remain stable.
         """
+        # Use the new MethodConfigurationPanel if available
+        if hasattr(self.app, 'analysis_method_panel'):
+            return self.app.analysis_method_panel.get_parameters()
+        
+        # Fallback to old dynamic params system (legacy)
         method_key = self._get_selected_method_key_safe()
         if not method_key:
             return {}
@@ -903,9 +1232,9 @@ class UIBuilder:
         
         # Action button frame
         actions_frame = ttk.Frame(top_right_frame)
-        actions_frame.grid(row=0, column=0)
+        actions_frame.grid(row=0, column=0, sticky="w")  # Left-align buttons
         
-        # Main optimization control buttons
+        # Row 0: Main optimization control buttons
         self.app.start_button = ttk.Button(actions_frame, text="🚀 Start Optimization", 
                                           command=self.app.start_optimization, 
                                           style="Accent.TButton")
@@ -929,6 +1258,10 @@ class UIBuilder:
         
         ttk.Button(actions_frame, text="❌ Exit", 
                   command=exit_clicked).grid(row=0, column=4, padx=(0, 5))
+        
+        # Row 1: Copy CLI Command button
+        ttk.Button(actions_frame, text="📋 Copy CLI Command",
+                  command=self.app.copy_command_line_for_analysis).grid(row=1, column=0, columnspan=5, pady=(5, 0), sticky="ew")
         
         return top_right_frame
     
