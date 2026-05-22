@@ -304,13 +304,24 @@ class OptimizationController:
             # Collect preprocessing configuration from GUI panels
             from config import PreprocessingRunConfig
             preprocessing_config = PreprocessingRunConfig(
-                pre_gap_method=None,  # Pre-gap preprocessing not yet supported
+                pre_gap_method=None,
                 pre_gap_parameters={},
                 primary_method=None,
                 primary_parameters={},
                 secondary_method=None,
                 secondary_parameters={}
             )
+
+            # Get pre-gap preprocessing config (if panel exists and method selected)
+            if hasattr(self.app, 'pregap_preprocess_panel') and self.app.pregap_preprocess_panel:
+                try:
+                    pre_gap_method_key = self.app.pregap_preprocess_panel.get_method_key()
+                    if pre_gap_method_key:
+                        preprocessing_config.pre_gap_method = pre_gap_method_key
+                        preprocessing_config.pre_gap_parameters = self.app.pregap_preprocess_panel.get_parameters()
+                        self.app.log_message(f"Pre-gap preprocessing enabled: {pre_gap_method_key}")
+                except Exception as e:
+                    self.app.log_message(f"Warning: Could not load pre-gap preprocessing config: {e}")
             
             # Get primary preprocessing config (if panel exists and method selected)
             if hasattr(self.app, 'primary_preprocess_panel') and self.app.primary_preprocess_panel:

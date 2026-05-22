@@ -10,9 +10,7 @@ Tests cover:
 """
 
 import pytest
-from typing import List
-from unittest.mock import Mock, patch, MagicMock
-import sys
+from unittest.mock import patch, MagicMock
 
 from config import (
     PreprocessingMethodConfig,

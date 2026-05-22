@@ -12,9 +12,7 @@ Tests cover:
 
 import pytest
 import pandas as pd
-import numpy as np
-from unittest.mock import Mock, MagicMock
-from typing import Dict, Any
+from unittest.mock import Mock
 
 from preprocessing.methods.tukey_fences import TukeyFencesPreprocessor
 from preprocessing.base import PreprocessingResult
@@ -69,16 +67,7 @@ class TestTukeyFencesOutlierDetection:
         """Test that IQR bounds are calculated correctly."""
         preprocessor = TukeyFencesPreprocessor()
         
-        # Get the IRI values
-        iri_values = mock_route_analysis.route_data['IRI'].values
-        
-        # Calculate expected IQR bounds
-        q1 = np.percentile(iri_values, 25)
-        q3 = np.percentile(iri_values, 75)
-        iqr = q3 - q1
         k_factor = 1.5
-        expected_lower = q1 - k_factor * iqr
-        expected_upper = q3 + k_factor * iqr
         
         # Process with action='remove' to check bounds in metadata
         result = preprocessor.process(

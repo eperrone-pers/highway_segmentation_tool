@@ -11,9 +11,7 @@ Tests cover:
 
 import pytest
 import pandas as pd
-import numpy as np
 from datetime import datetime
-from typing import Dict, Any
 
 from preprocessing.base import (
     DataModification,
@@ -142,6 +140,20 @@ class TestDataModificationContext:
         assert log[0].original_y_value == 250.0
         assert log[0].new_y_value == 275.0
         assert log[0].reason == "adjusted value"
+
+    def test_modify_y_value_allows_float_into_integer_y_column(self):
+        """Integer source columns should be widened for float preprocessing results."""
+        df = pd.DataFrame({
+            'Milepoint': [0.0, 1.0, 2.0],
+            'IRI': [100, 150, 200],
+        })
+        ctx = DataModificationContext(df, 'Milepoint', 'IRI')
+
+        ctx.modify_y_value(1.0, 116.5, reason="capped to non-integer value")
+
+        modified_df = ctx.get_modified_data()
+        mask = modified_df['Milepoint'] == 1.0
+        assert modified_df.loc[mask, 'IRI'].iloc[0] == 116.5
     
     def test_modify_y_value_not_found(self, context):
         """Test error when modifying non-existent point."""
@@ -286,7 +298,6 @@ class TestPreprocessingMethodBase:
             
             def process(self, route_analysis, x_column, y_column, **parameters):
                 # Simple mock implementation
-                df = route_analysis.route_data if hasattr(route_analysis, 'route_data') else pd.DataFrame()
                 return PreprocessingResult(
                     processed_route_analysis=route_analysis,
                     modification_log=[],

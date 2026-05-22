@@ -2114,6 +2114,37 @@ class EnhancedVisualizationWindow:
         attribute_breakpoints = extract_attribute_breakpoints(route_results)
         extract_attribute_break_signatures(route_results)
 
+        preprocessed_gap_breakpoints = set()
+        try:
+            from visualization.gap_analysis_data import extract_gap_analysis
+
+            gap_info = extract_gap_analysis(route_results)
+            if (
+                raw_route_data is not None
+                and not raw_route_data.empty
+                and x_col in raw_route_data.columns
+                and gap_info.gap_segments
+            ):
+                raw_x_series = pd.to_numeric(raw_route_data[x_col], errors='coerce').dropna()
+                if not raw_x_series.empty:
+                    raw_x_values = raw_x_series.astype(float).tolist()
+                    for seg in gap_info.gap_segments:
+                        if not isinstance(seg, dict):
+                            continue
+                        try:
+                            gap_start = float(seg.get('start'))
+                            gap_end = float(seg.get('end'))
+                        except (TypeError, ValueError):
+                            continue
+
+                        # If the original loaded data still has points inside the rendered
+                        # gap interval, the gap was introduced by preprocessing removals.
+                        if any(gap_start < x_value < gap_end for x_value in raw_x_values):
+                            preprocessed_gap_breakpoints.add(gap_start)
+                            preprocessed_gap_breakpoints.add(gap_end)
+        except Exception:
+            preprocessed_gap_breakpoints = set()
+
         # Keep artists so we can remove/redraw the lane overlay cleanly.
         if not hasattr(self, '_break_lane_artists'):
             self._break_lane_artists = []
@@ -2158,11 +2189,12 @@ class EnhancedVisualizationWindow:
                         label=spec.label,
                     )
                 elif spec.kind == 'mandatory_gap':
+                    is_preprocessed_gap = spec.x in preprocessed_gap_breakpoints
                     self.ax_right.axvline(
                         x=spec.x,
                         color=COLORS['mandatory_bp'],
-                        linestyle='-',
-                        linewidth=1.9,
+                        linestyle='--' if is_preprocessed_gap else '-',
+                        linewidth=1.1 if is_preprocessed_gap else 1.9,
                         alpha=0.95,
                         zorder=3,
                         label=spec.label,

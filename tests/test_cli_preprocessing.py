@@ -10,9 +10,7 @@ Tests cover:
 
 import pytest
 import json
-import tempfile
-from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 from types import SimpleNamespace
 
 import pandas as pd

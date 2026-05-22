@@ -797,6 +797,7 @@ class HighwaySegmentationGUI:
         config-driven shortcuts to open:
         - USER_GUIDE.md
         - Method-specific README.md files under src/analysis/methods/docs/{method_key}/README.md
+        - Preprocessing README.md files under src/preprocessing/methods/docs/{method_key}/README.md
         """
         project_root = os.path.dirname(os.path.dirname(__file__))
         user_guide_path = os.path.join(project_root, "USER_GUIDE.md")
@@ -806,13 +807,14 @@ class HighwaySegmentationGUI:
         self._build_help_header(main_frame)
         self._build_user_guide_section(main_frame, user_guide_path)
         self._build_method_docs_section(main_frame, project_root)
+        self._build_preprocessing_docs_section(main_frame, project_root)
         self._build_help_close_button(main_frame, help_window)
         self._center_window(help_window)
 
     def _create_help_window(self) -> tk.Toplevel:
         help_window = tk.Toplevel(self.root)
         help_window.title("Documentation")
-        help_window.geometry("620x280")
+        help_window.geometry("620x380")
         help_window.resizable(False, False)
         help_window.grab_set()  # Make it modal
         return help_window
@@ -831,7 +833,7 @@ class HighwaySegmentationGUI:
 
         ttk.Label(
             main_frame,
-            text="Open the User Guide or method documentation in your browser.",
+            text="Open the User Guide, analysis method docs, or preprocessing docs in your browser.",
         ).pack(anchor="w", pady=(4, 12))
 
     def _build_user_guide_section(self, main_frame: ttk.Frame, user_guide_path: str) -> None:
@@ -884,6 +886,49 @@ class HighwaySegmentationGUI:
             command=open_selected_method_doc,
         ).pack(side="left")
 
+    def _build_preprocessing_docs_section(self, main_frame: ttk.Frame, project_root: str) -> None:
+        preprocessing_frame = ttk.LabelFrame(main_frame, text="Preprocessing Documentation", padding=10)
+        preprocessing_frame.pack(fill="x", pady=(12, 0))
+
+        available_docs = self._get_available_preprocessing_docs(project_root)
+        if not available_docs:
+            ttk.Label(
+                preprocessing_frame,
+                text="No preprocessing README files found under src/preprocessing/methods/docs/.",
+            ).pack(anchor="w")
+            return
+
+        ttk.Label(preprocessing_frame, text="Algorithm:").pack(side="left")
+
+        preprocessing_display_names = [item[0] for item in available_docs]
+        selected_preprocessing = tk.StringVar(value=preprocessing_display_names[0])
+
+        preprocessing_combo = ttk.Combobox(
+            preprocessing_frame,
+            textvariable=selected_preprocessing,
+            values=preprocessing_display_names,
+            state="readonly",
+            width=36,
+        )
+        preprocessing_combo.pack(side="left", padx=(6, 10))
+
+        def open_selected_preprocessing_doc() -> None:
+            display_name = selected_preprocessing.get()
+            for name, _, readme_path in available_docs:
+                if name == display_name:
+                    self._open_markdown_path_in_browser(
+                        readme_path,
+                        title=f"Preprocessing Doc - {name}",
+                    )
+                    return
+            messagebox.showerror("Error", f"Could not resolve README for '{display_name}'")
+
+        ttk.Button(
+            preprocessing_frame,
+            text="🌐 Open in Browser",
+            command=open_selected_preprocessing_doc,
+        ).pack(side="left")
+
     def _build_help_close_button(self, main_frame: ttk.Frame, help_window: tk.Toplevel) -> None:
         button_row = ttk.Frame(main_frame)
         button_row.pack(fill="x", pady=(14, 0))
@@ -905,6 +950,21 @@ class HighwaySegmentationGUI:
         docs_root = os.path.join(project_root, "src", "analysis", "methods", "docs")
         available = []
         for method in OPTIMIZATION_METHODS:
+            readme_path = os.path.join(docs_root, method.method_key, "README.md")
+            if os.path.exists(readme_path):
+                available.append((method.display_name, method.method_key, readme_path))
+        return available
+
+    def _get_available_preprocessing_docs(self, project_root: str):
+        """Return list of (display_name, method_key, readme_path) for preprocessing methods with docs."""
+        try:
+            from config import PREPROCESSING_METHODS
+        except Exception:
+            return []
+
+        docs_root = os.path.join(project_root, "src", "preprocessing", "methods", "docs")
+        available = []
+        for method in PREPROCESSING_METHODS:
             readme_path = os.path.join(docs_root, method.method_key, "README.md")
             if os.path.exists(readme_path):
                 available.append((method.display_name, method.method_key, readme_path))

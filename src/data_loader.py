@@ -598,6 +598,8 @@ def process_route_with_preprocessing(
                 'phase_name': 'pre_gap',
             }
             preprocessing_results.append(pre_gap_result)
+            if log_callback:
+                log_callback("Pre-gap preprocessing complete.")
         df_for_gap_analysis = pre_gap_analysis.route_data.copy()
     
     # Phase 2: Gap analysis + attribute breaks

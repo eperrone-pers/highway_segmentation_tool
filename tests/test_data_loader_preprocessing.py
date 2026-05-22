@@ -10,9 +10,6 @@ Tests cover:
 
 import pytest
 import pandas as pd
-import numpy as np
-from unittest.mock import Mock, patch, call
-from typing import List
 
 from data_loader import (
     apply_preprocessing_phase,

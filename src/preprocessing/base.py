@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from typing import Dict, Any, List, Optional, TYPE_CHECKING
 from datetime import datetime
 import pandas as pd
+from pandas.api.types import is_numeric_dtype
 
 if TYPE_CHECKING:
     from data_loader import RouteAnalysis
@@ -101,6 +102,9 @@ class DataModificationContext:
         self._modifications: List[DataModification] = []
         self._original_df = df.copy()  # Preserve original for verification
         self._mandatory_breakpoints = set(mandatory_breakpoints or [])
+
+        if y_column in self._df.columns and is_numeric_dtype(self._df[y_column]):
+            self._df[y_column] = self._df[y_column].astype(float)
     
     def remove_point(self, x_value: float, reason: Optional[str] = None) -> None:
         """
