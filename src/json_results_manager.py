@@ -431,13 +431,15 @@ class JsonResultsManager:
         
         if hasattr(result, 'preprocessing_metadata') and result.preprocessing_metadata:
             for i, metadata in enumerate(result.preprocessing_metadata):
-                phase_name = "unknown"
-                if i == 0:
-                    phase_name = "pre_gap"
-                elif i == 1:
-                    phase_name = "primary"
-                elif i == 2:
-                    phase_name = "secondary"
+                phase_name = metadata.get("phase_name") if isinstance(metadata, dict) else None
+                if not phase_name:
+                    phase_name = "unknown"
+                    if i == 0:
+                        phase_name = "pre_gap"
+                    elif i == 1:
+                        phase_name = "primary"
+                    elif i == 2:
+                        phase_name = "secondary"
                 
                 points_before = metadata.get("points_before", 0)
                 points_after = metadata.get("points_after", 0)

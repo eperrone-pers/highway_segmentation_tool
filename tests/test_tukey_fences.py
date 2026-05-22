@@ -215,6 +215,69 @@ class TestTukeyFencesActions:
         for mod in interp_mods:
             assert mod.new_y_value != mod.original_y_value
 
+    def test_boundary_breakpoint_capped_once(self):
+        """Test that a shared mandatory breakpoint row is processed in only one segment."""
+        data = pd.DataFrame({
+            'X': [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            'Y': [10.0, 10.0, 10.0, 100.0, 10.0, 10.0, 10.0]
+        })
+
+        route_analysis = Mock()
+        route_analysis.route_data = data
+        route_analysis.route_id = "BOUNDARY_TEST"
+        route_analysis.gap_segments = []
+        route_analysis.mandatory_breakpoints = {0.0, 3.0, 6.0}
+        route_analysis.valid_x_values = data['X'].tolist()
+        route_analysis.route_stats = {'total_points': len(data)}
+        route_analysis.must_break_columns_used = []
+        route_analysis.attribute_breakpoints = set()
+        route_analysis.attribute_break_events = []
+        route_analysis.data_range = {'x_min': 0.0, 'x_max': 6.0, 'y_min': 10.0, 'y_max': 100.0}
+
+        preprocessor = TukeyFencesPreprocessor()
+        result = preprocessor.process(
+            route_analysis,
+            'X',
+            'Y',
+            k_factor=1.5,
+            action='cap'
+        )
+
+        boundary_mods = [m for m in result.modification_log if m.x_value == 3.0]
+        assert len(boundary_mods) == 1
+        assert boundary_mods[0].modification_type == "y_value_capped"
+
+    def test_remove_skips_mandatory_breakpoint_outliers(self):
+        """Test that remove action preserves mandatory breakpoint outliers instead of raising."""
+        data = pd.DataFrame({
+            'X': [0.0, 1.0, 2.0, 3.0, 4.0],
+            'Y': [500.0, 10.0, 10.0, 10.0, 10.0]
+        })
+
+        route_analysis = Mock()
+        route_analysis.route_data = data
+        route_analysis.route_id = "MANDATORY_REMOVE_TEST"
+        route_analysis.gap_segments = []
+        route_analysis.mandatory_breakpoints = {0.0, 4.0}
+        route_analysis.valid_x_values = data['X'].tolist()
+        route_analysis.route_stats = {'total_points': len(data)}
+        route_analysis.must_break_columns_used = []
+        route_analysis.attribute_breakpoints = set()
+        route_analysis.attribute_break_events = []
+        route_analysis.data_range = {'x_min': 0.0, 'x_max': 4.0, 'y_min': 10.0, 'y_max': 500.0}
+
+        preprocessor = TukeyFencesPreprocessor()
+        result = preprocessor.process(
+            route_analysis,
+            'X',
+            'Y',
+            k_factor=1.5,
+            action='remove'
+        )
+
+        assert result.processed_route_analysis.route_data['X'].tolist() == [0.0, 1.0, 2.0, 3.0, 4.0]
+        assert [m.x_value for m in result.modification_log if m.modification_type == 'point_removed'] == []
+
 
 class TestTukeyFencesParameters:
     """Test parameter handling."""

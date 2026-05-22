@@ -77,8 +77,14 @@ Notes:
 ### 3) Run the regression gate (must be green)
 
 ```bash
-python -m pytest tests/regression -q
+python run_tests.py --regression
 ```
+
+Recommended test lanes:
+
+- Fast local development: `python run_tests.py --smoke`
+- Regression gate: `python run_tests.py --regression`
+- Full suite except performance: `python run_tests.py --full`
 
 ### 4) Run the GUI
 

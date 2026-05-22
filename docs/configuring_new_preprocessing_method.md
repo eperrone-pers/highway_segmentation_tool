@@ -26,7 +26,7 @@ The preprocessing framework supports **optional, transparent data quality improv
 
 1. **Pre-gap preprocessing** (before gap analysis): Rare use case for data cleaning that might affect gap detection itself, such as filling small measurement gaps or correcting timestamps.
 
-2. **Primary preprocessing** (after gaps and **early attribute breaks**): **Most common phase** for data quality improvements. 
+2. **Primary preprocessing** (after gaps and **early attribute breaks**): **Most common phase** for data quality improvements.
    - **Early attribute breaks** are applied **first** to create segments based on **structural characteristics** (e.g., Pavement_Type, Functional_Class, Lanes) that affect data distributions
    - Primary preprocessing then operates **within** these well-defined segments, enabling accurate per-segment statistics for outlier detection and smoothing
    - This sequencing ensures preprocessing respects structural boundaries where data characteristics genuinely differ
@@ -37,6 +37,7 @@ The preprocessing framework supports **optional, transparent data quality improv
    - Secondary preprocessing applies light smoothing or normalization to fully segmented data
 
 **Early vs Late attribute breaks:**
+
 - **Early breaks** → Define preprocessing segments (structural boundaries where data characteristics differ)
 - **Late breaks** → Define analysis segments (administrative boundaries for reporting)
 - This two-stage approach ensures **statistical accuracy** (preprocessing per structure type) while supporting **administrative segmentation** (final reporting boundaries)
@@ -2027,6 +2028,22 @@ PREPROCESSING_METHODS = [
 
 ## 8) Appendix B — Testing Your Preprocessing Method
 
+Recommended order while developing a new preprocessing method:
+
+1. Run the narrow unit file for the method you are adding.
+2. Run the preprocessing integration slice that exercises orchestration behavior.
+3. Run the preprocessing regression file.
+4. Run the full regression gate before merging behavior changes.
+
+Useful commands:
+
+```powershell
+& .venv\Scripts\python.exe -m pytest tests\test_tukey_fences.py -q
+& .venv\Scripts\python.exe -m pytest tests\test_data_loader_preprocessing.py tests\test_cli_preprocessing.py -q
+& .venv\Scripts\python.exe -m pytest tests\regression\test_preprocessing_workflow_regression.py -q
+& .venv\Scripts\python.exe run_tests.py --regression
+```
+
 ### B.1 Unit tests for method logic
 
 **Test file location:** `tests/test_preprocessing_your_method.py`
@@ -2125,6 +2142,12 @@ def test_full_pipeline_with_preprocessing():
     # Verify visualization overlay works
 ```
 
+For current repo coverage, add or extend tests in the existing preprocessing-focused files before creating new broad suites:
+
+- `tests/test_data_loader_preprocessing.py` for orchestration and phase-order behavior
+- `tests/test_cli_preprocessing.py` for run-spec and export behavior
+- `tests/regression/test_preprocessing_workflow_regression.py` for end-to-end regression scenarios
+
 ### B.3 Validation checklist
 
 Use this checklist after implementation:
@@ -2205,6 +2228,14 @@ Use this checklist after implementation:
   - Export conforms to JSON schema
   - All required fields present
   - Data types correct
+
+- [ ] **Regression lane passes**
+  - Narrow preprocessing regression file passes: `tests/regression/test_preprocessing_workflow_regression.py`
+  - Full branch regression gate passes: `run_tests.py --regression`
+
+- [ ] **Artifact-dependent checks only when needed**
+  - Persist artifacts only for manual debugging or structure inspection
+  - Enable with `HST_KEEP_REGRESSION_ARTIFACTS=1`
 
 ---
 

@@ -88,9 +88,7 @@ class TukeyFencesPreprocessor(PreprocessingMethodBase):
         
         # Get data
         df = route_analysis.route_data
-        y_values = df[y_column].values
-        x_values = df[x_column].values
-        original_y = y_values.copy()
+        original_y = df[y_column].values.copy()
         
         # Create modification context - REQUIRED for all data changes
         # This ensures automatic logging of all modifications
@@ -103,7 +101,7 @@ class TukeyFencesPreprocessor(PreprocessingMethodBase):
         mandatory_bps = sorted(list(route_analysis.mandatory_breakpoints or []))
         if not mandatory_bps:
             # No segments defined - fall back to global processing
-            mandatory_bps = [float(x_values.min()), float(x_values.max())]
+            mandatory_bps = [float(df[x_column].min()), float(df[x_column].max())]
         
         total_outlier_count = 0
         
@@ -111,11 +109,20 @@ class TukeyFencesPreprocessor(PreprocessingMethodBase):
         for i in range(len(mandatory_bps) - 1):
             seg_start = mandatory_bps[i]
             seg_end = mandatory_bps[i + 1]
+
+            current_df = ctx.get_modified_data().sort_values(x_column).reset_index(drop=True)
+            current_x_values = current_df[x_column].to_numpy()
+            current_y_values = current_df[y_column].to_numpy()
+            is_last_segment = i == len(mandatory_bps) - 2
             
-            # Get points in this segment
-            seg_mask = (x_values >= seg_start) & (x_values <= seg_end)
-            seg_y_values = y_values[seg_mask]
-            seg_indices = np.where(seg_mask)[0]
+            # Use half-open intervals so shared breakpoint rows belong to exactly one segment.
+            if is_last_segment:
+                seg_mask = (current_x_values >= seg_start) & (current_x_values <= seg_end)
+            else:
+                seg_mask = (current_x_values >= seg_start) & (current_x_values < seg_end)
+
+            seg_x_values = current_x_values[seg_mask]
+            seg_y_values = current_y_values[seg_mask]
             
             if len(seg_y_values) < MIN_POINTS_FOR_IQR:
                 # Need at least MIN_POINTS_FOR_IQR points to calculate quartiles reliably
@@ -134,28 +141,31 @@ class TukeyFencesPreprocessor(PreprocessingMethodBase):
             
             # Identify outliers IN THIS SEGMENT
             outlier_mask = (seg_y_values < lower_bound) | (seg_y_values > upper_bound)
-            segment_outlier_indices = seg_indices[outlier_mask]
+            segment_outlier_x_values = seg_x_values[outlier_mask]
+            segment_outlier_y_values = seg_y_values[outlier_mask]
             
-            if len(segment_outlier_indices) == 0:
+            if len(segment_outlier_x_values) == 0:
                 continue
             
             # Apply action (each operation auto-logged by context)
             if action == 'remove':
                 # Remove outlier points
-                for idx in segment_outlier_indices:
+                for x_val in segment_outlier_x_values:
+                    if float(x_val) in (route_analysis.mandatory_breakpoints or set()):
+                        continue
                     reason = f"outlier beyond {k_factor}*IQR fence in segment [{seg_start:.1f}-{seg_end:.1f}]"
-                    ctx.remove_point(x_values[idx], reason=reason)
+                    ctx.remove_point(float(x_val), reason=reason)
                     total_outlier_count += 1
             
             elif action == 'cap':
                 # Cap outliers to fence boundaries (segment-specific bounds)
-                for idx in segment_outlier_indices:
-                    new_y = lower_bound if y_values[idx] < lower_bound else upper_bound
-                    bound_type = "lower" if y_values[idx] < lower_bound else "upper"
+                for x_val, y_val in zip(segment_outlier_x_values, segment_outlier_y_values):
+                    new_y = lower_bound if y_val < lower_bound else upper_bound
+                    bound_type = "lower" if y_val < lower_bound else "upper"
                     reason = f"segment [{seg_start:.1f}-{seg_end:.1f}] {bound_type} fence ({new_y:.1f})"
                     ctx.modify_y_value(
-                        x_values[idx], 
-                        new_y, 
+                        float(x_val), 
+                        float(new_y), 
                         reason=reason, 
                         modification_type="y_value_capped"
                     )
@@ -163,25 +173,25 @@ class TukeyFencesPreprocessor(PreprocessingMethodBase):
             
             elif action == 'interpolate':
                 # Replace outliers with interpolated values from neighbors
-                for idx in segment_outlier_indices:
-                    # Find neighboring indices WITHIN THIS SEGMENT
-                    local_idx = np.where(seg_indices == idx)[0][0]
+                outlier_positions = np.where(outlier_mask)[0]
+                for local_idx in outlier_positions:
                     
                     # Skip interpolation at segment boundaries - can't get true neighbors
-                    if local_idx == 0 or local_idx == len(seg_indices) - 1:
+                    if local_idx == 0 or local_idx == len(seg_x_values) - 1:
                         # Outlier at segment start/end - leave unchanged
                         # Can't interpolate without neighbors on both sides
                         continue
                     
                     # Normal case: interpolate between previous and next points
-                    prev_idx = seg_indices[local_idx - 1]
-                    next_idx = seg_indices[local_idx + 1]
+                    x_val = seg_x_values[local_idx]
+                    prev_y = seg_y_values[local_idx - 1]
+                    next_y = seg_y_values[local_idx + 1]
                     
                     # Simple linear interpolation between neighbors
-                    new_y = (y_values[prev_idx] + y_values[next_idx]) / 2
+                    new_y = (prev_y + next_y) / 2
                     ctx.modify_y_value(
-                        x_values[idx], 
-                        new_y,
+                        float(x_val), 
+                        float(new_y),
                         reason="interpolated from neighbors",
                         modification_type="point_interpolated"
                     )

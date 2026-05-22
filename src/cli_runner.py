@@ -670,7 +670,7 @@ def run_analysis_from_spec_file(
             )
         
         prepared.append((route_id, route_analysis))
-        original_data_by_route[route_id] = route_analysis.route_data.copy()
+        original_data_by_route[route_id] = route_df.copy()
 
     if not prepared:
         raise RunSpecError("No routes could be analyzed successfully")

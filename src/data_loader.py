@@ -392,6 +392,38 @@ def build_secondary_attribute_break_analysis(route_analysis: RouteAnalysis) -> O
     }
 
 
+def apply_secondary_attribute_breaks(
+    route_analysis: RouteAnalysis,
+    x_column: str,
+    secondary_break_columns: Optional[List[str]],
+    log_callback=None,
+) -> RouteAnalysis:
+    """Apply second-stage attribute break detection to an existing RouteAnalysis.
+
+    This phase must run after primary preprocessing so later attribute breaks are
+    computed from the post-primary route data rather than the original route data.
+    """
+    columns_used, breakpoints, events = _process_attribute_breakpoints(
+        route_analysis.route_data, x_column, secondary_break_columns
+    )
+
+    route_analysis.secondary_break_columns_used = columns_used
+    route_analysis.secondary_attribute_breakpoints = breakpoints
+    route_analysis.secondary_attribute_break_events = events
+
+    updated_breakpoints = set(route_analysis.mandatory_breakpoints or set())
+    for x_bp in breakpoints:
+        updated_breakpoints.add(float(x_bp))
+    route_analysis.mandatory_breakpoints = updated_breakpoints
+
+    if log_callback and breakpoints:
+        log_callback(
+            f"Applied secondary attribute breaks: {len(breakpoints)} breakpoint(s) from {len(columns_used)} column(s)"
+        )
+
+    return route_analysis
+
+
 # ============================================================================
 # Preprocessing Integration Functions
 # ============================================================================
@@ -478,10 +510,10 @@ def process_route_with_preprocessing(
     This is the NEW main entry point that replaces direct calls to analyze_route_gaps
     when preprocessing is enabled. Orchestrates the complete workflow:
     
-    1. Pre-gap preprocessing (future enhancement - currently skipped)
+    1. Pre-gap preprocessing
     2. Gap analysis + first attribute breaks
     3. Primary preprocessing
-    4. Second attribute breaks (future enhancement - currently placeholder)
+    4. Second attribute breaks
     5. Secondary preprocessing
     
     Args:
@@ -502,23 +534,79 @@ def process_route_with_preprocessing(
         ValueError: If preprocessing configuration is invalid
         ImportError: If preprocessing method cannot be imported
     """
+    def _build_pre_gap_route_analysis(route_df: pd.DataFrame) -> RouteAnalysis:
+        """Create a minimal RouteAnalysis so pre-gap preprocessing can run on raw route data."""
+        if route_df is None or route_df.empty:
+            raise ValueError(f"Route {route_id!r} has no data available for pre-gap preprocessing")
+
+        df_sorted = route_df.sort_values(x_column).reset_index(drop=True).copy()
+        x_values = df_sorted[x_column].tolist()
+        y_values = df_sorted[y_column].tolist()
+
+        return RouteAnalysis(
+            route_id=route_id,
+            route_data=df_sorted,
+            gap_segments=[],
+            mandatory_breakpoints={float(x_values[0]), float(x_values[-1])},
+            valid_x_values=[float(x) for x in x_values],
+            data_range={
+                'x_min': float(min(x_values)),
+                'x_max': float(max(x_values)),
+                'y_min': float(min(y_values)),
+                'y_max': float(max(y_values)),
+            },
+            route_stats={
+                'raw_points': len(df_sorted),
+                'total_points': len(df_sorted),
+                'gap_count': 0,
+                'valid_points': len(df_sorted),
+                'route_start': float(x_values[0]),
+                'route_end': float(x_values[-1]),
+                'total_length': float(x_values[-1] - x_values[0]),
+                'gap_total_length': 0.0,
+                'valid_length': float(x_values[-1] - x_values[0]),
+            },
+            must_break_columns_used=[],
+            attribute_breakpoints=[],
+            attribute_break_events=[],
+            secondary_break_columns_used=[],
+            secondary_attribute_breakpoints=[],
+            secondary_attribute_break_events=[],
+        )
+
     preprocessing_results = []
+    df_for_gap_analysis = df
     
     # Phase 1: Pre-gap preprocessing (optional)
     # Note: Pre-gap preprocessing operates on raw DataFrame, not RouteAnalysis
     if preprocessing_config.pre_gap_method:
-        # Pre-gap preprocessing needs special handling since we don't have RouteAnalysis yet
-        # For now, we'll skip pre-gap in Phase 1 implementation (future enhancement)
         if log_callback:
-            log_callback("Note: Pre-gap preprocessing not yet implemented - skipping")
+            log_callback("=== Phase 1: Pre-Gap Preprocessing ===")
+
+        pre_gap_analysis = _build_pre_gap_route_analysis(df_for_gap_analysis)
+        pre_gap_analysis, pre_gap_result = apply_preprocessing_phase(
+            pre_gap_analysis,
+            preprocessing_config.pre_gap_method,
+            preprocessing_config.pre_gap_parameters,
+            x_column,
+            y_column,
+            log_callback
+        )
+        if pre_gap_result:
+            pre_gap_result.preprocessing_metadata = {
+                **pre_gap_result.preprocessing_metadata,
+                'phase_name': 'pre_gap',
+            }
+            preprocessing_results.append(pre_gap_result)
+        df_for_gap_analysis = pre_gap_analysis.route_data.copy()
     
     # Phase 2: Gap analysis + attribute breaks
     if log_callback:
         log_callback("=== Phase 2: Gap Analysis & Attribute Breaks ===")
     route_analysis = analyze_route_gaps(
-        df, x_column, y_column, route_id, gap_threshold,
+        df_for_gap_analysis, x_column, y_column, route_id, gap_threshold,
         must_break_columns=first_attribute_columns,  # First attributes only
-        secondary_break_columns=second_attribute_columns  # Second attributes
+        secondary_break_columns=None
     )
     
     # Phase 3: Primary preprocessing (optional)
@@ -534,12 +622,27 @@ def process_route_with_preprocessing(
             log_callback
         )
         if primary_result:
+            primary_result.preprocessing_metadata = {
+                **primary_result.preprocessing_metadata,
+                'phase_name': 'primary',
+            }
             preprocessing_results.append(primary_result)
+
+    # Phase 4: Secondary attribute breaks (applied after primary preprocessing)
+    if second_attribute_columns:
+        if log_callback:
+            log_callback("=== Phase 4: Secondary Attribute Breaks ===")
+        route_analysis = apply_secondary_attribute_breaks(
+            route_analysis,
+            x_column,
+            second_attribute_columns,
+            log_callback=log_callback,
+        )
     
-    # Phase 4: Secondary preprocessing (optional)
+    # Phase 5: Secondary preprocessing (optional)
     if preprocessing_config.secondary_method:
         if log_callback:
-            log_callback("=== Phase 4: Secondary Preprocessing (Postprocessing) ===")
+            log_callback("=== Phase 5: Secondary Preprocessing (Postprocessing) ===")
         route_analysis, secondary_result = apply_preprocessing_phase(
             route_analysis,
             preprocessing_config.secondary_method,
@@ -549,6 +652,10 @@ def process_route_with_preprocessing(
             log_callback
         )
         if secondary_result:
+            secondary_result.preprocessing_metadata = {
+                **secondary_result.preprocessing_metadata,
+                'phase_name': 'secondary',
+            }
             preprocessing_results.append(secondary_result)
     
     return route_analysis, preprocessing_results

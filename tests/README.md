@@ -21,12 +21,44 @@ tests/
 
 ## Running Tests
 
-## Regression Gate (Primary CI/Quality Signal)
+## Recommended Test Lanes
 
-Run this first after setup (it should be green before sharing results/changes):
+Use the lightest lane that answers the question you have:
+
+### Smoke Suite (default local workflow)
+
+Fast local gate for active development. Excludes regression and performance suites.
+
+```bash
+python run_tests.py --smoke
+```
+
+Equivalent pytest command:
+
+```bash
+python -m pytest tests/ -m "not regression and not performance"
+```
+
+### Regression Gate (primary branch quality signal)
+
+Run this before sharing results or merging behavior changes:
+
+```bash
+python run_tests.py --regression
+```
+
+Equivalent pytest command:
 
 ```bash
 python -m pytest tests/regression -q
+```
+
+### Full Suite
+
+Runs the full suite except performance benchmarks:
+
+```bash
+python run_tests.py --full
 ```
 
 ### Prerequisites
@@ -40,8 +72,17 @@ pip install -r requirements.txt
 ### Quick Start
 
 ```bash
-# Run all tests except performance benchmarks
-python run_tests.py --all
+# Default fast local run
+python run_tests.py
+
+# Explicit fast local run
+python run_tests.py --smoke
+
+# Regression gate
+python run_tests.py --regression
+
+# Full suite except performance
+python run_tests.py --full
 
 # Run specific test categories
 python run_tests.py --unit
@@ -61,8 +102,14 @@ python run_tests.py --pattern "test_validate"
 ### Using pytest directly
 
 ```bash
-# All tests
+# Default root run uses pytest.ini defaults
 python -m pytest
+
+# Full suite except performance
+python -m pytest tests/ -m "not performance"
+
+# Fast local suite
+python -m pytest tests/ -m "not regression and not performance"
 
 # Unit tests only
 python -m pytest -m unit tests/unit/
@@ -105,17 +152,23 @@ Test component interactions and end-to-end workflows:
 
 ### Regression Tests (`tests/regression/`)
 
-Regression tests are the primary quality gate for this repo:
+Regression tests are the primary branch-quality gate for this repo:
 
-- Complete workflow regression across method/dataset combinations
-- CLI workflow regression and GUI/CLI structure equivalence
+- Complete workflow regression across representative GUI/controller cases
+- Full CLI workflow regression across the complete method/dataset matrix
 - Preprocessing workflow regression
 - PELT regression coverage
+
+Notes:
+
+- The CLI regression suite is the exhaustive matrix.
+- The GUI/controller regression suite is intentionally smaller and representative.
+- The CLI/GUI structure-equivalence test is opt-in and only runs when persisted artifacts are enabled.
 
 Primary command:
 
 ```bash
-python -m pytest tests/regression -q
+python run_tests.py --regression
 ```
 
 See `tests/regression/README.md` for the detailed regression matrix and artifact layout.
@@ -206,7 +259,7 @@ The test suite is designed to run in CI/CD environments:
 - name: Run Tests
   run: |
     pip install -r requirements.txt
-        python -m pytest tests/regression -q
+        python run_tests.py --regression
 ```
 
 ## Troubleshooting
@@ -215,8 +268,25 @@ The test suite is designed to run in CI/CD environments:
 
 1. **Import errors**: Ensure `src` directory is in Python path
 2. **Missing dependencies**: Install `requirements.txt`
-3. **Slow tests**: Use `python -m pytest -m "not slow"` to skip slow/performance tests
+3. **Slow tests**: Use `python run_tests.py --smoke` for the normal local lane, or `python -m pytest -m "not slow and not regression"`
 4. **GUI test issues**: Use headless mode: `export DISPLAY=:99` (Linux)
+
+### Regression Artifacts
+
+Regression tests now default to isolated `tmp_path` outputs so stale files do not affect later runs.
+
+To keep JSON/Excel artifacts under `tests/regression/outputs/` for manual inspection, enable:
+
+```bash
+HST_KEEP_REGRESSION_ARTIFACTS=1
+```
+
+On Windows PowerShell:
+
+```powershell
+$env:HST_KEEP_REGRESSION_ARTIFACTS = "1"
+python run_tests.py --regression
+```
 
 ### Debug Mode
 

@@ -37,6 +37,7 @@ import pytest
 
 import cli
 from run_spec import build_run_spec
+from tests.regression.conftest import persist_regression_artifact
 
 
 def _load_regression_template() -> Dict[str, Any]:
@@ -205,11 +206,9 @@ def test_preprocessing_complete_workflow(
     assert output_json.exists(), f"Expected CLI to write results JSON: {output_json}"
     json_data = json.loads(output_json.read_text(encoding="utf-8"))
     
-    # Persist results for inspection
-    persistent_dir = Path(__file__).parent / "outputs" / "json"
-    persistent_dir.mkdir(parents=True, exist_ok=True)
-    persistent_json = persistent_dir / f"preprocessing_{preprocessing_action}_{dataset}.json"
-    shutil.copy2(output_json, persistent_json)
+    # Persist artifacts only for explicit inspection runs.
+    persistent_json = Path(__file__).parent / "outputs" / "json" / f"preprocessing_{preprocessing_action}_{dataset}.json"
+    persist_regression_artifact(output_json, persistent_json)
     
     # Validation
     validate_json_structure(json_data, method_key)
@@ -269,11 +268,9 @@ def test_no_preprocessing_baseline(test_parameters, tmp_path: Path) -> None:
     assert output_json.exists()
     json_data = json.loads(output_json.read_text(encoding="utf-8"))
     
-    # Persist baseline results
-    persistent_dir = Path(__file__).parent / "outputs" / "json"
-    persistent_dir.mkdir(parents=True, exist_ok=True)
-    persistent_json = persistent_dir / "preprocessing_baseline_no_preprocessing.json"
-    shutil.copy2(output_json, persistent_json)
+    # Persist artifacts only for explicit inspection runs.
+    persistent_json = Path(__file__).parent / "outputs" / "json" / "preprocessing_baseline_no_preprocessing.json"
+    persist_regression_artifact(output_json, persistent_json)
     
     # Validate basic structure (no preprocessing metadata expected)
     validate_json_structure(json_data, method_key)

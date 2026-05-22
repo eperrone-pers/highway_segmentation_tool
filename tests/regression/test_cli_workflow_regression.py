@@ -26,6 +26,7 @@ from tests.regression.regression_matrix import (
     get_dataset_config,
     get_methods_and_datasets_from_template,
 )
+from tests.regression.conftest import persist_regression_artifact
 
 METHODS_TO_TEST, DATASETS_TO_TEST = get_methods_and_datasets_from_template()
 
@@ -115,12 +116,9 @@ def test_cli_complete_workflow_matches_schema(method_key: str, dataset: str, tes
     assert output_json.exists(), f"Expected CLI to write results JSON: {output_json}"
     json_data = json.loads(output_json.read_text(encoding="utf-8"))
 
-    # Persist results for inspection alongside GUI regression artifacts, but with a distinct filename.
-    # (Do NOT persist the run spec into outputs/json/ because other regression checks glob *.json there.)
-    persistent_dir = Path(__file__).parent / "outputs" / "json"
-    persistent_dir.mkdir(parents=True, exist_ok=True)
-    persistent_json = persistent_dir / f"cli_regression_{method_key}_{dataset}.json"
-    shutil.copy2(output_json, persistent_json)
+    # Persist artifacts only for explicit inspection runs.
+    persistent_json = Path(__file__).parent / "outputs" / "json" / f"cli_regression_{method_key}_{dataset}.json"
+    persist_regression_artifact(output_json, persistent_json)
 
     # Keep the same validation semantics as the existing regression suite.
     validate_json_structure(json_data, method_key)

@@ -410,6 +410,10 @@ def create_processed_route_analysis(
     """
     # Import here to avoid circular dependency
     from data_loader import RouteAnalysis
+
+    route_start = float(modified_df[x_column].min())
+    route_end = float(modified_df[x_column].max())
+    gap_total_length = float(sum(end - start for start, end in (original.gap_segments or [])))
     
     return RouteAnalysis(
         route_id=original.route_id,
@@ -425,7 +429,14 @@ def create_processed_route_analysis(
         },
         route_stats={
             **original.route_stats,
+            'raw_points': len(modified_df),
             'total_points': len(modified_df),
+            'valid_points': len(modified_df),
+            'route_start': route_start,
+            'route_end': route_end,
+            'total_length': route_end - route_start,
+            'gap_total_length': gap_total_length,
+            'valid_length': (route_end - route_start) - gap_total_length,
         },
         must_break_columns_used=original.must_break_columns_used,
         attribute_breakpoints=original.attribute_breakpoints,

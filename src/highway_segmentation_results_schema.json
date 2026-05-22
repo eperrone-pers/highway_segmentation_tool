@@ -468,7 +468,7 @@
               "secondary_attribute_break_analysis": {
                 "type": "object",
                 "title": "Secondary Attribute-Based Must-Break Analysis (Optional)",
-                "description": "Optional metadata describing mandatory breakpoints caused by configured secondary must-break columns. Applied in the same phase as primary breaks but tracked separately for reporting.",
+                "description": "Optional metadata describing mandatory breakpoints caused by configured secondary must-break columns. Applied after primary preprocessing and tracked separately for reporting.",
                 "properties": {
                   "columns_used": {
                     "type": "array",

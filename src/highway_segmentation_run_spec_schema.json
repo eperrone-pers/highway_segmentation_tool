@@ -83,13 +83,13 @@
         "must_break_columns": {
           "type": ["array", "null"],
           "items": { "type": "string", "minLength": 1 },
-          "description": "Optional list of primary attribute columns that force a mandatory breakpoint when their value changes. Applied during gap analysis phase. If null/omitted, no primary attribute must-breaks are applied."
+          "description": "Optional list of primary attribute columns that force a mandatory breakpoint when their value changes. Applied after gap analysis and before primary preprocessing. If null/omitted, no primary attribute must-breaks are applied."
         },
 
         "secondary_break_columns": {
           "type": ["array", "null"],
           "items": { "type": "string", "minLength": 1 },
-          "description": "Optional list of secondary attribute columns that force a mandatory breakpoint when their value changes. Applied during gap analysis phase (same as primary, just tracked separately for reporting). If null/omitted, no secondary attribute must-breaks are applied."
+          "description": "Optional list of secondary attribute columns that force a mandatory breakpoint when their value changes. Applied after primary preprocessing and before secondary preprocessing, and tracked separately for reporting. If null/omitted, no secondary attribute must-breaks are applied."
         }
       }
     },
@@ -140,7 +140,7 @@
         },
 
         "primary_method": {
-          "description": "Optional primary preprocessing method to apply after gap analysis and first attribute breaks. This is the most commonly used preprocessing phase.",
+          "description": "Optional primary preprocessing method to apply after gap analysis and primary attribute breaks. This is the most commonly used preprocessing phase.",
           "anyOf": [
             {"type": "string", "minLength": 1},
             {"type": "null"}
@@ -155,7 +155,7 @@
         },
 
         "secondary_method": {
-          "description": "Optional secondary preprocessing method to apply after second attribute breaks. Used for multi-stage preprocessing workflows.",
+          "description": "Optional secondary preprocessing method to apply after secondary attribute breaks. Used for multi-stage preprocessing workflows.",
           "anyOf": [
             {"type": "string", "minLength": 1},
             {"type": "null"}

@@ -13,9 +13,13 @@ import json
 import tempfile
 from pathlib import Path
 from unittest.mock import Mock, patch
+from types import SimpleNamespace
+
+import pandas as pd
 
 from cli_runner import (
     load_and_resolve_run_spec,
+    run_analysis_from_spec_file,
     validate_run_spec,
     RunSpecError,
     ResolvedRunSpec
@@ -402,6 +406,77 @@ class TestErrorHandling:
         
         with pytest.raises(RunSpecError, match="primary_parameters must be an object"):
             load_and_resolve_run_spec(spec_path, validate=False)  # Skip schema validation to test our validation
+
+
+class TestCliExportSourceData:
+    """Test CLI export uses original route data for segment statistics."""
+
+    def test_export_uses_original_route_data_after_preprocessing(self, tmp_path):
+        """Test exporter receives source CSV rows, not the preprocessed subset."""
+        source_df = pd.DataFrame({
+            "route": ["R1", "R1", "R1", "R1"],
+            "X": [0.0, 1.0, 2.0, 3.0],
+            "Y": [10.0, 20.0, 999.0, 30.0],
+        })
+        data_path = tmp_path / "input.csv"
+        data_path.write_text(source_df.to_csv(index=False), encoding="utf-8")
+
+        spec = ResolvedRunSpec(
+            spec_path=tmp_path / "spec.json",
+            spec_version="1.0.0",
+            data_file_path=data_path,
+            x_column="X",
+            y_column="Y",
+            gap_threshold=0.5,
+            route_column="route",
+            selected_routes=None,
+            must_break_columns=None,
+            secondary_break_columns=None,
+            method_key="single",
+            method_parameters={},
+            preprocessing_config=PreprocessingRunConfig(
+                enabled=True,
+                primary_method="tukey_fences",
+                primary_parameters={"action": "remove", "k_factor": 1.5},
+            ),
+            output_json_path=tmp_path / "results.json",
+            overwrite=True,
+        )
+
+        processed_df = source_df.drop(index=2).reset_index(drop=True)
+        processed_route_analysis = SimpleNamespace(route_data=processed_df)
+        captured = {}
+
+        class DummyMethod:
+            def run_analysis(self, *args, **kwargs):
+                return SimpleNamespace(
+                    route_id="R1",
+                    all_solutions=[],
+                    optimization_stats={},
+                    best_solution={},
+                    mandatory_breakpoints=[],
+                    data_summary={},
+                )
+
+        class DummyResultsManager:
+            def save_analysis_results(self, results, output_path, **kwargs):
+                captured["results"] = results
+                captured["output_path"] = output_path
+                captured.update(kwargs)
+                return output_path
+
+        with patch("cli_runner.load_and_resolve_run_spec", return_value=spec), \
+             patch("cli_runner.process_route_with_preprocessing", return_value=(processed_route_analysis, [])), \
+             patch("cli_runner.resolve_method_class", return_value=DummyMethod), \
+             patch("cli_runner.ExtensibleJsonResultsManager", return_value=DummyResultsManager()):
+            output_path = run_analysis_from_spec_file(spec.spec_path, validate_spec=False)
+
+        assert output_path == str(spec.output_json_path)
+        exported_route_df = captured["original_data_by_route"]["R1"]
+
+        assert exported_route_df["Y"].tolist() == source_df["Y"].tolist()
+        assert len(exported_route_df) == len(source_df)
+        assert len(processed_route_analysis.route_data) == 3
 
 
 if __name__ == "__main__":

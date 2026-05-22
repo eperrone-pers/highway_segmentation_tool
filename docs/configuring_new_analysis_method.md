@@ -1323,9 +1323,9 @@ class <NewMethodClass>(AnalysisMethodBase):
 
 This repo already has a regression-testing framework that exercises methods end-to-end via:
 
-1. **GUI / production controller path** (uses `OptimizationController` + consolidated save)
+1. **GUI / production controller path** (uses `OptimizationController` + consolidated save on a representative subset)
 2. **CLI run-spec path** (uses `cli.main([...])` + `run_spec` + `cli_runner`)
-3. **Structure parity check** (ensures CLI and GUI JSON outputs have the same nested key/type shape)
+3. **Optional structure parity check** (ensures CLI and GUI JSON outputs have the same nested key/type shape when persisted artifacts are enabled)
 
 The key design goal is:
 
@@ -1377,6 +1377,11 @@ This test:
 - Writes results using `ExtensibleJsonResultsManager`
 - Validates output structure and schema compliance
 
+Notes:
+
+- The GUI regression suite is intentionally a representative subset, not the exhaustive matrix.
+- The CLI regression suite is the exhaustive method x dataset coverage.
+
 When your method is included in the template (see C.1), it will be picked up automatically.
 
 ### C.3 CLI regression test (run-spec path)
@@ -1390,7 +1395,8 @@ This test:
 - Builds a run-spec from `tests/regression/test_parameters_template.json`
 - Calls `cli.main(["run", "--spec", ...])` (no subprocess)
 - Validates the output JSON against the schema
-- Persists artifacts under `tests/regression/outputs/json/` with a `cli_` filename prefix
+- Uses isolated temporary outputs by default
+- Persists artifacts under `tests/regression/outputs/json/` with a `cli_` filename prefix only when `HST_KEEP_REGRESSION_ARTIFACTS=1`
 
 When your method is included in the template (see C.1), it will be picked up automatically.
 
@@ -1403,14 +1409,27 @@ There is an additional regression check to ensure the CLI and GUI results are st
 Notes:
 
 - It compares **shape only** (keys/types), not values.
-- The filename is prefixed with `zz_` so it runs after the two suites that generate artifacts.
-  - This matters because regression outputs are cleaned once per pytest session.
+- It is skipped unless `HST_KEEP_REGRESSION_ARTIFACTS=1` is enabled, because it compares persisted GUI/CLI outputs.
+- The filename is prefixed with `zz_` so it runs after the two suites that generate persisted artifacts.
 
-### C.5 One command to validate everything together
+### C.5 Recommended commands
 
-Because regression outputs are cleaned once per pytest session, run these in a *single* pytest invocation:
+For the normal branch-quality gate, run:
 
 ```powershell
+& .venv\Scripts\python.exe run_tests.py --regression
+```
+
+If you are actively developing a method and want the faster local lane first, run:
+
+```powershell
+& .venv\Scripts\python.exe run_tests.py --smoke
+```
+
+If you specifically need the persisted-artifact parity check, enable artifact retention and run the regression suite in a single invocation:
+
+```powershell
+$env:HST_KEEP_REGRESSION_ARTIFACTS = "1"
 & .venv\Scripts\python.exe -m pytest -q tests\regression\test_complete_workflow_regression.py tests\regression\test_cli_workflow_regression.py tests\regression\test_zz_cli_gui_structure_equivalence.py
 ```
 
@@ -1432,14 +1451,15 @@ If your method fails regression tests, typical causes are:
   - This usually means the CLI and GUI pipelines are feeding different-shaped solution dicts into the results writer.
   - Fix: ensure both pathways provide solutions with consistent fields (and rely on the shared JSON writer to build derived sections like `segmentation` and `segment_details`).
 
-- **Windows file locking during cleanup**
-  - Excel/OneDrive can lock files under `tests/regression/outputs/excel`.
+- **Windows file locking during persisted-artifact runs**
+  - Excel/OneDrive can lock files under `tests/regression/outputs/excel` when `HST_KEEP_REGRESSION_ARTIFACTS=1` is enabled.
   - Fix: close any open spreadsheets and rerun.
 
 ### C.7 Optional: validate regression artifacts after a run
 
-You can validate all JSON outputs under `tests/regression/outputs/json` with:
+You can validate all JSON outputs under `tests/regression/outputs/json` after a persisted-artifact run with:
 
 ```powershell
+$env:HST_KEEP_REGRESSION_ARTIFACTS = "1"
 & .venv\Scripts\python.exe tests\regression\validate_regression_outputs.py
 ```

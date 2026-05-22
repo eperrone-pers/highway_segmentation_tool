@@ -10,6 +10,7 @@ from tests.regression.regression_matrix import (
     get_methods_and_datasets_from_template,
     get_result_filename,
 )
+from tests.regression.conftest import should_persist_regression_artifacts
 
 METHODS_TO_TEST, DATASETS_TO_TEST = get_methods_and_datasets_from_template()
 
@@ -141,6 +142,12 @@ def test_cli_vs_gui_results_have_same_structure() -> None:
     This test intentionally ignores *values* (timestamps, runtime, stochastic GA
     results, counts), and compares only the nested key/type layout.
     """
+    if not should_persist_regression_artifacts():
+        pytest.skip(
+            "GUI/CLI artifact parity runs only when HST_KEEP_REGRESSION_ARTIFACTS=1. "
+            "Default regression runs stay self-contained and do not rely on shared outputs."
+        )
+
     outputs_json_dir = Path(__file__).parent / "outputs" / "json"
 
     found_pairs = 0
