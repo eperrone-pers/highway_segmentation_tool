@@ -176,43 +176,6 @@ class DataModificationContext:
         # Modify dataframe
         self._df.loc[mask, self._y_column] = new_y_value
     
-    def cap_y_value(self, x_value: float, bound_value: float, 
-                    bound_type: str) -> None:
-        """
-        Cap Y value to a boundary - automatically logs with descriptive reason.
-        
-        Convenience method for capping outliers to upper/lower bounds.
-        
-        Args:
-            x_value: X-coordinate of point to cap
-            bound_value: The boundary value to cap to
-            bound_type: "upper" or "lower"
-        """
-        reason = f"capped to {bound_type} fence ({bound_value:.3f})"
-        self.modify_y_value(
-            x_value, 
-            bound_value, 
-            reason=reason, 
-            modification_type="y_value_capped"
-        )
-    
-    def interpolate_y_value(self, x_value: float, interpolated_value: float) -> None:
-        """
-        Replace Y value with interpolated value - automatically logs.
-        
-        Convenience method for interpolation operations.
-        
-        Args:
-            x_value: X-coordinate of point to interpolate
-            interpolated_value: New interpolated Y value
-        """
-        self.modify_y_value(
-            x_value, 
-            interpolated_value, 
-            reason="interpolated from neighbors", 
-            modification_type="point_interpolated"
-        )
-    
     def get_modified_data(self) -> pd.DataFrame:
         """
         Return modified dataframe.

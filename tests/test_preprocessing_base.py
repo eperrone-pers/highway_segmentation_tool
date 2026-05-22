@@ -149,8 +149,9 @@ class TestDataModificationContext:
             context.modify_y_value(99.0, 100.0)
     
     def test_cap_y_value_upper(self, context):
-        """Test capping to upper bound."""
-        context.cap_y_value(5.0, 320.0, "upper")
+        """Test capping to upper bound using modify_y_value."""
+        context.modify_y_value(5.0, 320.0, reason="capped to upper fence (320.0)", 
+                               modification_type="y_value_capped")
         
         # Check dataframe modified
         modified_df = context.get_modified_data()
@@ -167,8 +168,9 @@ class TestDataModificationContext:
         assert "upper fence" in log[0].reason
     
     def test_cap_y_value_lower(self, context):
-        """Test capping to lower bound."""
-        context.cap_y_value(0.0, 110.0, "lower")
+        """Test capping to lower bound using modify_y_value."""
+        context.modify_y_value(0.0, 110.0, reason="capped to lower fence (110.0)",
+                               modification_type="y_value_capped")
         
         # Check modification logged
         log = context.get_modification_log()
@@ -176,8 +178,9 @@ class TestDataModificationContext:
         assert "lower fence" in log[0].reason
     
     def test_interpolate_y_value(self, context):
-        """Test interpolated value replacement."""
-        context.interpolate_y_value(2.0, 175.0)
+        """Test interpolated value replacement using modify_y_value."""
+        context.modify_y_value(2.0, 175.0, reason="interpolated from neighbors",
+                               modification_type="point_interpolated")
         
         # Check dataframe modified
         modified_df = context.get_modified_data()
@@ -197,7 +200,8 @@ class TestDataModificationContext:
         """Test multiple modifications accumulate in log."""
         context.remove_point(0.0, reason="first removal")
         context.modify_y_value(2.0, 225.0, reason="adjustment")
-        context.cap_y_value(5.0, 320.0, "upper")
+        context.modify_y_value(5.0, 320.0, reason="capped to upper fence",
+                               modification_type="y_value_capped")
         
         # Check all modifications logged
         log = context.get_modification_log()
@@ -215,7 +219,7 @@ class TestDataModificationContext:
         # Make multiple modifications
         context.remove_point(0.0)
         context.modify_y_value(2.0, 225.0)
-        context.cap_y_value(5.0, 320.0, "upper")
+        context.modify_y_value(5.0, 320.0, modification_type="y_value_capped")
         
         # Original should be unchanged
         current_original = context.get_original_data()
@@ -333,7 +337,8 @@ class TestIntegrationScenarios:
         ctx.remove_point(outlier_x, reason="outlier beyond 3*IQR")
         
         # Simulate capping another high value
-        ctx.cap_y_value(5.0, 320.0, "upper")
+        ctx.modify_y_value(5.0, 320.0, reason="capped to upper fence",
+                          modification_type="y_value_capped")
         
         # Get results
         modified_df = ctx.get_modified_data()

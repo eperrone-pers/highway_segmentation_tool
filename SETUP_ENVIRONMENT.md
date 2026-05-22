@@ -1,4 +1,4 @@
-# Highway Segmentation GA - Environment Setup
+# Highway Segmentation Tool - Environment Setup
 
 ## Quick Setup Instructions
 
@@ -8,8 +8,8 @@
 # Create virtual environment
 python -m venv .venv
 
-# Activate virtual environment (Windows)
-.venv\Scripts\activate
+# Activate virtual environment (Windows PowerShell)
+.\.venv\Scripts\Activate.ps1
 
 # Activate virtual environment (Mac/Linux)  
 source .venv/bin/activate
@@ -54,7 +54,7 @@ highway-seg run --spec path/to/your.run_spec.json
 
 ## Python Version Requirements
 
-- Python 3.8 or higher
+- Python 3.9 or higher
 - See `requirements.txt` for all package dependencies
 - See `pyproject.toml` for project configuration
 
@@ -71,20 +71,7 @@ highway-seg run --spec path/to/your.run_spec.json
 
 - Virtual environment excluded (recreate using instructions above)
 - User settings file (`src/app_settings.json`) is generated locally by the app and is git-ignored
-- Output directories (Results/, test_results/) are generated outputs and are git-ignored
+- The `Results/` directory contains generated outputs and is git-ignored
 - IDE settings (.vscode/) excluded (personal configuration)
-- The refactoring tracker/plans (refactoring/) are developer-only notes and are not required to run the tool
-
-## Regenerating the Delivery Zip
-
-From the project root:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\package_deliverable.ps1
-```
-
-Optional switches:
-
-- Include refactoring notes: `-IncludeRefactoring`
 
 Created: April 14, 2026

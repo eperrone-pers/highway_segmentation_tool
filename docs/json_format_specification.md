@@ -69,7 +69,7 @@ For the run spec format, see:
 | `pareto_points` length | 1 | 2+ |
 | `objective_values` length | 1 | 2+ |
 | Use case | Find one best solution | Explore trade-off solutions |
-| Method keys | `single`, `aashto_cda`, `constrained`, `constrained_deb` | `multi` |
+| Method keys | `single`, `aashto_cda`, `constrained`, `constrained_deb`, `pelt_segmentation` | `multi` |
 
 ### **Common Reading Tasks**
 
@@ -219,6 +219,7 @@ Notes:
 
 - `attribute_break_analysis` is optional and is only present when the run was configured with must-break columns.
 - `attribute_break_analysis.breakpoints` represent mandatory breakpoint locations caused by attribute value changes.
+- `secondary_attribute_break_analysis` may also be present when a second attribute-break pass is configured during preprocessing/postprocessing.
 
 **Processing Results** (*Unified Pareto Structure*):
 

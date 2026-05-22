@@ -179,7 +179,12 @@ class TukeyFencesPreprocessor(PreprocessingMethodBase):
                     
                     # Simple linear interpolation between neighbors
                     new_y = (y_values[prev_idx] + y_values[next_idx]) / 2
-                    ctx.interpolate_y_value(x_values[idx], new_y)
+                    ctx.modify_y_value(
+                        x_values[idx], 
+                        new_y,
+                        reason="interpolated from neighbors",
+                        modification_type="point_interpolated"
+                    )
                     total_outlier_count += 1
         
         # Get modified data and complete log from context

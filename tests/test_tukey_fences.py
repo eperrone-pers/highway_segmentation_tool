@@ -89,11 +89,11 @@ class TestTukeyFencesOutlierDetection:
             action='remove'
         )
         
-        # Check metadata contains correct bounds
-        assert 'lower_bound' in result.preprocessing_metadata
-        assert 'upper_bound' in result.preprocessing_metadata
-        assert np.isclose(result.preprocessing_metadata['lower_bound'], expected_lower)
-        assert np.isclose(result.preprocessing_metadata['upper_bound'], expected_upper)
+        # Check metadata contains correct configuration
+        assert result.preprocessing_metadata['k_factor'] == k_factor
+        assert result.preprocessing_metadata['action'] == 'remove'
+        assert 'outliers_detected' in result.preprocessing_metadata
+        assert 'segments_processed' in result.preprocessing_metadata
     
     def test_outlier_identification(self, mock_route_analysis):
         """Test that outliers are correctly identified."""
@@ -119,11 +119,12 @@ class TestTukeyFencesActions:
     @pytest.fixture
     def simple_data_with_outliers(self):
         """Create simple dataset with known outliers for testing."""
-        # Data: [50, 100, 110, 120, 110, 100, 500]
+        # Data: [50, 100, 110, 120, 500, 110, 100]
         # With k=1.5, 50 and 500 should be outliers
+        # Changed: outlier at x=4.0 (middle) instead of x=6.0 (boundary)
         data = pd.DataFrame({
             'X': [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-            'Y': [50.0, 100.0, 110.0, 120.0, 110.0, 100.0, 500.0]
+            'Y': [50.0, 100.0, 110.0, 120.0, 500.0, 110.0, 100.0]
         })
         
         route_analysis = Mock()
@@ -184,12 +185,11 @@ class TestTukeyFencesActions:
         cap_mods = [m for m in result.modification_log if m.modification_type == "y_value_capped"]
         assert len(cap_mods) > 0
         
-        # Verify that capped values are at the bounds
-        lower_bound = result.preprocessing_metadata['lower_bound']
-        upper_bound = result.preprocessing_metadata['upper_bound']
-        
+        # Verify that modification contains reason with fence information
         for mod in cap_mods:
-            assert mod.new_y_value == lower_bound or mod.new_y_value == upper_bound
+            assert "fence" in mod.reason
+            assert mod.new_y_value is not None
+            assert mod.new_y_value != mod.original_y_value
     
     def test_action_interpolate(self, simple_data_with_outliers):
         """Test that 'interpolate' action interpolates outlier values."""

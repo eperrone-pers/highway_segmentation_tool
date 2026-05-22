@@ -21,24 +21,27 @@
 
 ## Overview
 
-The Highway Segmentation Analysis application provides advanced statistical and optimization-based methods for dividing highway data into optimal segments for pavement analysis. The system offers four distinct analysis approaches, from traditional genetic algorithms to statistical change point detection methods.
+The Highway Segmentation Analysis application provides advanced statistical and optimization-based methods for dividing highway data into optimal segments for pavement analysis. The system offers six analysis methods, spanning traditional genetic algorithms, constrained optimization variants, and deterministic change point detection.
 
 ### Key Features
 
-- **🧬 Multiple Analysis Methods**: Genetic algorithms (single/multi-objective, constrained) and statistical AASHTO CDA analysis
+- **🧬 Multiple Analysis Methods**: Single-objective GA, NSGA-II, constrained GA variants, AASHTO CDA, and PELT segmentation
+- **🧹 Preprocessing Framework**: Optional data cleaning and outlier detection before analysis
 - **📊 Smart Data Handling**: Automatic gap detection with mandatory breakpoint insertion
-- **🎯 Flexible Optimization**: Configure parameters for your specific analysis requirements  
+- **🎯 Flexible Attribute Breaks**: Early breaks for preprocessing segments, late breaks for analysis segments
 - **📈 Interactive Visualization**: Click-to-explore results with detailed segment information
 - **💾 Comprehensive Export**: JSON and Excel outputs with complete analysis metadata
 - **⚙️ Persistent Settings**: Your preferences are automatically saved between sessions
-- **🔧 Extensible Architecture**: Easy addition of new analysis methods and parameters
+- **🔧 Extensible Architecture**: Easy addition of new analysis methods, preprocessing methods, and parameters
 
 ### Currently Supported Analysis Approaches
 
 1. **Single-Objective Genetic Algorithm**: Traditional optimization minimizing segment variation
 2. **Multi-Objective NSGA-II**: Pareto front exploration of quality vs. segment length tradeoffs
-3. **Constrained Optimization**: Target-length segmentation with penalty enforcement
-4. **AASHTO Enhanced CDA**: Statistical change point detection (citation: [CITATIONS.md](CITATIONS.md))
+3. **Constrained Single-Objective**: Target-length segmentation with penalty enforcement
+4. **Constrained GA (Deb Feasibility)**: Constraint-domination approach using Deb feasibility rules instead of penalty weights
+5. **AASHTO Enhanced CDA**: Statistical change point detection (citation: [CITATIONS.md](CITATIONS.md))
+6. **PELT Segmentation**: Deterministic change point detection using the PELT algorithm
 
 ---
 
@@ -109,16 +112,26 @@ This tool works with any numeric pavement condition index:
 
 ### Quick Start
 
+**For a basic analysis without preprocessing:**
+
 1. In **📁 File Operations**, click **Browse...** next to **Data File** and select a CSV
 2. Select **X Column (Distance)** and **Y Column (Data Values)** (these are not auto-selected)
 3. Optional (multi-route files): pick **Route Column (Optional)** then click **Filter** to select which routes to process
-4. Set **Gap Threshold (miles)** (controls where mandatory breakpoints are inserted at data gaps)
-5. Under **Results File (Required):** type a base name and click **Browse...** to choose an output folder
-6. In **🔬 Optimization Method**, choose a method and adjust the method-specific parameters shown below it
-7. Click **🚀 Start Optimization** and monitor progress in the **Optimization Log** tab
-8. When complete, the enhanced visualization window will open automatically
+4. In **Step 2: Gap Analysis**, set **Gap Threshold** (controls where mandatory breakpoints are inserted at data gaps)
+5. Leave preprocessing steps (1, 4, 6) set to "None" (collapsed panels)
+6. In **Step 7: Analysis Method**, select your method and configure parameters (expand the panel)
+7. Under **Results File (Required):** type a base name and click **Browse...** to choose an output folder
+8. Click **🚀 Start Optimization** and monitor progress in the **Optimization Log** tab
+9. When complete, the enhanced visualization window will open automatically
 
-- If you want to open a different results file later, use **📊 Load & Plot Results**
+**To use preprocessing or attribute breaks:**
+
+- See the [Processing Pipeline Overview](#processing-pipeline-overview) diagram and [Preprocessing Framework](#preprocessing-framework) section
+- Use **Step 3** for structural attribute breaks (pavement type, lanes) if you want preprocessing per structure type
+- Use **Step 4** to enable outlier detection or data cleaning
+- Use **Step 5** for administrative attribute breaks (county, district) for final segmentation
+
+**To load existing results:** Use **📊 Load & Plot Results**
 
 ---
 
@@ -126,9 +139,48 @@ This tool works with any numeric pavement condition index:
 
 The interface is split into a left configuration pane and a right execution/results pane.
 
+### Processing Pipeline Overview
+
+The left panel guides you through a **7-step pipeline** that prepares your data and runs analysis. Here's how data flows through the system:
+
+```mermaid
+flowchart TD
+    Start([Load CSV Data File]) --> Step1{Step 1: Pre-Gap<br/>Preprocessing<br/><i>optional</i>}
+    Step1 -->|Clean raw data<br/>if needed| Step2[Step 2: Gap Analysis<br/>Detect data gaps<br/>Create gap breakpoints]
+    
+    Step2 --> Step3{Step 3: Early Attribute<br/>Break Columns<br/><i>optional</i>}
+    Step3 -->|Structural boundaries<br/>Pavement type, lanes, etc.| Step4{Step 4: Primary<br/>Preprocessing<br/><i>optional</i>}
+    
+    Step4 -->|Clean data within<br/>each segment| Step5{Step 5: Late Attribute<br/>Break Columns<br/><i>optional</i>}
+    Step5 -->|Administrative boundaries<br/>County, district, etc.| Step6{Step 6: Postprocessing<br/><i>optional</i>}
+    
+    Step6 -->|Final preparation| Step7[Step 7: Analysis Method<br/>Find optimal segments<br/><b>required</b>]
+    
+    Step7 --> Results([Segmentation Results<br/>JSON + Visualization])
+    
+    style Start fill:#e1f5ff
+    style Step2 fill:#fff4e1
+    style Step7 fill:#fff4e1
+    style Results fill:#e1ffe1
+    style Step1 fill:#f0f0f0
+    style Step3 fill:#f0f0f0
+    style Step4 fill:#f0f0f0
+    style Step5 fill:#f0f0f0
+    style Step6 fill:#f0f0f0
+```
+
+**Key Concepts:**
+
+- **Optional Steps** (gray): Skip by selecting "None" - use when you don't need that processing stage
+- **Required Steps** (yellow): Must be configured - Gap Analysis and Analysis Method are always performed
+- **Early vs Late Attributes**: Early breaks define preprocessing segments (structural boundaries), late breaks define analysis segments (administrative boundaries)
+- **Data Flow**: Each step refines the data or adds constraints, leading to the final segmentation
+
 ### Left Panel - Configuration & Control
 
-#### 📁 **File Operations**
+The left panel follows the 7-step processing pipeline shown in the diagram above. Each step is described below.
+
+#### 📁 **File Operations** (Top Section)
 
 - **Data File / Browse...**: Select an input CSV. The app reads headers immediately and populates the column dropdowns.
 - **X Column (Distance)** and **Y Column (Data Values)**: You must select these explicitly for each new file.
@@ -137,24 +189,100 @@ The interface is split into a left configuration pane and a right execution/resu
   - Set to a column name to enable multi-route mode, then use **Filter** to pick which route IDs to process.
   - In multi-route mode, rows with missing route IDs (blank/empty) are excluded from analysis and this is logged.
     If all rows are missing/invalid for the selected route column, the run is blocked with an error.
-- **Gap Threshold (miles)**: Framework parameter used by all methods; gaps larger than this force mandatory breakpoints.
-- **Must-Break Columns (Optional)**: Select one or more additional input columns whose *value changes* must force a breakpoint.
-  - Example use cases: pavement type/class, lane count, functional class.
-  - These breaks are treated as **mandatory** (the analysis cannot span across a change).
-- **Reset to Defaults**: Resets parameters back to their defaults.
 - **Results File (Required)**:
   - Left field sets the base results filename.
-  - **Browse...** chooses the output folder (recommended). If you don’t choose a folder, results may save into the current working directory.
+  - **Browse...** chooses the output folder (recommended). If you don't choose a folder, results may save into the current working directory.
 
-#### 🔬 **Optimization Method**
+#### **7-Step Processing Pipeline** (Below File Operations)
 
-- **Optimization Method** dropdown: Select the method.
-- **Method Description**: Updates based on selection.
-- **Method Parameters**: The parameter widgets under the dropdown change by method. These values are saved into the output JSON as inputs.
+#### Step 1: Pre-Gap Preprocessing (optional)
 
-#### ⚙️ **Runtime & Caching**
+- **Panel Title**: "1. Pre-Gap Preprocessing (optional)"
+- **Control**: Collapsible panel with method selection dropdown
+- **Purpose**: Applied to raw data **before** gap detection (rare use case)
+- **When to use**: Data validation or initial cleaning before gap analysis
+- **Default**: "None" (collapsed)
+- **Available methods**: Currently none defined; reserved for future use
 
-- Contains runtime/caching options (for example, cache management). Use defaults unless you have a reason to tune.
+#### Step 2: Gap Analysis
+
+- **Panel Title**: "2. Gap Analysis - Gap Threshold (in x units)"
+- **Control**: Entry field for threshold value
+- **Purpose**: Framework parameter used by all methods; gaps larger than this force mandatory breakpoints
+- **What it does**: Gaps in data create natural segment boundaries that analysis methods must respect
+- **Typical values**: 0.05-0.15 miles for pavement data (see [Parameter Guidance](#pavement-specific-parameter-guidance))
+
+#### Step 3: Early Attribute Break Columns (optional)
+
+- **Panel Title**: "3. Early Attribute Break Columns (optional)"
+- **Control**: Summary label + **Select...** button opens multi-select dialog
+- **Purpose**: Value changes in selected columns create **mandatory breakpoints** applied **before primary preprocessing**
+- **When to use**: Structural boundaries where data should be preprocessed separately
+- **Examples**: `PAVEMENT_TYPE`, `FUNCTIONAL_CLASS`, `LANES`, `BASE_TYPE`
+- **Why "early"**: Ensures preprocessing operates within structurally homogeneous segments (e.g., don't compute outlier thresholds mixing asphalt and concrete data)
+- **Default**: None selected
+- **Display**: Shows "None selected" or "N selected" where N is the count
+
+#### Step 4: Primary Preprocessing (optional)
+
+- **Panel Title**: "4. Primary Preprocessing (optional)"
+- **Control**: Collapsible panel with method selection dropdown
+- **Purpose**: Applied **after gaps and early attribute breaks**, operates **within** segments defined by Steps 1-3
+- **When to use**: Clean data within each structural segment (outlier detection, smoothing, interpolation)
+- **Available methods**: Tukey Fences Outlier Detection
+- **Default**: "None" (collapsed)
+- **Parameters**: Each method has its own configurable parameters (shown when panel is expanded)
+- **How to configure**: Expand panel, select method from dropdown, configure parameters in grid
+
+#### Step 5: Late Attribute Break Columns (optional)
+
+- **Panel Title**: "5. Late Attribute Break Columns (optional)"
+- **Control**: Summary label + **Select...** button opens multi-select dialog
+- **Purpose**: Value changes in selected columns create **mandatory breakpoints** applied **after primary preprocessing**
+- **When to use**: Administrative/reporting boundaries (not statistical)
+- **Examples**: `COUNTY`, `DISTRICT`, `MAINTENANCE_ZONE`, `JURISDICTION`
+- **Why "late"**: These define analysis segment boundaries but don't affect preprocessing statistics
+- **Default**: None selected
+- **Display**: Shows "None" or "N selected" where N is the count
+
+#### Step 6: Postprocessing (optional)
+
+- **Panel Title**: "6. Postprocessing (optional)"
+- **Control**: Collapsible panel with method selection dropdown
+- **Purpose**: Applied **after all attribute breaks** for final data preparation before analysis
+- **When to use**: Rare; final transformations after segmentation is established
+- **Default**: "None" (collapsed)
+- **Available methods**: Currently none defined; reserved for future use
+
+#### Step 7: Analysis Method
+
+- **Panel Title**: "7. Analysis Method"
+- **Control**: Collapsible panel with method selection dropdown
+- **Purpose**: **Required** - Determines which analysis algorithm finds optimal segments
+- **Available methods**: Single-Objective GA, Multi-Objective NSGA-II, Constrained Single-Objective, Constrained GA (Deb Feasibility), AASHTO CDA, PELT Segmentation
+- **Default**: Expanded with first method selected
+- **Parameters**: Each method has its own configurable parameters (shown when panel is expanded)
+- **How to configure**: Expand panel (if collapsed), select method from dropdown, configure parameters in grid
+- **See**: [Analysis Methods](#analysis-methods) section for detailed descriptions
+
+#### **Early vs. Late Attribute Breaks - Key Distinction**
+
+The two-stage attribute break system serves different purposes:
+
+- **Early breaks** (Step 3) → **Preprocessing segments**: Sections with the same structural characteristics where it's statistically valid to compute outlier thresholds, apply smoothing, etc. This prevents mixing incompatible data types (e.g., asphalt vs. concrete have different normal value ranges).
+
+- **Late breaks** (Step 5) → **Analysis segments**: Administrative or reporting boundaries that define the final segments for optimization but don't affect how preprocessing statistics are computed.
+
+**Example configuration:**
+
+- **Early**: `PAVEMENT_TYPE`, `LANES` - structural attributes affecting data distribution
+- **Late**: `COUNTY`, `DISTRICT` - administrative attributes for reporting
+- **Result**: Preprocessing uses asphalt-specific statistics within asphalt sections, concrete-specific within concrete, but final segmentation also respects county boundaries
+
+#### ⚙️ **Other Settings** (Bottom Section)
+
+- **Reset to Defaults**: Button that resets all parameters back to their default values
+- **Runtime & Caching**: Expandable section with advanced options (use defaults unless you have specific needs)
 
 ### Right Panel - Execution & Results
 
@@ -179,7 +307,7 @@ When you load results (or when a run completes), the enhanced visualization wind
 - A **Route** selector for multi-route results
 - A segmentation plot (right pane)
 - A Pareto front plot (left pane) for multi-objective methods
-- A **Break Attributes Diagram** (optional): a compact lane view that shows the values of the selected must-break columns along the x-axis
+- A **Break Attributes Diagram** (optional): a compact lane view that shows the values of the selected attribute break columns (early and/or late) along the x-axis
 - **📊 Export to Excel** to export the loaded results
 
 ---
@@ -191,29 +319,62 @@ When you load results (or when a run completes), the enhanced visualization wind
 1. Select your input data: **Browse...** next to **Data File**
 2. Choose **X Column (Distance)** and **Y Column (Data Values)**
 3. Optional: for multi-route datasets, choose a **Route Column (Optional)** and click **Filter** to select routes
-4. Set **Gap Threshold (miles)**
-5. Choose where results will save:
+4. In **Step 2: Gap Analysis**, set **Gap Threshold** (controls where mandatory breakpoints are inserted at data gaps)
+5. Optional: Configure preprocessing and attribute breaks (see tasks below)
+6. Choose where results will save:
    - Enter a base name under **Results File (Required)**
    - Click **Browse...** to pick an output folder
-6. Select an **Optimization Method** and adjust its parameters
-7. Click **🚀 Start Optimization**
+7. In **Step 7: Analysis Method**, select your method and configure its parameters (expand the panel if collapsed)
+8. Click **🚀 Start Optimization**
    - If you click **⏹ Stop** before completion, the run may stop without saving a consolidated results file.
-   - If an output file already exists, you’ll be prompted to overwrite.
-8. After completion, review:
+   - If an output file already exists, you'll be prompted to overwrite.
+9. After completion, review:
    - **Results Files** tab (summary)
    - The enhanced visualization window (opens automatically)
    - Use **📊 Load & Plot Results** to reopen results later
+
+### To configure preprocessing
+
+1. In **Step 3: Early Attribute Break Columns**, click **Select...** if you want structural boundaries (e.g., `PAVEMENT_TYPE`, `LANES`)
+   - These create segments where preprocessing operates independently
+   - Skip if you don't need preprocessing or all data is structurally similar
+2. In **Step 4: Primary Preprocessing**, expand the panel and select a method (e.g., **Tukey Fences Outlier Detection**)
+   - Configure parameters (k_multiplier, action)
+   - This is where outlier detection/data cleaning happens
+3. See [Preprocessing Framework](#preprocessing-framework) for detailed guidance
+
+### To set up attribute breaks without preprocessing
+
+**For structural boundaries only (early attribute breaks):**
+
+1. In **Step 3: Early Attribute Break Columns**, click **Select...**
+2. Choose columns representing structural characteristics: `PAVEMENT_TYPE`, `FUNCTIONAL_CLASS`, `LANES`, etc.
+3. Leave **Step 4: Primary Preprocessing** set to "None"
+4. These breaks will force segmentation boundaries but won't modify data
+
+**For administrative boundaries only (late attribute breaks):**
+
+1. Leave **Step 3: Early Attribute Break Columns** as "None"
+2. Leave **Step 4: Primary Preprocessing** set to "None"
+3. In **Step 5: Late Attribute Break Columns**, click **Select...**
+4. Choose columns representing administrative boundaries: `COUNTY`, `DISTRICT`, `JURISDICTION`, etc.
+5. These breaks apply after any preprocessing (or immediately if no preprocessing) and define final analysis segment boundaries
+
+**For both types:**
+
+- Configure both Step 3 (early) and Step 5 (late) with appropriate columns
+- Early breaks affect preprocessing, late breaks only affect final segmentation
+- See [Early vs. Late Attribute Breaks](#early-vs-late-attribute-breaks---key-distinction) for the distinction
 
 ### To filter which routes are processed
 
 1. Set **Route Column (Optional)** to the column that contains route IDs
 2. Click **Filter**
 3. In the dialog, click routes to toggle selection, or type in the search box and use **Add Route**
-4. Click **OK** to apply (the UI will show “N of M selected”)
+4. Click **OK** to apply (the UI will show "N of M selected")
 
 - Tip: **Select All Routes** / **Clear All Routes** are convenient for large files.
 - In multi-route mode you must select at least one route.
-
 - Note: If the selected route column contains missing route IDs (blank/empty), those rows are excluded from analysis.
   If that excludes all rows, multi-route analysis cannot proceed.
 
@@ -229,6 +390,245 @@ When you load results (or when a run completes), the enhanced visualization wind
 1. Load results (either after a run, or via **📊 Load & Plot Results**)
 2. In the enhanced visualization window, click **📊 Export to Excel**
 3. Choose an output `.xlsx` file
+
+---
+
+## Preprocessing Framework
+
+The preprocessing framework provides optional data cleaning and outlier detection **before** analysis methods run. Preprocessing helps ensure that segmentation algorithms work with high-quality data by removing outliers, smoothing noise, or handling anomalies.
+
+### Why Preprocessing?
+
+**Problem**: Raw pavement condition data often contains:
+
+- **Outliers**: Equipment errors, sensor spikes, GPS positioning errors
+- **Noise**: Random measurement variation that doesn't represent true pavement condition
+- **Anomalies**: Bridge approaches, construction zones, temporary conditions
+
+**Solution**: Preprocessing methods detect and handle these issues **before** analysis, resulting in:
+
+- More reliable segmentation (algorithms aren't distracted by bad data)
+- Better segment homogeneity (outliers don't inflate variance)
+- Cleaner visualizations (easier to see real trends)
+
+**When to use preprocessing**:
+
+- ✅ Data collected from equipment prone to sensor errors
+- ✅ Known data quality issues (GPS drift, calibration problems)
+- ✅ Visual inspection shows obvious outliers or spikes
+- ✅ Agency requires outlier removal for analysis
+- ❌ Data is already clean and validated
+- ❌ You want to preserve all raw measurements (research/audit purposes)
+
+### Three Preprocessing Phases
+
+The framework provides three optional preprocessing phases:
+
+1. **Pre-Gap Preprocessing** (Step 1 - rare): Applied to raw data before gap detection
+   - Use case: Initial data validation or format conversion
+   - Currently: No methods defined (reserved for future use)
+
+2. **Primary Preprocessing** (Step 4 - most common): Applied after gaps and early attribute breaks
+   - Use case: Outlier detection, noise reduction, data cleaning
+   - Applied **within** segments defined by structural boundaries
+   - Available method: Tukey Fences Outlier Detection
+   - **This is the main preprocessing phase most users will configure**
+
+3. **Postprocessing** (Step 6 - rare): Applied after all attribute breaks
+   - Use case: Final transformations before analysis
+   - Currently: No methods defined (reserved for future use)
+
+### Early vs. Late Attribute Breaks for Preprocessing
+
+The two-stage attribute break system is crucial for proper preprocessing:
+
+**Early Attribute Breaks** (Step 3) → Define **preprocessing segments**:
+
+- Applied **before** primary preprocessing (Step 4)
+- Purpose: Create segments with similar structural characteristics
+- Examples: `PAVEMENT_TYPE`, `FUNCTIONAL_CLASS`, `LANES`, `BASE_TYPE`
+- **Why**: Ensures preprocessing statistics are computed separately for structurally different sections
+
+**Example**: If you have both asphalt and concrete sections:
+
+- Without early breaks: Outlier thresholds computed mixing asphalt (IRI ~80-120) and concrete (IRI ~60-90) data
+- With early breaks on `PAVEMENT_TYPE`: Separate outlier thresholds for asphalt sections and concrete sections
+- **Result**: More appropriate outlier detection for each pavement type
+
+**Late Attribute Breaks** (Step 5) → Define **analysis segments**:
+
+- Applied **after** primary preprocessing (Step 4)
+- Purpose: Administrative boundaries for final segmentation
+- Examples: `COUNTY`, `DISTRICT`, `MAINTENANCE_ZONE`, `JURISDICTION`
+- **Why**: These don't affect data distribution, so preprocessing doesn't need to respect them
+
+### Available Preprocessing Methods
+
+#### Tukey Fences Outlier Detection
+
+**Purpose**: Identifies and handles outliers using the interquartile range (IQR) method.
+
+**How it works**:
+
+1. Computes Q1 (25th percentile) and Q3 (75th percentile) for each segment
+2. Calculates IQR = Q3 - Q1
+3. Defines outlier bounds: [Q1 - k×IQR, Q3 + k×IQR]
+4. Points outside bounds are outliers
+
+**Parameters**:
+
+- **k (multiplier)**: Controls sensitivity
+  - k=1.5 (default): Standard outlier detection, moderately aggressive
+  - k=3.0: Very conservative, only extreme outliers
+  - k=1.0: Aggressive, more points flagged as outliers
+- **Action**: What to do with outliers
+  - **Remove**: Delete outlier points entirely
+  - **Cap**: Replace outlier values with the nearest fence value
+  - **Interpolate**: Replace with interpolated value from neighbors
+
+**When to use Tukey Fences**:
+
+- ✅ IQR-based detection appropriate for your data distribution
+- ✅ Want standard, well-understood statistical method
+- ✅ Data has clear outliers visible in plots
+- ✅ Moderate to high data density (interpolation needs neighbors)
+
+**Typical pavement parameters**:
+
+- **IRI data**: k=1.5, action=interpolate (preserve data points but fix values)
+- **PCI data**: k=1.5, action=cap (keep values within valid 0-100 range)
+- **Deflection data**: k=3.0, action=remove (be conservative with structural data)
+
+**Example configuration**:
+
+```text
+Step 3: Early Attribute Break Columns = ["PAVEMENT_TYPE"]
+Step 4: Primary Preprocessing = Tukey Fences
+  - k_multiplier = 1.5
+  - action = interpolate
+```
+
+**Result**: Outliers detected separately for asphalt vs. concrete sections, interpolated values replace outliers.
+
+### Configuring Preprocessing in the GUI
+
+**Basic setup (most common)**:
+
+1. **Leave Step 1 as "None"** (pre-gap preprocessing rarely needed)
+
+2. **Configure Step 3 - Early Attribute Breaks** (if needed for preprocessing):
+   - Click **Select...** button
+   - Choose structural columns: `PAVEMENT_TYPE`, `LANES`, `FUNCTIONAL_CLASS`, etc.
+   - These create segments where preprocessing will be applied independently
+
+3. **Configure Step 4 - Primary Preprocessing**:
+   - Expand the collapsible panel
+   - Select **Tukey Fences Outlier Detection** from dropdown
+   - Configure parameters (k_multiplier, action)
+   - Panel shows parameter grid when expanded
+
+4. **Leave Step 6 as "None"** (postprocessing rarely needed)
+
+**To skip preprocessing entirely**:
+
+- Leave Steps 1, 4, and 6 all set to "None" (default)
+- The system runs without any preprocessing
+
+**To preview preprocessing effects**:
+
+- Run analysis with preprocessing enabled
+- Check the JSON results file for `preprocessing_results` section
+- Look for `modifications_applied` count and details
+- Visualization shows which points were modified (if available)
+
+### Preprocessing Scenarios for Pavement Data
+
+#### Scenario 1: Interstate IRI with sensor spikes
+
+**Problem**: Profiler data shows occasional extreme spikes (IRI > 400) due to sensor errors
+
+**Configuration**:
+
+- Step 3: Early breaks = ["PAVEMENT_TYPE"] (separate asphalt/concrete)
+- Step 4: Tukey Fences, k=1.5, action=interpolate
+- Step 5: Late breaks = ["COUNTY"] (administrative boundaries)
+
+**Result**: Spikes interpolated using nearby valid values, segmentation not distorted by bad data
+
+#### Scenario 2: Urban arterial PCI with mixed pavement types
+
+**Problem**: Manual PCI surveys have outliers, mixing asphalt and concrete sections
+
+**Configuration**:
+
+- Step 3: Early breaks = ["PAVEMENT_TYPE", "FUNC_CLASS"]
+- Step 4: Tukey Fences, k=1.5, action=cap (keep in 0-100 range)
+- Step 5: Late breaks = ["DISTRICT"]
+
+**Result**: Outliers capped appropriately for each pavement type, respecting valid PCI range
+
+#### Scenario 3: Clean research-grade data
+
+**Problem**: None - data already validated and clean
+
+**Configuration**:
+
+- Steps 1, 4, 6: All set to "None"
+- Step 3: Early breaks = [] (none)
+- Step 5: Late breaks = ["COUNTY"] if needed for reporting
+
+**Result**: No preprocessing applied, analysis uses raw data
+
+### Preprocessing Output and Verification
+
+**Results metadata**: The JSON output includes a `preprocessing_results` section for each route showing:
+
+- Method used (e.g., "tukey_fences")
+- Parameters applied (k_multiplier, action)
+- Number of modifications made
+- Details of each modification (x location, old value, new value, reason)
+
+**Verification checklist**:
+
+- ✅ Check modification count - is it reasonable? (< 5% of data typical)
+- ✅ Review modified locations - do they align with known data issues?
+- ✅ Compare results with/without preprocessing - significant difference?
+- ✅ Validate that early attribute breaks created appropriate segments
+
+**Common issues**:
+
+- ⚠️ Too many modifications (> 10% of data): k_multiplier may be too aggressive (increase k)
+- ⚠️ No modifications when expected: k_multiplier may be too conservative (decrease k)
+- ⚠️ Wrong sections grouped: Check early attribute break configuration
+
+### When NOT to Use Preprocessing
+
+**Research/audit scenarios**:
+
+- Published methodologies requiring raw data
+- Forensic analysis where data provenance is critical
+- Validation studies comparing with other tools
+- Legal/regulatory contexts requiring unmodified data
+
+**Alternative: Late attribute breaks only**:
+
+- If preprocessing isn't appropriate but you need attribute boundaries
+- Configure Step 5 (late breaks) but leave Step 4 as "None"
+- Result: Segmentation respects attributes without modifying data
+
+### Backward Compatibility
+
+**Old results files**: JSON files created before the preprocessing framework was added:
+
+- Do not contain preprocessing sections → interpreted as "no preprocessing was applied"
+- Visualization and Excel export handle these gracefully
+- All existing results remain valid and loadable
+
+**New results without preprocessing**: If you run with all preprocessing steps set to "None":
+
+- Results file documents "no preprocessing" explicitly
+- Functionally identical to old pre-framework results
+- Forward and backward compatible
 
 ---
 
@@ -557,21 +957,30 @@ This section provides step-by-step guidance for typical pavement engineering app
 **Recommended Approach**:
 
 1. **Method**: Use **Single-Objective GA** for clear, prioritized recommendations
-2. **Must-Break Columns**: Set to ["PAVEMENT_TYPE", "MAJOR_STRUCTURE"] to respect construction boundaries
-3. **Parameters**:
-   - Gap Threshold: 0.1 miles (bridge gaps, measurement spacing)
-   - Min Length: 0.5 miles (minimum rehabilitation project)
-   - Max Length: 3.0 miles (typical contract size)
-   - Population: 150, Generations: 150
-4. **Analysis**:
+2. **Attribute Breaks Configuration**:
+   - **Step 3 - Early Attribute Break Columns**: ["PAVEMENT_TYPE", "MAJOR_STRUCTURE"]
+     - Why early: These are structural boundaries where pavement characteristics differ significantly
+     - Ensures each pavement type/structure is analyzed with appropriate statistical thresholds
+   - **Step 5 - Late Attribute Break Columns**: None needed (or add ["COUNTY"] if required for reporting)
+3. **Optional Preprocessing** (recommended if data quality is uncertain):
+   - **Step 4 - Primary Preprocessing**: Tukey Fences Outlier Detection
+     - k_multiplier: 1.5
+     - action: interpolate (preserve data points but fix sensor spikes)
+     - Operates within each pavement type separately (due to early breaks)
+4. **Parameters**:
+   - **Step 2** Gap Threshold: 0.1 miles (bridge gaps, measurement spacing)
+   - **Step 7** Min Length: 0.5 miles (minimum rehabilitation project)
+   - **Step 7** Max Length: 3.0 miles (typical contract size)
+   - **Step 7** Population: 150, Generations: 150
+5. **Analysis**:
    - Run analysis, obtain one optimal segmentation
    - Sort segments by mean IRI (descending - worst first)
    - Select top segments totaling ~10 miles
-5. **Validation**:
+6. **Validation**:
    - Cross-check with pavement management system data
    - Verify against recent construction/maintenance records
    - Consider geographic distribution and contractor access
-6. **Documentation**: Export to Excel for presentation to management
+7. **Documentation**: Export to Excel for presentation to management
 
 **Expected Outcome**: Clear prioritization list with statistical justification for selected segments
 
@@ -584,17 +993,26 @@ This section provides step-by-step guidance for typical pavement engineering app
 **Recommended Approach**:
 
 1. **Method**: Use **Multi-Objective NSGA-II** to demonstrate quality vs. cost tradeoffs
-2. **Must-Break Columns**: ["FUNCTIONAL_CLASS", "PAVEMENT_TYPE", "JURISDICTION"]
-3. **Parameters**:
-   - Gap Threshold: 0.05 miles (more sensitive for urban arterials)
-   - Min Length: 0.2 miles (allow shorter urban projects)
-   - Max Length: 2.0 miles (urban project constraints)
-   - Population: 200, Generations: 300, Archive: 75
-4. **Presentation Strategy**:
+2. **Attribute Breaks Configuration**:
+   - **Step 3 - Early Attribute Break Columns**: ["FUNCTIONAL_CLASS", "PAVEMENT_TYPE"]
+     - Why early: Structural characteristics affecting data distribution and analysis requirements
+     - Different functional classes may have different normal condition ranges
+   - **Step 5 - Late Attribute Break Columns**: ["JURISDICTION"]
+     - Why late: Administrative boundary for project assignment and funding, not a statistical boundary
+     - Applied after any preprocessing to define final reporting segments
+3. **Optional Preprocessing** (if data quality varies):
+   - **Step 4 - Primary Preprocessing**: Tukey Fences, k=1.5, action=cap
+     - Operates separately within each functional class/pavement type combination
+4. **Parameters**:
+   - **Step 2** Gap Threshold: 0.05 miles (more sensitive for urban arterials)
+   - **Step 7** Min Length: 0.2 miles (allow shorter urban projects)
+   - **Step 7** Max Length: 2.0 miles (urban project constraints)
+   - **Step 7** Population: 200, Generations: 300, Archive: 75
+5. **Presentation Strategy**:
    - Display Pareto front to board: "More segments = higher quality but higher cost"
    - Show 3-5 representative solutions from across the front
    - Highlight tradeoffs: "Option A: 150 segments, $50M vs. Option B: 100 segments, $35M"
-5. **Decision Support**:
+6. **Decision Support**:
    - Let decision-makers select preferred balance point
    - Export selected solution for project development
    - Use for multi-year capital improvement planning
@@ -610,18 +1028,26 @@ This section provides step-by-step guidance for typical pavement engineering app
 **Recommended Approach**:
 
 1. **Method**: Use **AASHTO CDA** for statistical rigor and reproducibility
-2. **Must-Break Columns**: ["TREATMENT_BOUNDARY", "PAVEMENT_TYPE"] if available from records
-3. **Parameters**:
-   - Alpha: 0.05 (95% confidence - standard for pavement engineering research)
-   - Error Estimation: Method 2 (Standard Deviation of Differences)
-   - Use Segment-Specific Length: Enabled
-   - Diagnostic Output: Enabled (essential for methodology documentation)
-4. **Validation Process**:
+2. **Attribute Breaks Configuration**:
+   - **Step 3 - Early Attribute Break Columns**: ["TREATMENT_BOUNDARY", "PAVEMENT_TYPE"] if available from records
+     - Why early: Historical treatment boundaries represent structural changes in pavement composition
+     - Pavement type affects expected condition distributions
+   - **Step 5 - Late Attribute Break Columns**: None (let CDA find all statistically significant breaks)
+     - For pure research, avoid administrative constraints
+3. **Preprocessing**: None recommended
+   - Research typically requires raw, unmodified data for reproducibility
+   - Document any data cleaning separately in methodology
+4. **Parameters**:
+   - **Step 7** Alpha: 0.05 (95% confidence - standard for pavement engineering research)
+   - **Step 7** Error Estimation: Method 2 (Standard Deviation of Differences)
+   - **Step 7** Use Segment-Specific Length: Enabled
+   - **Step 7** Diagnostic Output: Enabled (essential for methodology documentation)
+5. **Validation Process**:
    - Document all parameters completely
    - Compare automated breakpoints to existing agency segment boundaries
    - Calculate agreement metrics (% within 0.1 miles, mean offset, etc.)
    - Run sensitivity analysis on α values (0.01, 0.05, 0.10)
-5. **Publication Documentation**:
+6. **Publication Documentation**:
    - Export diagnostic JSON for methodology verification
    - Include statistical confidence levels for each breakpoint
    - Provide complete parameter settings in methods section
@@ -638,18 +1064,27 @@ This section provides step-by-step guidance for typical pavement engineering app
 **Recommended Approach**:
 
 1. **Method**: Use **Constrained GA** with agency length requirement
-2. **Must-Break Columns**: ["DISTRICT_BOUNDARY", "ROUTE_TYPE"] per agency standards
-3. **Parameters**:
-   - Target Avg Length: 1.0 miles (agency requirement)
-   - Length Tolerance: 0.2 miles (acceptable range: 0.8-1.2 miles)
-   - Penalty Weight: Start at 200, increase to 500 if needed
-   - Min Length: 0.5 miles (allow exceptions where data demands)
-   - Max Length: 1.5 miles (prevent outliers)
-4. **Compliance Verification**:
+2. **Attribute Breaks Configuration**:
+   - **Step 3 - Early Attribute Break Columns**: None (or minimal structural breaks if required)
+     - For PMS compliance, typically avoid early breaks unless agency mandates them
+   - **Step 5 - Late Attribute Break Columns**: ["DISTRICT_BOUNDARY", "ROUTE_TYPE"]
+     - Why late: Administrative boundaries required by PMS structure
+     - These define reporting segments but don't affect statistical analysis
+3. **Preprocessing**: Optional - depends on agency policy
+   - Check if PMS requires raw data or allows preprocessing
+   - If allowed: **Step 4** Tukey Fences, k=1.5, action=interpolate
+4. **Parameters**:
+   - **Step 2** Gap Threshold: Per agency standard (typically 0.1 miles)
+   - **Step 7** Target Avg Length: 1.0 miles (agency requirement)
+   - **Step 7** Length Tolerance: 0.2 miles (acceptable range: 0.8-1.2 miles)
+   - **Step 7** Penalty Weight: Start at 200, increase to 500 if needed
+   - **Step 7** Min Length: 0.5 miles (allow exceptions where data demands)
+   - **Step 7** Max Length: 1.5 miles (prevent outliers)
+5. **Compliance Verification**:
    - Check "Constraint Satisfied: YES" in results
    - Verify achieved average is within 0.8-1.2 mile range
    - Review segment length distribution
-5. **Integration**:
+6. **Integration**:
    - Export to agency PMS format (Excel or CSV)
    - Validate segment IDs match agency conventions
    - Document any exceptions requiring engineering judgment
@@ -665,24 +1100,32 @@ This section provides step-by-step guidance for typical pavement engineering app
 **Recommended Approach**:
 
 1. **Method**: Use **Single-Objective GA** to create homogeneous pre-treatment sections
-2. **Must-Break Columns**: ["TRAFFIC_VOLUME_CLASS", "SUBGRADE_TYPE"] for consistent test conditions
-3. **Parameters**:
-   - Gap Threshold: 0.05 miles (tight control for research)
-   - Min Length: 0.3 miles (minimum statistical sample)
-   - Max Length: 1.0 miles (control section size)
-   - Higher generations (300+) for refined homogeneity
-4. **Section Selection**:
+2. **Attribute Breaks Configuration**:
+   - **Step 3 - Early Attribute Break Columns**: ["TRAFFIC_VOLUME_CLASS", "SUBGRADE_TYPE"]
+     - Why early: These control variables must be consistent within test sections
+     - Different subgrade types have different deterioration mechanisms
+     - Traffic loading directly affects performance - must isolate this variable
+   - **Step 5 - Late Attribute Break Columns**: None
+     - Research design: avoid administrative boundaries that could confound results
+3. **Preprocessing** (recommended for research quality):
+   - **Step 4 - Primary Preprocessing**: Tukey Fences, k=1.5, action=interpolate
+     - Critical for research: ensure outliers don't bias pre-treatment condition assessment
+     - Operates separately within each traffic/subgrade combination
+4. **Parameters**:
+   - **Step 2** Gap Threshold: 0.05 miles (tight control for research)
+   - **Step 7** Min Length: 0.3 miles (minimum statistical sample)
+   - **Step 7** Max Length: 1.0 miles (control section size)
+   - **Step 7** Higher generations (300+) for refined homogeneity
+5. **Section Selection**:
    - Select 5-10 most homogeneous segments (lowest std deviation)
    - Ensure similar pre-treatment condition (IRI, PCI)
    - Match traffic levels across test sections
-5. **Monitoring Plan**:
+6. **Monitoring Plan**:
    - Annual condition surveys using same equipment/method
    - Track deterioration rates in consistent sections
    - Compare treated vs. control sections
 
 **Expected Outcome**: Statistically valid test sections for performance comparison
-
----
 
 ## Basic Workflow
 
@@ -727,12 +1170,8 @@ This section provides step-by-step guidance for typical pavement engineering app
 1. **Understand Results**: Use method-specific guidance for interpretation
 2. **Explore Solutions**: For multi-objective, examine different Pareto front points
 3. **Validate Output**: Check that breakpoints make physical/practical sense
-4. **Review outputs**:
-
-- Use the **Results Files** tab to review the JSON summary
-- Use **📊 Load & Plot Results** to open the enhanced visualization window
-
-1. **Export**: In the enhanced visualization window, click **📊 Export to Excel**
+4. **Review outputs**: Use the **Results Files** tab to review the JSON summary, or use **📊 Load & Plot Results** to open the enhanced visualization window.
+5. **Export**: In the enhanced visualization window, click **📊 Export to Excel**
 
 ---
 
@@ -743,10 +1182,17 @@ This section provides step-by-step guidance for typical pavement engineering app
 **Mandatory Breakpoints (forced boundaries)**:
 
 - **Origin**:
-  - **Gap breaks**: data gaps exceeding the Gap Threshold
-  - **Attribute breaks**: value changes in selected *Must-Break Columns*
-- **Purpose**: Prevent segments from spanning discontinuities or forbidden attribute changes
+  - **Gap breaks**: Data gaps exceeding the Gap Threshold (Step 2)
+  - **Early attribute breaks**: Value changes in columns selected in Step 3 (Early Attribute Break Columns)
+    - Applied **before** primary preprocessing (Step 4)
+    - Purpose: Define structural boundaries for preprocessing segments
+    - Examples: `PAVEMENT_TYPE`, `LANES`, `FUNCTIONAL_CLASS`
+  - **Late attribute breaks**: Value changes in columns selected in Step 5 (Late Attribute Break Columns)
+    - Applied **after** primary preprocessing (Step 4)
+    - Purpose: Define administrative/reporting boundaries for analysis segments
+    - Examples: `COUNTY`, `DISTRICT`, `JURISDICTION`
 - **Properties**: Cannot be moved/removed by optimization algorithms
+- **Purpose**: Prevent segments from spanning discontinuities or forbidden attribute changes
 
 **Optimized Breakpoints (algorithm-selected)**:
 
@@ -757,8 +1203,9 @@ This section provides step-by-step guidance for typical pavement engineering app
 
 **Break Attributes Diagram (optional)**:
 
-- If you selected Must-Break Columns for the run, the visualization can show a per-attribute “lane” diagram at the top of the segmentation plot.
-- Hovering a lane box shows the attribute name and value for that x-range.
+- If you selected Early Attribute Break Columns (Step 3) or Late Attribute Break Columns (Step 5), the visualization can show a per-attribute "lane" diagram at the top of the segmentation plot
+- Hovering a lane box shows the attribute name and value for that x-range
+- The diagram displays whichever attribute break columns you configured (early, late, or both)
 
 ### Key Result Metrics
 
@@ -873,7 +1320,7 @@ Segment 3: MP 14.8-16.2 (1.4 mi), Mean IRI = 195 in/mi, Std Dev = 35 in/mi
 - **Examples**:
   - Mid-bridge breakpoints → Increase gap threshold to span structures
   - Too frequent changes → Increase min segment length
-  - Missing obvious transitions → Decrease gap threshold, check must-break columns
+  - Missing obvious transitions → Decrease gap threshold, check early/late attribute break columns (Steps 3 and 5)
   - Breakpoint in middle of recent overlay → Data quality issue or old data
 
 ### Validating Results Against Field Knowledge
@@ -979,53 +1426,209 @@ Agency Records Check:
 
 ---
 
-### Must-Break Columns for Pavement Networks
+### Attribute Break Columns for Pavement Networks
 
-**Common Attributes to Force Breakpoints**:
+The two-stage attribute break system (Steps 3 and 5) provides flexible control over how segmentation boundaries are established. Understanding which attributes belong in each category is crucial for effective analysis.
 
-1. **Pavement Type** (`PAVEMENT_TYPE`)
-   - Asphalt vs. concrete (completely different deterioration)
-   - Composite pavements (AC over PCC)
-   - **Critical**: Never span across pavement type changes
+#### Early Attribute Break Columns (Step 3) - Structural Boundaries
 
-2. **Functional Class** (`FUNC_CLASS`)
-   - Interstate, arterial, collector (different design standards)
-   - Different traffic, maintenance priorities, user expectations
+**Purpose**: Define segments with similar structural and data distribution characteristics for proper preprocessing
+
+**When to use**: Select columns that affect the **statistical properties** of the data - where mixing would invalidate preprocessing assumptions
+
+**Common Early Attribute Break Columns**:
+
+1. **Pavement Type** (`PAVEMENT_TYPE`, `SURF_TYPE`)
+   - **Why early**: Asphalt (IRI ~80-120) vs. concrete (IRI ~60-90) have completely different normal ranges
+   - **Effect**: Separate outlier detection thresholds for each pavement type
+   - **Critical**: Never preprocess data mixing asphalt and concrete together
+
+2. **Functional Class** (`FUNC_CLASS`, `ROUTE_CLASS`)
+   - **Why early**: Interstate (high quality, IRI ~70-90) vs. arterial (moderate, IRI ~100-130) have different expected condition ranges
+   - **Effect**: Appropriate preprocessing for each road type's typical condition
+   - **Example**: Prevents interstate "outliers" that are normal for arterials
 
 3. **Number of Lanes** (`NUM_LANES`, `LANE_WIDTH`)
-   - Capacity changes affect traffic loading
-   - Width changes indicate different design periods
+   - **Why early**: 2-lane vs. 4-lane sections have different structural capacity and deterioration patterns
+   - **Effect**: Preprocessing accounts for load distribution differences
+   - **Use when**: Lane count affects expected condition (loading, edge effects)
 
-4. **Surface Type/Treatment** (`SURF_TYPE`, `LAST_TREATMENT`)
-   - Mill & overlay, chip seal, microsurfacing, slurry seal
-   - Different expected performance and deterioration
+4. **Structural Section** (`BASE_TYPE`, `STRUCT_NUMBER`, `DESIGN_PERIOD`)
+   - **Why early**: Full-depth asphalt vs. flexible pavement have different structural response
+   - **Effect**: Separate preprocessing for different structural designs
+   - **Critical for**: Deflection data, structural condition indices
 
-5. **Drainage Class** (`DRAINAGE`, `SUBGRADE_TYPE`)
-   - Good, fair, poor drainage (major performance factor)
-   - Subgrade type: clay, sand, rock (affects structural capacity)
+5. **Major Structural Features** (`BRIDGE`, `CULVERT`, `MAJOR_STRUCTURE`)
+   - **Why early**: Bridge approaches have unique transition characteristics
+   - **Effect**: Prevents bridge approach transitions from being treated as outliers
+   - **Note**: Often handled by gap threshold, but explicit breaks provide more control
 
-6. **Structural Section** (`BASE_TYPE`, `DESIGN_PERIOD`)
-   - Full-depth asphalt vs. flexible pavement
-   - Different base courses (aggregate, stabilized)
-
-7. **Administrative** (`DISTRICT`, `COUNTY`, `JURISDICTION`)
-   - Maintenance responsibility boundaries
-   - Budget allocation units
-
-**Example Configuration for State DOT**:
+**Example Early Break Configuration**:
 
 ```text
-Must-Break Columns: ["PAVEMENT_TYPE", "FUNC_CLASS", "LAST_OVERLAY_YEAR"]
+Step 3: Early Attribute Break Columns = ["PAVEMENT_TYPE", "FUNC_CLASS", "LANES"]
 
-Effect:
-- Cannot mix asphalt and concrete sections
-- Cannot mix Interstate and arterial sections  
-- Cannot mix 2018 overlay with 2010 overlay sections
+With preprocessing:
+- Asphalt Interstate 4-lane: IQR = [75, 95], outlier thresholds = [45, 125]
+- Asphalt Arterial 2-lane: IQR = [95, 135], outlier thresholds = [75, 155]
+- Concrete Interstate 4-lane: IQR = [55, 75], outlier thresholds = [25, 105]
 
-Result: Segments respect both physical and administrative boundaries
+Without early breaks (WRONG):
+- All mixed: IQR = [60, 120], outlier thresholds = [30, 150]
+→ Problem: Concrete values treated as outliers, asphalt extremes accepted
 ```
 
----
+#### Late Attribute Break Columns (Step 5) - Administrative Boundaries
+
+**Purpose**: Define reporting and management segments that don't affect data statistics
+
+**When to use**: Select columns that represent **organizational boundaries** where segmentation is required for operational reasons, regardless of data characteristics
+
+**Common Late Attribute Break Columns**:
+
+1. **Geographic/Administrative** (`COUNTY`, `DISTRICT`, `REGION`, `JURISDICTION`)
+   - **Why late**: Budget allocation, maintenance responsibility, reporting requirements
+   - **Effect**: Final segments respect administrative boundaries for operational use
+   - **Example**: County boundaries for budget allocation (regardless of pavement condition)
+
+2. **Maintenance Responsibility** (`MAINT_ZONE`, `MAINTENANCE_AREA`, `CONTRACTOR_ZONE`)
+   - **Why late**: Different crews, equipment, or contractors
+   - **Effect**: Segments align with operational/maintenance assignments
+   - **Use when**: Work assignment and resource allocation are priorities
+
+3. **Political/Planning** (`MPO_BOUNDARY`, `URBAN_AREA`, `PLANNING_REGION`)
+   - **Why late**: Federal reporting, TIP programming, metropolitan planning
+   - **Effect**: Segments match planning and funding boundaries
+   - **Required for**: Federal aid projects, MPO coordination
+
+4. **Network Hierarchy** (`NHS_STATUS`, `STRATEGIC_NETWORK`, `PRIORITY_CORRIDOR`)
+   - **Why late**: Program classification for resource allocation
+   - **Effect**: Separate analysis by network importance
+   - **Use when**: Different funding sources or priority levels
+
+**Example Late Break Configuration**:
+
+```text
+Step 5: Late Attribute Break Columns = ["COUNTY", "DISTRICT"]
+
+Effect on segmentation:
+- Data can be preprocessed across county boundaries (statistically appropriate)
+- Final segments DO NOT cross county boundaries (operationally required)
+- Result: Optimal segmentation within each county for budget allocation
+```
+
+#### Attributes That Could Be Either Early or Late
+
+Some attributes can be configured as early or late depending on your analysis goals:
+
+**Treatment History** (`LAST_OVERLAY_YEAR`, `LAST_TREATMENT`, `TREATMENT_TYPE`):
+
+- **As early break**: When overlay age significantly affects expected condition distribution
+  - Example: 2015 overlay (IRI ~70) vs. 2005 overlay (IRI ~120) - different normal ranges
+  - Use when: Treatment history creates distinct statistical populations
+  
+- **As late break**: When tracking treatment effectiveness within structurally similar sections
+  - Example: Want to compare segments regardless of age for budgeting
+  - Use when: Administrative tracking is primary goal
+
+**Traffic Volume** (`AADT`, `TRUCK_PERCENT`, `TRAFFIC_VOLUME_CLASS`):
+
+- **As early break**: When traffic level significantly affects deterioration patterns
+  - Example: High-traffic (rapid deterioration) vs. low-traffic (slow deterioration)
+  - Use when: Traffic creates distinct condition distributions
+  
+- **As late break**: When operational assignment based on traffic class
+  - Example: Federally-classified highways require separate analysis
+  - Use when: Traffic classification is administrative requirement
+
+**General Rule**: If an attribute affects the **data distribution or statistical properties**, use early breaks. If it only affects **reporting or operational boundaries**, use late breaks.
+
+#### Configuration Strategies for Common Scenarios
+
+#### Scenario 1: Clean data, administrative reporting needs
+
+```text
+Step 3: Early breaks = [] (none)
+Step 4: Preprocessing = None
+Step 5: Late breaks = ["COUNTY", "DISTRICT"]
+```
+
+**Result**: Optimal segmentation within administrative boundaries, no data modification
+
+#### Scenario 2: Mixed pavement types with preprocessing
+
+```text
+Step 3: Early breaks = ["PAVEMENT_TYPE", "FUNC_CLASS"]
+Step 4: Preprocessing = Tukey Fences (k=1.5, interpolate)
+Step 5: Late breaks = ["COUNTY"]
+```
+
+**Result**: Separate preprocessing per pavement/functional class, final segments respect counties
+
+#### Scenario 3: Research study - structural focus
+
+```text
+Step 3: Early breaks = ["PAVEMENT_TYPE", "BASE_TYPE", "STRUCT_NUMBER"]
+Step 4: Preprocessing = Tukey Fences (k=3.0, remove - conservative)
+Step 5: Late breaks = [] (none)
+```
+
+**Result**: Pure structural segmentation, no administrative constraints
+
+#### Scenario 4: State DOT network analysis
+
+```text
+Step 3: Early breaks = ["PAVEMENT_TYPE", "FUNC_CLASS"]
+Step 4: Preprocessing = Tukey Fences (k=1.5, interpolate)
+Step 5: Late breaks = ["DISTRICT", "MAINT_ZONE", "COUNTY"]
+```
+
+**Result**: Statistically appropriate preprocessing, operational boundaries for all levels
+
+#### Common Mistakes to Avoid
+
+#### ❌ DON'T: Use county as early break (unless data distribution actually differs by county)
+
+```text
+Step 3: Early breaks = ["COUNTY"]  # WRONG - counties don't affect pavement physics
+```
+
+**Problem**: Creates separate preprocessing zones artificially, reduces statistical power
+
+#### ✅ DO: Use county as late break
+
+```text
+Step 5: Late breaks = ["COUNTY"]  # CORRECT - operational boundary
+```
+
+#### ❌ DON'T: Use pavement type as late break (it affects preprocessing)
+
+```text
+Step 5: Late breaks = ["PAVEMENT_TYPE"]  # WRONG - should be early
+```
+
+**Problem**: Preprocessing computed mixing asphalt/concrete, then breaks applied (too late!)
+
+#### ✅ DO: Use pavement type as early break
+
+```text
+Step 3: Early breaks = ["PAVEMENT_TYPE"]  # CORRECT - structural boundary
+```
+
+#### ❌ DON'T: Overuse early breaks (reduces preprocessing segment size)
+
+```text
+Step 3: Early breaks = ["COUNTY", "DISTRICT", "MAINT_ZONE", "PAVEMENT_TYPE"]  # TOO MANY
+```
+
+**Problem**: Creates tiny preprocessing segments with insufficient data for statistics
+
+#### ✅ DO: Use only statistically necessary early breaks
+
+```text
+Step 3: Early breaks = ["PAVEMENT_TYPE", "FUNC_CLASS"]  # Sufficient
+Step 5: Late breaks = ["COUNTY", "DISTRICT", "MAINT_ZONE"]  # Add administrative here
+```
 
 ### Method Selection Guide for Pavement Applications
 
@@ -1051,7 +1654,7 @@ Result: Segments respect both physical and administrative boundaries
 - **Gap Threshold**: 0.1 miles (profiler spacing)
 - **Min Length**: 0.5 miles (project minimum)
 - **Max Length**: 3.0 miles (typical resurfacing)
-- **Must-Break**: PAVEMENT_TYPE, MAJOR_STRUCTURE
+- **Attribute Breaks**: Early: PAVEMENT_TYPE, MAJOR_STRUCTURE; Late: (as needed for reporting)
 - **Why**: IRI is continuous, reflects both structural and surface condition
 
 **PCI (Condition Index) Data**:
@@ -1059,7 +1662,7 @@ Result: Segments respect both physical and administrative boundaries
 - **Gap Threshold**: 0.15 miles (manual survey precision)
 - **Min Length**: 0.3 miles (visual assessment sections)
 - **Max Length**: 2.0 miles (treatment project size)
-- **Must-Break**: PAVEMENT_TYPE, FUNC_CLASS, LAST_TREATMENT
+- **Attribute Breaks**: Early: PAVEMENT_TYPE, FUNC_CLASS, LAST_TREATMENT; Late: (as needed)
 - **Why**: PCI includes multiple distress types, more variability
 
 **Rutting Depth Data**:
@@ -1067,7 +1670,7 @@ Result: Segments respect both physical and administrative boundaries
 - **Gap Threshold**: 0.08 miles (automated rut measurement)
 - **Min Length**: 0.5 miles (structural sections)
 - **Max Length**: 2.5 miles (rehabilitation limits)
-- **Must-Break**: PAVEMENT_TYPE, NUM_LANES, BASE_TYPE
+- **Attribute Breaks**: Early: PAVEMENT_TYPE, NUM_LANES, BASE_TYPE; Late: (as needed)
 - **Why**: Rutting is structural - respect design sections
 
 **Deflection (FWD) Data**:
@@ -1075,7 +1678,7 @@ Result: Segments respect both physical and administrative boundaries
 - **Gap Threshold**: 0.25 miles (FWD testing spacing, typically 500-1000 ft)
 - **Min Length**: 0.5 miles (structural analysis sections)
 - **Max Length**: 2.0 miles (rehabilitation planning)
-- **Must-Break**: BASE_TYPE, PAVEMENT_TYPE, SUBGRADE_CLASS
+- **Attribute Breaks**: Early: BASE_TYPE, PAVEMENT_TYPE, SUBGRADE_CLASS; Late: (district/county)
 - **Why**: Sparser data, structural focus, respect layer boundaries
 
 ---
@@ -1252,12 +1855,12 @@ If you need a simple CSV of breakpoints for GIS/tools, export to Excel or parse 
 
 - **Diagnosis**: Algorithm breakpoints don't align with known pavement features
 - **Possible Causes**:
-  - Must-Break Columns not capturing treatment boundaries
+  - Early Attribute Break Columns not capturing treatment boundaries
   - Data is outdated and doesn't reflect recent rehabilitation
   - Gap threshold too large, spanning structures or transitions
   - Data quality issues (outliers, sensor errors) misleading algorithm
 - **Solutions**:
-  - Add "LAST_TREATMENT_YEAR" or "OVERLAY_DATE" to Must-Break Columns
+  - Add "LAST_TREATMENT_YEAR" or "OVERLAY_DATE" to Step 3 Early Attribute Break Columns
   - Verify data currency - when was it collected vs. when was construction?
   - Reduce gap threshold to 0.05-0.08 miles for sensitive detection
   - Plot raw data - look for obvious outliers or equipment issues
@@ -1285,7 +1888,7 @@ If you need a simple CSV of breakpoints for GIS/tools, export to Excel or parse 
   - New pavement still performing like old (immediate post-construction)
   - Data collected before treatment was completed
 - **Solutions**:
-  - Add "CONSTRUCTION_YEAR" column as Must-Break attribute
+  - Add "CONSTRUCTION_YEAR" column as Early Attribute Break (Step 3)
   - Manually add breakpoint at known project limit
   - Wait 6-12 months for performance difference to emerge
   - Use different index (IRI changes faster than cracking)

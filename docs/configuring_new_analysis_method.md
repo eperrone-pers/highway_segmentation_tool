@@ -30,6 +30,139 @@ In practice, each analysis method produces:
 
 You can implement **your own breakpoint-selection method** (GA, NSGA-II, statistical CDA, ML, rules-based, etc.) and register it so it appears in the GUI, runs under the controller, exports JSON, and visualizes correctly.
 
+### 1.1 Where analysis methods fit in the processing chain
+
+Analysis methods operate on **preprocessed, segmented route data** and produce optimal breakpoint locations. Understanding where they fit in the overall pipeline helps clarify what inputs they receive and what preprocessing has already occurred.
+
+```text
+┌───────────────────────────────────────────────────────────────────────┐
+│ 1. DATA LOADING                                                       │
+│    - Load CSV/Excel file                                              │
+│    - Convert columns, filter invalid values                           │
+└────────────────────┬──────────────────────────────────────────────────┘
+                     │
+                     ▼
+┌───────────────────────────────────────────────────────────────────────┐
+│ 2. ROUTE FILTERING                                                    │
+│    - filter_data_by_route()                                           │
+│    - Separate data by route_column                                    │
+└────────────────────┬──────────────────────────────────────────────────┘
+                     │
+                     ▼
+        ╔═══════════════════════════════════════════════════════════╗
+        ║  FOR EACH ROUTE (per-route processing):                   ║
+        ╚═══════════════════════════════════════════════════════════╝
+                     │
+                     ▼
+┌───────────────────────────────────────────────────────────────────────┐
+│ 3. PRE-GAP PREPROCESSING (optional)                                   │
+│    Phase: "pre_gap"                                                   │
+│    Configuration: preprocessing.pre_gap_method                        │
+│    - Applied to raw route data before gap analysis                    │
+│    - Rare use case: data cleaning, interpolation preparation          │
+└────────────────────┬──────────────────────────────────────────────────┘
+                     │
+                     ▼
+┌───────────────────────────────────────────────────────────────────────┐
+│ 4. GAP ANALYSIS                                                       │
+│    - Detect data gaps using gap_threshold                             │
+│    - Create mandatory breakpoints at gap boundaries                   │
+│    - Identify valid_x_values (excluding gap interiors)                │
+│    - Build initial RouteAnalysis object                               │
+└────────────────────┬──────────────────────────────────────────────────┘
+                     │
+                     ▼
+┌───────────────────────────────────────────────────────────────────────┐
+│ 5. EARLY ATTRIBUTE BREAKS                                             │
+│    Configuration: input.early_attribute_columns                       │
+│    - Early set of attribute-based breakpoints                         │
+│    - Examples: Pavement_Type, Functional_Class, Lanes                 │
+│    - Creates mandatory breakpoints at attribute changes               │
+│    - Used for per-segment preprocessing statistics                    │
+└────────────────────┬──────────────────────────────────────────────────┘
+                     │
+                     ▼
+┌───────────────────────────────────────────────────────────────────────┐
+│ 6. PRIMARY PREPROCESSING (optional)                                   │
+│    Phase: "primary"                                                   │
+│    Configuration: preprocessing.primary_method                        │
+│    - Applied after gaps and early attribute breaks                    │
+│    - Operates within segments defined by gaps + early attributes      │
+│    - Example: Tukey Fences outlier detection/removal                  │
+└────────────────────┬──────────────────────────────────────────────────┘
+                     │
+                     ▼
+┌───────────────────────────────────────────────────────────────────────┐
+│ 7. LATE ATTRIBUTE BREAKS                                              │
+│    Configuration: input.late_attribute_columns                        │
+│    - Late set of attribute-based breakpoints                          │
+│    - Examples: County, District, Maintenance_Zone                     │
+│    - Creates final mandatory segment boundaries                       │
+└────────────────────┬──────────────────────────────────────────────────┘
+                     │
+                     ▼
+┌───────────────────────────────────────────────────────────────────────┐
+│ 8. SECONDARY PREPROCESSING / POSTPROCESSING (optional)                │
+│    Phase: "secondary" (shown as "Postprocessing" in the UI)         │
+│    Configuration: preprocessing.secondary_method                      │
+│    - Applied after all attribute breaks                               │
+│    - Final data preparation before analysis                           │
+└────────────────────┬──────────────────────────────────────────────────┘
+                     │
+                     ▼
+┌───────────────────────────────────────────────────────────────────────┐
+│ 9. FINALIZE RouteAnalysis OBJECT                                      │
+│    - route_data: DataFrame (preprocessed if enabled)                  │
+│    - gap_segments, mandatory_breakpoints, valid_x_values              │
+│    - preprocessing_results: List[PreprocessingResult] (if used)       │
+└────────────────────┬──────────────────────────────────────────────────┘
+                     │
+                     ▼
+╔═══════════════════════════════════════════════════════════════════════╗
+║ 10. ANALYSIS METHOD EXECUTION ← YOUR NEW METHOD RUNS HERE             ║
+║     - Receives finalized RouteAnalysis with preprocessed data         ║
+║     - Receives mandatory_breakpoints (cannot place breakpoints here)  ║
+║     - Receives valid_x_values (candidate breakpoint locations)        ║
+║     - Produces optimal breakpoint locations                           ║
+║     - Returns AnalysisResult with solutions                           ║
+╚═══════════════════════════════════════════════════════════════════════╝
+                     │
+                     ▼
+┌───────────────────────────────────────────────────────────────────────┐
+│ 11. RESULTS & VISUALIZATION                                           │
+│     - JSON export with complete metadata                              │
+│     - Enhanced visualization with segmentation plot                   │
+│     - Pareto plot (if multi-objective method)                         │
+│     - Preprocessing overlay (if preprocessing was used)               │
+└───────────────────────────────────────────────────────────────────────┘
+```
+
+**Key points for analysis method developers:**
+
+- **Your method receives a `RouteAnalysis` object** that contains:
+  - `route_data`: DataFrame with preprocessed data (if preprocessing was enabled)
+  - `mandatory_breakpoints`: Set of x-values where breakpoints are required (gaps, route edges, attribute changes)
+  - `valid_x_values`: List of all valid x-coordinates where breakpoints can be placed
+  - `gap_segments`: List of data gaps (periods with no measurements)
+  - `preprocessing_results`: List of preprocessing operations applied (if any)
+
+- **Mandatory breakpoints are non-negotiable**: Your method must include these in any solution. They represent:
+  - Gap boundaries (no data collection periods)
+  - Route edges (start and end)
+  - Early attribute change points (structural boundaries like pavement type changes)
+  - Late attribute change points (administrative boundaries like county lines)
+
+- **Understanding Early vs Late attribute breaks**:
+  - **Early attribute breaks** (Step 3 in the UI) are applied **before primary preprocessing** to create segments based on **structural characteristics** like `Pavement_Type`, `Functional_Class`, or `Lanes`. These define the segments within which preprocessing operates, ensuring that outlier detection and data cleaning are performed separately for each structural type (preventing inappropriate statistical mixing across different pavement types, lane configurations, etc.).
+  - **Late attribute breaks** (Step 5 in the UI) are applied **after primary preprocessing** to create **administrative boundaries** like `County`, `District`, or `Maintenance_Zone`. These define the final segment boundaries for analysis and reporting purposes, not for preprocessing statistics.
+  - **Why this matters for your method**: The `mandatory_breakpoints` you receive include both types. Early breaks ensure data within each segment is statistically homogeneous (same structural characteristics), while late breaks ensure your segmentation respects administrative reporting boundaries. Your analysis method optimizes breakpoint placement within these constraints.
+
+- **Data is already cleaned**: If preprocessing was configured, outliers may have been removed, values capped, or data smoothed. Your method works with the final processed data.
+
+- **Analysis is per-route**: The framework calls your method once per route. Multi-route datasets are processed independently, then combined in results.
+
+**Backward compatibility:** All preprocessing is optional. If no preprocessing is configured, your method receives the original data as in previous versions.
+
 ## 2) Files and configuration involved
 
 The application is split into:
@@ -66,7 +199,7 @@ The application is split into:
      - The method list is configuration-driven from `OPTIMIZATION_METHODS` in `src/config.py` and filtered
          to methods with an existing README at the path above.
 
-### 1.1 Runtime flow
+### 2.1 Runtime flow
 
 ```mermaid
 flowchart TD
@@ -88,7 +221,7 @@ flowchart TD
 
 ---
 
-### 1.2 AASHTO CDA integration (single-objective example)
+### 2.2 AASHTO CDA integration (single-objective example)
 
 This diagram focuses on the **AASHTO CDA** method and the configuration points it uses.
 
