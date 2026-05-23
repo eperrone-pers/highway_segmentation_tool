@@ -872,7 +872,7 @@ Segmentation Methodology:
 
 ---
 
-## 13. Reproducibility
+## 13. Solution Selection
 
 At the end of the run, the method chooses the reported “best” solution using a lexicographic rule:
 
@@ -883,7 +883,7 @@ This is intentionally different from simply taking the max constrained fitness, 
 
 ---
 
-## 13. Reproducibility
+## 14. Reproducibility
 
 The method uses Python’s `random` and NumPy’s random sampling. There is no built-in seed exposed via the method interface; runs are non-deterministic unless seeds are set externally.
 

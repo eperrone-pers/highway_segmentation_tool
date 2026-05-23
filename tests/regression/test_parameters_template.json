@@ -1,0 +1,93 @@
+{
+  "common_parameters": {
+    "gap_threshold": 0.5,
+    "min_length": 0.5,
+    "max_length": 5.0,
+    "population_size": 20,
+    "num_generations": 10,
+    "crossover_rate": 0.8,
+    "mutation_rate": 0.05,
+    "elite_ratio": 0.05,
+    "cache_clear_interval": 50,
+    "enable_performance_stats": false
+  },
+  "method_specific": {
+    "constrained": {
+      "target_avg_length": 2.0,
+      "penalty_weight": 1000.0,
+      "length_tolerance": 0.2
+    },
+    "constrained_deb": {
+      "target_avg_length": 2.0,
+      "length_tolerance": 0.2
+    },
+    "aashto_cda": {
+      "alpha": 0.05,
+      "method": 2,
+      "use_segment_length": true,
+      "min_segment_datapoints": 3,
+      "max_segments": null,
+      "min_section_difference": 0.0,
+      "enable_diagnostic_output": false
+    },
+    "pelt_segmentation": {
+      "model": "l2",
+      "penalty": 96.0,
+      "jump": 2,
+      "smooth_window_miles": 0.1,
+      "smoothing_method": "median",
+      "min_length": 0.5,
+      "max_length": 5.0,
+      "enable_diagnostic_output": false
+    }
+  },
+  "data_configurations": {
+    "single_route": {
+      "file": "test_data_single_route.csv",
+      "x_column": "milepoint",
+      "y_column": "structural_strength_ind",
+      "route_column": null
+    },
+    "multi_route": {
+      "file": "TestMultiRoute.csv",
+      "x_column": "BDFO",
+      "y_column": "D60",
+      "route_column": "RDB"
+    },
+    "single_route_with_outliers": {
+      "file": "test_data_single_route_with_outliers.csv",
+      "x_column": "milepoint",
+      "y_column": "structural_strength_ind",
+      "route_column": null
+    },
+    "multi_route_with_outliers": {
+      "file": "TestMultiRoute_with_outliers.csv",
+      "x_column": "BDFO",
+      "y_column": "D60",
+      "route_column": "RDB"
+    }
+  },
+  "preprocessing_configurations": {
+    "tukey_remove": {
+      "primary_method": "tukey_fences",
+      "primary_parameters": {
+        "k_factor": 1.5,
+        "action": "remove"
+      }
+    },
+    "tukey_cap": {
+      "primary_method": "tukey_fences",
+      "primary_parameters": {
+        "k_factor": 1.5,
+        "action": "cap"
+      }
+    },
+    "tukey_interpolate": {
+      "primary_method": "tukey_fences",
+      "primary_parameters": {
+        "k_factor": 1.5,
+        "action": "interpolate"
+      }
+    }
+  }
+}

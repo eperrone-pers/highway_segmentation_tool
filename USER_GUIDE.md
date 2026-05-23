@@ -121,7 +121,7 @@ This tool works with any numeric pavement condition index:
 5. Leave preprocessing steps (1, 4, 6) set to "None" (collapsed panels)
 6. In **Step 7: Analysis Method**, select your method and configure parameters (expand the panel)
 7. Under **Results File (Required):** type a base name and click **Browse...** to choose an output folder
-8. Click **🚀 Start Optimization** and monitor progress in the **Optimization Log** tab
+8. Click **🚀 Start** and monitor progress in the **Optimization Log** tab
 9. When complete, the enhanced visualization window will open automatically
 
 **To use preprocessing or attribute breaks:**
@@ -288,11 +288,18 @@ The two-stage attribute break system serves different purposes:
 
 #### 🚀 **Action Buttons**
 
-- **🚀 Start Optimization**: Validates inputs, loads data if needed, then runs the selected method.
+Buttons are arranged in two rows:
+
+**Row 1 (primary controls):**
+
+- **🚀 Start**: Validates inputs, loads data if needed, then runs the selected method.
 - **⏹ Stop**: Requests a graceful stop (the run halts after the current step/generation).
 - **📊 Load & Plot Results**: Open an existing results JSON and launch the enhanced visualization window.
-- **Copy command line for this analysis**: Creates a run spec JSON and copies a runnable CLI command to your clipboard.
+
+**Row 2 (secondary actions):**
+
 - **❓ Help**: Opens a Documentation dialog with buttons to open the User Guide and any available method-specific docs in your browser.
+- **📋 Copy CLI Command**: Creates a run spec JSON and copies a runnable `highway-seg run` CLI command to your clipboard.
 - **❌ Exit**: Exits the application (saving settings).
 
 #### 🗂️ **Results Tabs**
@@ -325,7 +332,7 @@ When you load results (or when a run completes), the enhanced visualization wind
    - Enter a base name under **Results File (Required)**
    - Click **Browse...** to pick an output folder
 7. In **Step 7: Analysis Method**, select your method and configure its parameters (expand the panel if collapsed)
-8. Click **🚀 Start Optimization**
+8. Click **🚀 Start**
    - If you click **⏹ Stop** before completion, the run may stop without saving a consolidated results file.
    - If an output file already exists, you'll be prompted to overwrite.
 9. After completion, review:
@@ -1161,7 +1168,7 @@ This section provides step-by-step guidance for typical pavement engineering app
 ### Step 3: Execute Analysis
 
 1. **Review Configuration**: Verify all settings meet your requirements
-2. **Start**: Click **🚀 Start Optimization**
+2. **Start**: Click **🚀 Start**
 3. **Monitor**: Watch the **Optimization Log** tab for progress and warnings
 4. **Stop if needed**: Click **⏹ Stop** to request a graceful stop
 

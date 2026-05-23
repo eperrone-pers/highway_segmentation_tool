@@ -67,7 +67,7 @@ These outliers can:
 
 Tukey Fences use the IQR to define "normal" data range:
 
-1. **Calculate quartiles**: 
+1. **Calculate quartiles**:
    - Q1 (25th percentile): 25% of data below this value
    - Q3 (75th percentile): 75% of data below this value
    - IQR = Q3 - Q1 (spread of middle 50% of data)
@@ -101,6 +101,7 @@ The method operates on a `RouteAnalysis` object containing:
 ### 2.2 Parameters
 
 **k_factor** (outlier sensitivity multiplier):
+
 - **Default**: 1.5 (standard outlier detection, moderately aggressive)
 - **Range**: Typically 1.0 to 3.0
 - **Effect**: Lower k = more points flagged as outliers, higher k = only extreme outliers
@@ -110,6 +111,7 @@ The method operates on a `RouteAnalysis` object containing:
   - k=1.0: Aggressive outlier removal (use with caution)
 
 **action** (outlier handling strategy):
+
 - **Options**: "remove", "cap", "interpolate"
 - **remove**: Delete outlier points entirely
   - **Use when**: Data density is high, removing points won't create gaps
@@ -151,6 +153,7 @@ WITH segment-aware processing (CORRECT):
 ```
 
 **Implementation**: Mandatory breakpoints from:
+
 - Gap threshold (Step 2 in pipeline)
 - **Early Attribute Break Columns** (Step 3 in pipeline) ← This is key!
 - Route start/end boundaries
@@ -228,6 +231,7 @@ def tukey_fences_preprocess(route_data, x_col, y_col, mandatory_breakpoints, k_f
 **Solution**: Leave boundary outliers unchanged when using interpolate action
 
 **Example**:
+
 ```text
 Segment: MP 10.0-15.0 with outlier at MP 10.0
 - Previous point would be in different segment (MP < 10.0)
@@ -246,17 +250,20 @@ Segment: MP 10.0-15.0 with outlier at MP 10.0
 **IRI (International Roughness Index):**
 
 **Recommended configuration**:
+
 - k_factor: 1.5 (standard detection)
 - action: interpolate
 - Early breaks: ["PAVEMENT_TYPE"] if mixing asphalt/concrete
 
 **Rationale**:
+
 - IRI is continuous measurement, interpolation preserves smooth profile
 - Common outliers: Sensor spikes > 300 in/mi (profiler malfunction)
 - Interpolation doesn't create gaps in continuous data
 - k=1.5 catches most sensor errors without being over-aggressive
 
 **Example outcome**:
+
 ```text
 Before: 85, 88, 450 (spike), 92, 87  
 After:  85, 88, 90 (interpolated from 88 and 92), 92, 87
@@ -267,17 +274,20 @@ After:  85, 88, 90 (interpolated from 88 and 92), 92, 87
 **PCI (Pavement Condition Index):**
 
 **Recommended configuration**:
+
 - k_factor: 1.5
 - action: cap
 - Early breaks: ["PAVEMENT_TYPE", "FUNCTIONAL_CLASS"]
 
 **Rationale**:
+
 - PCI has valid range [0, 100], values outside this are errors
 - Capping preserves data density for manual survey data
 - Different pavement types/functional classes have different typical PCI ranges
 - k=1.5 appropriate for manual survey variability
 
 **Example outcome**:
+
 ```text
 Before: 75, 72, -5 (error), 130 (error), 70
 After:  75, 72, 0 (capped), 100 (capped), 70
@@ -288,11 +298,13 @@ After:  75, 72, 0 (capped), 100 (capped), 70
 **Rutting Depth:**
 
 **Recommended configuration**:
+
 - k_factor: 2.0 (moderate)
 - action: remove
 - Early breaks: ["PAVEMENT_TYPE", "NUM_LANES"]
 
 **Rationale**:
+
 - Rutting is structural distress, extreme values may be real (localized failures)
 - k=2.0 more conservative, only removes clear equipment errors
 - Removing points acceptable for rutting (less dense than profiler data)
@@ -303,11 +315,13 @@ After:  75, 72, 0 (capped), 100 (capped), 70
 **FWD Deflection Data:**
 
 **Recommended configuration**:
+
 - k_factor: 3.0 (very conservative)
 - action: remove
 - Early breaks: ["BASE_TYPE", "PAVEMENT_TYPE"]
 
 **Rationale**:
+
 - Deflection data is sparse (500-1000 ft spacing)
 - High k=3.0 ensures only extreme outliers removed
 - Structural data - don't want to remove real structural anomalies
@@ -318,21 +332,25 @@ After:  75, 72, 0 (capped), 100 (capped), 70
 ### 4.2 By Data Quality Situation
 
 **High-quality, well-maintained equipment:**
+
 - k_factor: 3.0 (conservative)
 - action: cap or interpolate
 - Reasoning: Few outliers expected, preserve most data
 
 **Suspect data quality, known equipment issues:**
+
 - k_factor: 1.5 (standard)
 - action: interpolate or remove
 - Reasoning: More aggressive removal justified
 
 **Legacy/historical data with unknown collection methods:**
+
 - k_factor: 2.0 (moderate)
 - action: cap
 - Reasoning: Balanced approach, preserve density for statistical analysis
 
 **Research data requiring full traceability:**
+
 - Don't use preprocessing (leave Steps 1, 4, 6 as "None")
 - Alternative: Use k=3.0, action=remove, document all modifications
 - Reasoning: Research may need raw data justification
@@ -346,11 +364,13 @@ After:  75, 72, 0 (capped), 100 (capped), 70
 **Situation**: 50-mile Interstate corridor with annual IRI surveys using van-mounted profiler
 
 **Known issues**:
+
 - Occasional GPS drop-outs cause position errors
 - Sensor occasionally spikes when hitting bridge expansion joints
 - Data mixing asphalt sections (MP 0-30) and concrete sections (MP 30-50)
 
 **Configuration**:
+
 ```text
 Step 2: Gap Threshold = 0.1 miles
 Step 3: Early Attribute Break Columns = ["PAVEMENT_TYPE"]
@@ -361,6 +381,7 @@ Step 5: Late Attribute Break Columns = ["COUNTY"]
 ```
 
 **Results**:
+
 ```text
 Preprocessing Summary:
 - Segments processed: 2 (asphalt section, concrete section)
@@ -386,6 +407,7 @@ Concrete section (MP 30-50):
 ```
 
 **Impact on segmentation**:
+
 - Without preprocessing: 8 false breakpoints at sensor spike locations
 - With preprocessing: Clean segmentation respecting true pavement transitions
 - Treatment planning: More confident in segment homogeneity for project scoping
@@ -400,7 +422,8 @@ Concrete section (MP 30-50):
 
 **Risk**: Preprocessing might flag approach section as outliers if using aggressive k=1.0
 
-**Solution**: 
+**Solution**:
+
 - Use Early Attribute Breaks for "MAJOR_STRUCTURE" (creates separate segment)
 - Or use conservative k=3.0
 - Or skip preprocessing for this route
@@ -416,6 +439,7 @@ Concrete section (MP 30-50):
 **Risk**: Preprocessing removes real (but temporary) bad conditions
 
 **Solution**:
+
 - Skip preprocessing if analyzing construction zone performance
 - Document that data includes temporary conditions
 - Or: Use Late Attribute Breaks for "CONSTRUCTION_ZONE" to analyze separately
@@ -429,20 +453,21 @@ Concrete section (MP 30-50):
 1. **Modification count**:
    - Typical: < 5% of data points modified
    - Warning: > 10% modified suggests over-aggressive k or data quality issues
-   
+  
 2. **Modified locations**:
    - Do they align with known problem areas (equipment calibration changes, etc.)?
    - Are they randomly distributed or clustered?
-   
+  
 3. **Value changes**:
    - Are old values extreme (e.g., IRI > 300)?
    - Are new values reasonable for that location?
-   
+  
 4. **Segment statistics**:
    - Did variance decrease significantly within segments?
    - Are segments now more homogeneous?
 
 **Example verification output from JSON results**:
+
 ```json
 {
   "preprocessing_results": {
@@ -484,14 +509,14 @@ $$\text{IQR} = Q_3 - Q_1$$
 
 ### 6.2 Fence Boundaries
 
-**Lower fence**: 
+**Lower fence**:
 $$F_L = Q_1 - k \cdot \text{IQR}$$
 
 **Upper fence**:
 $$F_U = Q_3 + k \cdot \text{IQR}$$
 
 **Outlier criterion**:
-$$\text{outlier}(y_i) = \begin{cases} 
+$$\text{outlier}(y_i) = \begin{cases}
 \text{true} & \text{if } y_i < F_L \text{ or } y_i > F_U \\
 \text{false} & \text{otherwise}
 \end{cases}$$
@@ -528,11 +553,13 @@ The implementation uses a `DataModificationContext` to ensure:
 **Pipeline position**: Step 4 (Primary Preprocessing)
 
 **Dependencies**:
+
 - **Step 2 (Gap Analysis)**: Provides gap-based mandatory breakpoints
 - **Step 3 (Early Attribute Break Columns)**: Provides structure-based mandatory breakpoints
   - **Critical dependency**: Early breaks define preprocessing segments
 
 **Outputs**:
+
 - Modified `RouteAnalysis` object with cleaned data
 - Complete modification log (every changed point)
 - Preprocessing metadata (method, parameters, statistics)
@@ -543,6 +570,7 @@ The implementation uses a `DataModificationContext` to ensure:
 **Computational complexity**: O(n·m) where n = data points, m = number of segments
 
 **Typical performance**:
+
 - 50-mile corridor, 5000 points, 10 segments: < 0.1 seconds
 - 500-mile network, 50000 points, 100 segments: < 1 second
 
@@ -553,15 +581,19 @@ The implementation uses a `DataModificationContext` to ensure:
 ## 8. References and Further Reading
 
 **Tukey, J.W. (1977)**. *Exploratory Data Analysis*. Addison-Wesley. ISBN 0-201-07616-0.
+
 - Original definition of box plots and outlier fences
 
-**ASTM E1926-08(2015)**. *Standard Practice for Computing International Roughness Index of Roads from Longitudinal Profile Measurements*. 
+**ASTM E1926-08(2015)**. *Standard Practice for Computing International Roughness Index of Roads from Longitudinal Profile Measurements*.
+
 - Standards for IRI measurement and data quality
 
-**AASHTO R 56-14**. *Standard Practice for Certification of Inertial Profiling Systems*. 
+**AASHTO R 56-14**. *Standard Practice for Certification of Inertial Profiling Systems*.
+
 - Specifications for profiler accuracy and calibration
 
 **McGhee, K.K. (2004)**. *Automated Pavement Distress Collection Techniques*. NCHRP Synthesis 334.
+
 - Discussion of data quality issues in automated pavement surveys
 
 ---
@@ -593,11 +625,13 @@ The implementation uses a `DataModificationContext` to ensure:
 **Standard Deviation Method**: $\text{outlier if } |y - \mu| > k \cdot \sigma$
 
 **Advantages of Tukey Fences**:
+
 - More robust to outliers (uses quartiles, not mean/std which are influenced by outliers)
 - Better for skewed distributions
 - Less sensitive to extreme values in threshold calculation
 
 **When Standard Deviation is better**:
+
 - Normally distributed data with few outliers
 - Need to preserve more marginal values
 - Computational efficiency critical (mean/std faster than quartiles)
@@ -607,11 +641,13 @@ The implementation uses a `DataModificationContext` to ensure:
 **Z-Score Method**: $z = \frac{y - \mu}{\sigma}$, outlier if $|z| > k$
 
 **Advantages of Tukey Fences**:
+
 - Doesn't assume normal distribution
 - Outliers don't affect the threshold calculation
 - More interpretable for skewed pavement data
 
 **When Z-Score is better**:
+
 - Data is approximately normal
 - Need standardized comparison across different data types
 - Statistical testing framework required
@@ -621,11 +657,13 @@ The implementation uses a `DataModificationContext` to ensure:
 **Moving Median Absolute Deviation**: Local outlier detection using rolling windows
 
 **Advantages of Tukey Fences**:
+
 - Segment-aware processing respects structural boundaries
 - Simpler conceptually (single threshold per segment)
 - Doesn't require window size selection
 
 **When Moving MAD is better**:
+
 - Need to detect localized outliers in otherwise uniform segments
 - Gradual trends in data
 - No clear segment boundaries available

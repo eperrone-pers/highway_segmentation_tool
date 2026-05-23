@@ -1,6 +1,7 @@
 # Regression test outputs - generated during testing
 outputs/
-*.json  
+*.json
+!test_parameters_template.json
 *.xlsx
 *.csv
 *.log
