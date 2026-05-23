@@ -207,13 +207,15 @@ class CLIExportDialog:
         preview_frame.grid(row=row, column=0, sticky="ew", pady=(0, 10))
         preview_frame.columnconfigure(0, weight=1)
 
+        # Use system default colors so the widget respects dark mode.
+        # Explicitly setting only background breaks dark mode (foreground stays
+        # system-white, producing white-on-white text).
         self._preview_text = tk.Text(
             preview_frame,
             height=3,
             wrap="word",
             state="disabled",
             relief="sunken",
-            background="#f5f5f5",
             font=("Courier", 9),
         )
         self._preview_text.grid(row=0, column=0, sticky="ew")

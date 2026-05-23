@@ -1213,8 +1213,8 @@ class UIBuilder:
         button_frame.grid(row=row, column=0, sticky="ew", pady=10)  # Reduced from 20
         
         # Main action buttons
-        self.app.start_button = ttk.Button(button_frame, text="🚀 Start Optimization", 
-                                          command=self.app.start_optimization, 
+        self.app.start_button = ttk.Button(button_frame, text="🚀 Start",
+                                          command=self.app.start_optimization,
                                           style="Accent.TButton")
         self.app.start_button.grid(row=0, column=0, padx=(0, 10))
         
@@ -1234,34 +1234,31 @@ class UIBuilder:
         actions_frame = ttk.Frame(top_right_frame)
         actions_frame.grid(row=0, column=0, sticky="w")  # Left-align buttons
         
-        # Row 0: Main optimization control buttons
-        self.app.start_button = ttk.Button(actions_frame, text="🚀 Start Optimization", 
-                                          command=self.app.start_optimization, 
+        # Row 0: primary run controls + results
+        self.app.start_button = ttk.Button(actions_frame, text="🚀 Start",
+                                          command=self.app.start_optimization,
                                           style="Accent.TButton")
         self.app.start_button.grid(row=0, column=0, padx=(0, 5))
-        
-        self.app.stop_button = ttk.Button(actions_frame, text="⏹ Stop", 
+
+        self.app.stop_button = ttk.Button(actions_frame, text="⏹ Stop",
                                          command=self.app.stop_optimization, state="disabled")
-        self.app.stop_button.grid(row=0, column=1, padx=(0, 10))
-        
-        # Results button
-        ttk.Button(actions_frame, text="📊 Load & Plot Results", 
+        self.app.stop_button.grid(row=0, column=1, padx=(0, 5))
+
+        ttk.Button(actions_frame, text="📊 Load & Plot Results",
                   command=self.app.load_and_plot_results).grid(row=0, column=2, padx=(0, 5))
 
-        # Help button
-        ttk.Button(actions_frame, text="❓ Help", 
-                  command=self.app.show_help).grid(row=0, column=3, padx=(0, 5))
-        
-        # Exit button
+        # Row 1: secondary actions — kept narrow so row 0 is never clipped
         def exit_clicked():
             self.app._on_closing()
-        
-        ttk.Button(actions_frame, text="❌ Exit", 
-                  command=exit_clicked).grid(row=0, column=4, padx=(0, 5))
-        
-        # Row 1: Copy CLI Command button
+
+        ttk.Button(actions_frame, text="❓ Help",
+                  command=self.app.show_help).grid(row=1, column=0, padx=(0, 5), pady=(5, 0))
+
         ttk.Button(actions_frame, text="📋 Copy CLI Command",
-                  command=self.app.copy_command_line_for_analysis).grid(row=1, column=0, columnspan=5, pady=(5, 0), sticky="ew")
+                  command=self.app.copy_command_line_for_analysis).grid(row=1, column=1, padx=(0, 5), pady=(5, 0))
+
+        ttk.Button(actions_frame, text="❌ Exit",
+                  command=exit_clicked).grid(row=1, column=2, padx=(0, 5), pady=(5, 0), sticky="ew")
         
         return top_right_frame
     
