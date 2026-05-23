@@ -4,6 +4,8 @@ Separates optimization concerns (thread lifecycle, route processing, file saving
 from the main GUI class.
 """
 
+from __future__ import annotations
+
 import threading
 import time
 import os
@@ -12,6 +14,7 @@ from dataclasses import asdict
 from datetime import datetime
 from tkinter import messagebox
 from config import get_optimization_method, resolve_method_class
+from optimization_handler import OptimizationHandler
 from route_utils import (
     ROUTE_COLUMN_NONE_SENTINEL,
     filter_data_by_route,
@@ -29,12 +32,13 @@ class OptimizationController:
     thread execution, progress monitoring, result handling, and cleanup operations.
     """
     
-    def __init__(self, main_app):
+    def __init__(self, main_app: OptimizationHandler):
         """
         Initialize the optimization controller with a reference to the main application.
-        
+
         Args:
-            main_app: Reference to the main HighwaySegmentationGUI instance
+            main_app: Any object that satisfies the OptimizationHandler protocol
+                (HighwaySegmentationGUI in the GUI path; a compatible stub in tests).
         """
         self.app = main_app
         self.optimization_thread = None

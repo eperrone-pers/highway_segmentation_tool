@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../src'))
 
 from optimization_handler import OptimizationHandler
 from optimization_controller import OptimizationController
+import gui_main as _gui_main_module
 
 
 class FakeApp:
@@ -80,12 +81,33 @@ class FakeApp:
 
 
 # ---------------------------------------------------------------------------
-# Protocol structural check
+# Protocol structural checks
 # ---------------------------------------------------------------------------
 
 def test_fake_app_satisfies_protocol():
     """FakeApp must be recognised as an OptimizationHandler at runtime."""
     assert isinstance(FakeApp(), OptimizationHandler)
+
+
+_REQUIRED_PROTOCOL_METHODS = [
+    "log_message",
+    "handle_error",
+    "on_optimization_started",
+    "on_stop_requested",
+    "on_optimization_finished",
+]
+
+
+@pytest.mark.parametrize("method_name", _REQUIRED_PROTOCOL_METHODS)
+def test_gui_class_defines_required_protocol_methods(method_name):
+    """HighwaySegmentationGUI must define every method in OptimizationHandler.
+
+    Checked at class level so no Tkinter display is required.
+    """
+    gui_cls = _gui_main_module.HighwaySegmentationGUI
+    assert hasattr(gui_cls, method_name), (
+        f"HighwaySegmentationGUI is missing protocol method '{method_name}'"
+    )
 
 
 # ---------------------------------------------------------------------------
