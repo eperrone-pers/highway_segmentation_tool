@@ -14,7 +14,7 @@ import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.figure import Figure
 from matplotlib.widgets import SpanSelector
-from logger import create_logger
+import logging
 import json
 import os
 from pathlib import Path
@@ -36,6 +36,7 @@ from visualization.results_binding import (
 )
 from visualization.pareto import prepare_pareto_series
 
+logger = logging.getLogger(__name__)
 
 # Matplotlib may emit this warning during draw/zoom when layout can't satisfy all decorations.
 # It's noisy (not fatal) and can be triggered by draw paths outside our control (e.g. toolbar).
@@ -79,9 +80,8 @@ class EnhancedVisualizationWindow:
         """
         # Validate required column parameters - fail fast with clear errors
         if not x_column or not y_column:
-            logger = create_logger()
             error_msg = f"Column mapping configuration is required but missing: x_column='{x_column}', y_column='{y_column}'"
-            logger.log(f"EnhancedVisualizationWindow initialization failed: {error_msg}")
+            logger.error("EnhancedVisualizationWindow initialization failed: %s", error_msg)
             raise ValueError(f"Invalid column configuration: {error_msg}")
         
         self.parent_app = parent_app

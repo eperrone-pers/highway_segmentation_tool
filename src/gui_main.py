@@ -52,6 +52,26 @@ optimization_config = AlgorithmConstants()
 constrained_config = ConstrainedOptimizationConfig()
 
 
+class GUILogHandler(logging.Handler):
+    """Routes stdlib WARNING+ log records into the GUI right panel via log_message().
+
+    Attached to the root logger after results_text is ready so that any library
+    or framework code that calls logging.warning() / logging.error() appears in
+    the right panel alongside other run messages, without requiring callers to
+    know about the GUI.
+    """
+
+    def __init__(self, log_message_fn):
+        super().__init__(level=logging.WARNING)
+        self._log_message = log_message_fn
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            self._log_message(self.format(record))
+        except Exception:
+            self.handleError(record)
+
+
 class HighwaySegmentationGUI:
     """Main application window for the Highway Segmentation GA tool."""
     
@@ -212,6 +232,11 @@ class HighwaySegmentationGUI:
         self.results_text = tk.Text(self.root, height=1, width=1)
         # Placed off-screen; the full UI replaces it once _create_interface() runs.
         self.results_text.place(x=-1000, y=-1000)
+
+        # Route stdlib WARNING+ into the right panel for framework/library messages.
+        self._gui_log_handler = GUILogHandler(self.log_message)
+        self._gui_log_handler.setFormatter(logging.Formatter("%(name)s: %(message)s"))
+        logging.getLogger().addHandler(self._gui_log_handler)
     
     def _create_interface(self):
         """Create the complete user interface using the UI builder."""

@@ -845,6 +845,61 @@ Output contract:
 
 ---
 
+### Step 4.3 — Progress reporting and logging
+
+Analysis methods receive a `log_callback` via `**kwargs`. Use it to stream progress messages to the GUI right panel (or stdout when running headless/tests).
+
+**Pattern to follow in every method:**
+
+```python
+def run_analysis(self, data, route_id, x_column, y_column, gap_threshold, **kwargs):
+    log = kwargs.get('log_callback') or print  # falls back to print in tests/CLI
+
+    log(f"Starting {self.method_name} for route {route_id}...")
+
+    for generation in range(num_generations):
+        # ... algorithm work ...
+        if generation % 10 == 0:
+            log(f"  Generation {generation}/{num_generations} — best fitness: {best:.4f}")
+
+    log(f"  Done: {len(chromosome)} breakpoints found.")
+```
+
+**Rules:**
+
+- **Never call `print()` directly** — use `log(...)` so output routes correctly in both GUI and CLI.
+- **Never import `logger.py` or use `create_logger()`** — that module has been removed.
+- **Use stdlib `logging` for unexpected errors** (not progress messages):
+
+  ```python
+  import logging
+  _logger = logging.getLogger(__name__)
+
+  try:
+      result = risky_computation()
+  except ValueError as e:
+      _logger.warning("Unexpected value in segment %s: %s", seg_id, e)
+      # handle or re-raise
+  ```
+
+  Stdlib `WARNING+` records are automatically forwarded to the GUI right panel by the framework; no extra wiring needed.
+
+- **`log_callback` is always provided** when running under the GUI controller. It is `None` only in direct unit-test calls — the `or print` fallback handles that transparently.
+
+**What NOT to do:**
+
+```python
+# ❌ Hard-codes stdout — breaks in GUI context
+print(f"Generation {i}...")
+
+# ❌ Removed module — will raise ImportError
+from logger import create_logger
+logger = create_logger(callback=log_callback)
+log = logger.log
+```
+
+---
+
 ### Step 5 — Ensure visualization behavior matches your return type
 
 The enhanced visualization decides whether to show the Pareto panel using the configured method return type:
@@ -1102,6 +1157,7 @@ class <NewMethodClass>(AnalysisMethodBase):
         - passed via **kwargs and should map to ParameterDefinition names.
         """
         start_time = time.time()
+        log = kwargs.get('log_callback') or print
 
         # 1) Resolve parameter defaults from config (single source of truth)
         method_config = get_optimization_method(self.method_key)
@@ -1130,6 +1186,8 @@ class <NewMethodClass>(AnalysisMethodBase):
         route_df = route_analysis.route_data
         mandatory_breakpoints = sorted(list(route_analysis.mandatory_breakpoints))
 
+        log(f"Starting {self.method_name} for route {route_id}...")
+
         # 4) TODO: run your algorithm
         # Output must be a sorted list of breakpoints including start and end.
         x_values = np.asarray(route_df.iloc[:, 0])
@@ -1137,7 +1195,9 @@ class <NewMethodClass>(AnalysisMethodBase):
         route_end = float(x_values.max())
 
         # Example placeholder: trivial segmentation (replace with your algorithm)
+        # Progress: log at meaningful milestones (not every iteration)
         chromosome = [route_start, route_end]
+        log(f"  Done: {len(chromosome) - 1} segment(s) found in {time.time() - start_time:.1f}s.")
 
         # 5) Build the standardized solution payload
         # REQUIRED: 'chromosome'
@@ -1247,6 +1307,7 @@ class <NewMethodClass>(AnalysisMethodBase):
         **kwargs,
     ) -> AnalysisResult:
         start_time = time.time()
+        log = kwargs.get('log_callback') or print
 
         method_config = get_optimization_method(self.method_key)
         if not method_config:
@@ -1268,6 +1329,8 @@ class <NewMethodClass>(AnalysisMethodBase):
         route_df = route_analysis.route_data
         mandatory_breakpoints = sorted(list(route_analysis.mandatory_breakpoints))
 
+        log(f"Starting {self.method_name} for route {route_id}...")
+
         x_values = np.asarray(route_df.iloc[:, 0])
         route_start = float(x_values.min())
         route_end = float(x_values.max())
@@ -1279,6 +1342,8 @@ class <NewMethodClass>(AnalysisMethodBase):
         pareto_solutions: List[Dict[str, Any]] = []
 
         # Example placeholder: one trivial solution (replace with actual Pareto set)
+        # Log progress at key milestones, e.g. every N generations:
+        #   if generation % 10 == 0: log(f"  Generation {generation}/{num_generations}...")
         chromosome = [route_start, route_end]
         objective_values = [0.0, 0.0]
         pareto_solutions.append(

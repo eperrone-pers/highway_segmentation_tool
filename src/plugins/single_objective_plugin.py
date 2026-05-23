@@ -4,7 +4,10 @@ Handles fitness metrics, convergence info, and cross-route aggregation for
 single-objective (and constrained) optimization results.
 """
 
+import logging
 from typing import Dict, List, Any
+
+_logger = logging.getLogger(__name__)
 
 try:
     from extensible_results_manager import AnalysisMethodPlugin
@@ -364,8 +367,8 @@ try:
     if not any(isinstance(p, SingleObjectivePlugin) for p in registry.get_all_plugins()):
         plugin_instance = SingleObjectivePlugin()
         registry.register_plugin(plugin_instance)
-        print(f"Auto-registered {SingleObjectivePlugin.PLUGIN_NAME} v{SingleObjectivePlugin.PLUGIN_VERSION}")
+        _logger.info("Auto-registered %s v%s", SingleObjectivePlugin.PLUGIN_NAME, SingleObjectivePlugin.PLUGIN_VERSION)
 except ImportError:
     pass
 except Exception as e:
-    print(f"Warning: Could not auto-register SingleObjectivePlugin: {e}")
+    _logger.warning("Could not auto-register SingleObjectivePlugin: %s", e)

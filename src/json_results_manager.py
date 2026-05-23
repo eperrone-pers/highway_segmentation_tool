@@ -9,12 +9,7 @@ from typing import Dict, List, Any, Optional, Union
 from datetime import datetime
 from pathlib import Path
 
-class SetEncoder(json.JSONEncoder):
-    """Custom JSON encoder that converts sets to lists for serialization."""
-    def default(self, obj):
-        if isinstance(obj, set):
-            return list(obj)
-        return super().default(obj)
+from value_parsing import SetEncoder
 
 # Import analysis framework
 try:

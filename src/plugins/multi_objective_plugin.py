@@ -4,7 +4,10 @@ Handles Pareto front analysis, multi-objective performance metrics, and
 cross-route aggregation for dual-objective optimization results.
 """
 
+import logging
 from typing import Dict, List, Any
+
+_logger = logging.getLogger(__name__)
 
 try:
     from extensible_results_manager import AnalysisMethodPlugin
@@ -454,8 +457,8 @@ try:
     if not any(isinstance(p, MultiObjectivePlugin) for p in registry.get_all_plugins()):
         plugin_instance = MultiObjectivePlugin()
         registry.register_plugin(plugin_instance)
-        print(f"Auto-registered {MultiObjectivePlugin.PLUGIN_NAME} v{MultiObjectivePlugin.PLUGIN_VERSION}")
+        _logger.info("Auto-registered %s v%s", MultiObjectivePlugin.PLUGIN_NAME, MultiObjectivePlugin.PLUGIN_VERSION)
 except ImportError:
     pass
 except Exception as e:
-    print(f"Warning: Could not auto-register MultiObjectivePlugin: {e}")
+    _logger.warning("Could not auto-register MultiObjectivePlugin: %s", e)

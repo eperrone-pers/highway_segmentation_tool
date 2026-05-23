@@ -6,10 +6,11 @@ application sessions, providing a seamless user experience.
 """
 
 import json
+import logging
 import os
 from typing import Dict, Any
 
-from logger import create_logger
+logger = logging.getLogger(__name__)
 
 
 class SettingsManager:
@@ -106,7 +107,7 @@ class SettingsManager:
                 return self.default_settings.copy()
                 
         except (json.JSONDecodeError, FileNotFoundError, PermissionError) as e:
-            create_logger().log(f"Warning: Could not load settings ({e}). Using defaults.")
+            logger.warning("Could not load settings (%s). Using defaults.", e)
             return self.default_settings.copy()
     
     def save_settings(self, settings: Dict[str, Any]) -> bool:
@@ -130,7 +131,7 @@ class SettingsManager:
             return True
             
         except (PermissionError, OSError) as e:
-            create_logger().log(f"Warning: Could not save settings ({e})")
+            logger.warning("Could not save settings (%s)", e)
             return False
     
     def _merge_with_defaults(self, loaded_settings: Dict[str, Any]) -> Dict[str, Any]:

@@ -58,14 +58,15 @@ except Exception:  # pragma: no cover
     build_attribute_break_analysis = None
 
 
-def aashto_cda(y: np.ndarray, 
-               alpha: float = 0.05, 
-               num_sections: Optional[int] = None, 
-               min_segment_datapoints: int = 3, 
-               min_section_difference: float = 0.0, 
-               method: int = 2, 
+def aashto_cda(y: np.ndarray,
+               alpha: float = 0.05,
+               num_sections: Optional[int] = None,
+               min_segment_datapoints: int = 3,
+               min_section_difference: float = 0.0,
+               method: int = 2,
                global_local: bool = True,
-               enable_diagnostic_output: bool = False) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+               enable_diagnostic_output: bool = False,
+               log=None) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Performs segmentation of data into uniform sections using Enhanced AASHTO CDA.
     
@@ -90,6 +91,7 @@ def aashto_cda(y: np.ndarray,
         section_end: Vector containing end indices of segments
         mu: Mean value of each segment
     """
+    _log = log or print
     y = np.asarray(y).flatten()
     n = len(y)
 
@@ -131,7 +133,8 @@ def aashto_cda(y: np.ndarray,
     while i <= num_sections:
         try:
             location, change_point = find_change_point(
-                cy, nodes[:i], x, float(sigma), alpha, min_segment_datapoints, global_local, False
+                cy, nodes[:i], x, float(sigma), alpha, min_segment_datapoints, global_local,
+                enable_diagnostic_output, _log
             )
         except Exception:
             break
@@ -165,29 +168,29 @@ def aashto_cda(y: np.ndarray,
     
     # Apply minimum section difference constraint if specified
     if enable_diagnostic_output:
-        print("\n--- Initial Segmentation ---")
-        print(f"Found {len(mu)} initial segments")
-        print(f"Segment means: {[round(m, 3) for m in mu]}")
-    
+        _log("\n--- Initial Segmentation ---")
+        _log(f"Found {len(mu)} initial segments")
+        _log(f"Segment means: {[round(m, 3) for m in mu]}")
+
     if min_section_difference > 0:
         if enable_diagnostic_output:
-            print(f"\n--- Merging Process (threshold={min_section_difference}) ---")
+            _log(f"\n--- Merging Process (threshold={min_section_difference}) ---")
         iteration = 0
         while len(mu) > 1:
             mu_diff = np.abs(np.diff(mu))
             min_change = np.min(mu_diff)
 
             if enable_diagnostic_output:
-                print(f"Merge iteration {iteration}: min_diff={min_change:.3f} vs threshold={min_section_difference}")
+                _log(f"Merge iteration {iteration}: min_diff={min_change:.3f} vs threshold={min_section_difference}")
 
             if min_change >= min_section_difference:
                 if enable_diagnostic_output:
-                    print("STOP: All differences >= threshold")
+                    _log("STOP: All differences >= threshold")
                 break
 
             min_id = np.argmin(mu_diff)
             if enable_diagnostic_output:
-                print(f"Merging segments {min_id} and {min_id+1}: {mu[min_id]:.3f} + {mu[min_id+1]:.3f}")
+                _log(f"Merging segments {min_id} and {min_id+1}: {mu[min_id]:.3f} + {mu[min_id+1]:.3f}")
 
             # Merge adjacent segments (matches MATLAB logic exactly)
             section_start = np.delete(section_start, min_id + 1)
@@ -196,12 +199,12 @@ def aashto_cda(y: np.ndarray,
             mu[min_id] = np.mean(y[section_start[min_id]:section_end[min_id]+1])
 
             if enable_diagnostic_output:
-                print(f"  New mean: {mu[min_id]:.3f}, remaining segments: {len(mu)}")
-            
+                _log(f"  New mean: {mu[min_id]:.3f}, remaining segments: {len(mu)}")
+
             iteration += 1
             if iteration > 50:  # Safety cap against degenerate data
                 if enable_diagnostic_output:
-                    print("ERROR: Too many merge iterations!")
+                    _log("ERROR: Too many merge iterations!")
                 break
 
         # Recompute nodes and uniform sections after merging (matches MATLAB)
@@ -209,27 +212,28 @@ def aashto_cda(y: np.ndarray,
         cy_nodes = cy[nodes]
         uniform_sections = np.diff(np.interp(x, nodes, cy_nodes))
         uniform_sections = np.concatenate([[uniform_sections[0]], uniform_sections])
-    
+
     if enable_diagnostic_output:
-        print("\n=== FINAL RESULTS ===")
-        print(f"Final segments: {len(mu)}")
-        print(f"Final means: {[round(m, 3) for m in mu]}")
-        print("Expected from MATLAB: 9 segments")
-        print(f"Match: {'YES' if len(mu) == 9 else 'NO'}")  # Use ASCII only
-        print(f"RETURNING nodes: {nodes}")
-        print(f"Node count: {len(nodes)}")
+        _log("\n=== FINAL RESULTS ===")
+        _log(f"Final segments: {len(mu)}")
+        _log(f"Final means: {[round(m, 3) for m in mu]}")
+        _log("Expected from MATLAB: 9 segments")
+        _log(f"Match: {'YES' if len(mu) == 9 else 'NO'}")
+        _log(f"RETURNING nodes: {nodes}")
+        _log(f"Node count: {len(nodes)}")
     
     return uniform_sections, nodes, section_start, section_end, mu
 
 
-def find_change_point(cy: np.ndarray, 
-                     nodes: np.ndarray, 
-                     x: np.ndarray, 
-                     sigma: float, 
-                     alpha: float, 
-                     min_segment_datapoints: int, 
+def find_change_point(cy: np.ndarray,
+                     nodes: np.ndarray,
+                     x: np.ndarray,
+                     sigma: float,
+                     alpha: float,
+                     min_segment_datapoints: int,
                      global_local: bool,
-                     debug: bool = False) -> Tuple[int, int]:
+                     debug: bool = False,
+                     log=None) -> Tuple[int, int]:
     """
     Test for significant change points in the cumulative signal across all sections.
 
@@ -244,7 +248,8 @@ def find_change_point(cy: np.ndarray,
         alpha: Significance level
         min_segment_datapoints: Minimum number of datapoints per segment
         global_local: Use segment-specific lengths (True) or total data length (False)
-        debug: Unused; retained for API compatibility
+        debug: If True, emit diagnostic output for each change-point test
+        log: Optional callable for output (defaults to print)
 
     Returns:
         location: Index of candidate change point (0-based)
@@ -294,16 +299,20 @@ def find_change_point(cy: np.ndarray,
         M_idx = np.argmax(test_stats)
         M = test_stats[M_idx]
 
+    _log = log or print
     location = id_array[M_idx] + np.sum(L[:M_idx])
-    
-    print(f"    Max test stat: M={M:.6f} at location {location} (segment {M_idx})")
-    
+
+    if debug:
+        _log(f"    Max test stat: M={M:.6f} at location {location} (segment {M_idx})")
+
     # Test significance
     if M > th:
         change_point_test = 1
-        print(f"    SIGNIFICANT: {M:.6f} > {th:.6f}")
+        if debug:
+            _log(f"    SIGNIFICANT: {M:.6f} > {th:.6f}")
     else:
-        print(f"    NOT SIGNIFICANT: {M:.6f} <= {th:.6f}")
+        if debug:
+            _log(f"    NOT SIGNIFICANT: {M:.6f} <= {th:.6f}")
     
     return int(location), change_point_test
 
@@ -401,6 +410,9 @@ class AashtoCdaMethod(AnalysisMethodBase):
 
             param_defaults = {param.name: param.default_value for param in method_config.parameters}
 
+            log_callback = kwargs.get('log_callback', None)
+            log = log_callback or print
+
             # Extract method-specific parameters with config defaults (no hardcoded literals)
             alpha = kwargs.get('alpha', param_defaults['alpha'])
             method = kwargs.get('method', param_defaults['method'])
@@ -448,9 +460,9 @@ class AashtoCdaMethod(AnalysisMethodBase):
             section_diagnostics = []
             
             if enable_diagnostic_output:
-                print(f"\n=== AASHTO CDA Analysis: {route_id} ===")
-                print(f"Total mandatory breakpoints: {len(mandatory_breakpoints)}")
-                print(f"Segmentable sections to process: {len(mandatory_breakpoints) - 1}")
+                log(f"\n=== AASHTO CDA Analysis: {route_id} ===")
+                log(f"Total mandatory breakpoints: {len(mandatory_breakpoints)}")
+                log(f"Segmentable sections to process: {len(mandatory_breakpoints) - 1}")
             
             # Process each segmentable section between mandatory breakpoints
             for section_idx, (section_start_mile, section_end_mile) in enumerate(zip(mandatory_breakpoints, mandatory_breakpoints[1:])):
@@ -463,39 +475,40 @@ class AashtoCdaMethod(AnalysisMethodBase):
                 if len(section_y) < 2:
                     # Skip sections with insufficient data
                     if enable_diagnostic_output:
-                        print(f"  Section {section_idx + 1}: [{section_start_mile:.3f} to {section_end_mile:.3f}] - SKIPPED (insufficient data: {len(section_y)} points)")
+                        log(f"  Section {section_idx + 1}: [{section_start_mile:.3f} to {section_end_mile:.3f}] - SKIPPED (insufficient data: {len(section_y)} points)")
                     continue
-                
+
                 section_length = section_end_mile - section_start_mile
                 if enable_diagnostic_output:
-                    print(f"  Section {section_idx + 1}: [{section_start_mile:.3f} to {section_end_mile:.3f}] - length: {section_length:.3f} miles, points: {len(section_y)}")
-                
+                    log(f"  Section {section_idx + 1}: [{section_start_mile:.3f} to {section_end_mile:.3f}] - length: {section_length:.3f} miles, points: {len(section_y)}")
+
                 # Run AASHTO CDA on this segmentable section only
                 try:
                     uniform_sections, cda_nodes, section_start_indices, section_end_indices, mu = aashto_cda(
                         section_y,
                         alpha=alpha,
-                        num_sections=max_segments,  # Optional cap on segments per section
+                        num_sections=max_segments,
                         min_segment_datapoints=min_segment_datapoints,
                         min_section_difference=min_section_difference,
                         method=method,
                         global_local=use_segment_length,
                         enable_diagnostic_output=enable_diagnostic_output,
+                        log=log,
                     )
-                    
+
                     # Convert section-relative indices to absolute mile positions
                     section_cda_miles = section_x[cda_nodes]
                     if enable_diagnostic_output:
-                        print(f"    -> CDA algorithm returned {len(cda_nodes)} nodes: {cda_nodes}")
-                        print(f"    -> Converted to mile positions: {section_cda_miles}")
-                        print(f"    -> Section bounds: {section_start_mile} to {section_end_mile}")
-                    
-                    internal_breakpoints = [bp for bp in section_cda_miles 
+                        log(f"    -> CDA algorithm returned {len(cda_nodes)} nodes: {cda_nodes}")
+                        log(f"    -> Converted to mile positions: {section_cda_miles}")
+                        log(f"    -> Section bounds: {section_start_mile} to {section_end_mile}")
+
+                    internal_breakpoints = [bp for bp in section_cda_miles
                                           if section_start_mile < bp < section_end_mile]
-                    
+
                     # Add internal breakpoints (exclude section boundaries already in mandatory_breakpoints)
                     all_breakpoints.extend(internal_breakpoints)
-                    
+
                     # Store section diagnostics
                     if enable_diagnostic_output:
                         section_diagnostics.append({
@@ -506,20 +519,20 @@ class AashtoCdaMethod(AnalysisMethodBase):
                             'cda_breakpoints_found': len(internal_breakpoints),
                             'internal_breakpoints': internal_breakpoints
                         })
-                        print(f"    -> CDA found {len(internal_breakpoints)} internal breakpoints")
-                    
+                        log(f"    -> CDA found {len(internal_breakpoints)} internal breakpoints")
+
                 except Exception as section_error:
                     if enable_diagnostic_output:
-                        print(f"    -> ERROR in section {section_idx + 1}: {section_error}")
+                        log(f"    -> ERROR in section {section_idx + 1}: {section_error}")
                     continue
-            
+
             all_breakpoints = np.unique(np.array(all_breakpoints))
             all_breakpoints = np.sort(all_breakpoints)
 
             if enable_diagnostic_output:
-                print("\n=== FINAL BREAKPOINT COLLECTION ===")
-                print(f"Total breakpoints collected: {len(all_breakpoints)}")
-                print(f"All breakpoints: {all_breakpoints.tolist()}")
+                log("\n=== FINAL BREAKPOINT COLLECTION ===")
+                log(f"Total breakpoints collected: {len(all_breakpoints)}")
+                log(f"All breakpoints: {all_breakpoints.tolist()}")
             
             # Calculate final segment statistics using all breakpoints
             segment_stats = []
@@ -549,7 +562,7 @@ class AashtoCdaMethod(AnalysisMethodBase):
             # Prepare diagnostic information if requested  
             diagnostics = {}
             if enable_diagnostic_output:
-                print(f"Final result: {len(segment_stats)} segments from {len(all_breakpoints)} breakpoints")
+                log(f"Final result: {len(segment_stats)} segments from {len(all_breakpoints)} breakpoints")
                 
                 # Calculate average datapoint spacing for diagnostics
                 avg_spacing = (x_values[-1] - x_values[0]) / len(x_values) if len(x_values) > 1 else 0.0

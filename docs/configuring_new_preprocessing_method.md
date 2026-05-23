@@ -808,17 +808,21 @@ class TukeyFencesPreprocessor(PreprocessingMethodBase):
         route_analysis: 'RouteAnalysis',
         x_column: str,
         y_column: str,
-        parameters: Dict[str, Any]
+        log_callback=None,
+        **parameters
     ) -> PreprocessingResult:
         """
         Process route data to detect and handle outliers.
-  
+
         Args:
             route_analysis: Complete route analysis with gap/attribute context
             x_column: Name of X-axis column (e.g., "Milepoint")
             y_column: Name of Y-axis column (e.g., "IRI")
-            parameters: Method-specific parameters from user/config
-  
+            log_callback: Optional callable for progress messages routed to the GUI
+                right panel (or stdout in CLI/test contexts). Use like:
+                ``log = log_callback or print; log("Processing segment 3/17...")``.
+            **parameters: Method-specific parameters from user/config
+
         Returns:
             PreprocessingResult with modifications and logs
         """
@@ -833,14 +837,16 @@ class TukeyFencesPreprocessor(PreprocessingMethodBase):
 - **`process()` signature**: Standardized across all methods
   - Takes full `RouteAnalysis` (not just DataFrame)
   - Receives gap segments, mandatory breakpoints, etc.
-  - Gets validated parameters as dictionary
+  - Parameters passed as `**parameters` keyword arguments (not a dict)
 
 #### 4.2 Using `DataModificationContext` for automatic logging
 
 **Step-by-step usage pattern:**
 
 ```python
-def process(self, route_analysis, x_column, y_column, parameters):
+def process(self, route_analysis, x_column, y_column, log_callback=None, **parameters):
+    log = log_callback or print  # routes to GUI right panel or stdout in tests
+
     # 1. Extract parameters
     k_factor = parameters.get('k_factor', 1.5)
     action = parameters.get('action', 'remove')
@@ -1147,9 +1153,10 @@ def create_processed_route_analysis(
 **Complete example:**
 
 ```python
-def process(self, route_analysis, x_column, y_column, parameters):
+def process(self, route_analysis, x_column, y_column, log_callback=None, **parameters):
     start_time = time.time()
-  
+    log = log_callback or print
+
     # ... algorithm implementation ...
   
     # Reconstruct RouteAnalysis with modified data
@@ -1216,6 +1223,57 @@ def process(self, route_analysis, x_column, y_column, parameters):
 - **Preserve input parameters:** Critical for reproducibility
 - **Add warnings for important edge cases:** E.g., skipped segments, boundary issues
 - **Track processing time:** Helps identify performance bottlenecks
+
+#### 4.7 Progress reporting and logging
+
+Preprocessing methods receive a `log_callback` as an explicit named parameter. Use it to stream progress messages to the GUI right panel (or stdout when running headless/tests).
+
+**Standard pattern:**
+
+```python
+def process(self, route_analysis, x_column, y_column, log_callback=None, **parameters):
+    log = log_callback or print  # GUI right panel in app, stdout in tests/CLI
+
+    log(f"Tukey Fences: processing {len(mandatory_bps) - 1} segments...")
+
+    for i, (seg_start, seg_end) in enumerate(segments):
+        # ... process segment ...
+        log(f"  Segment {i + 1}/{len(segments)}: {outlier_count} outlier(s) found.")
+
+    log(f"Complete: {total_outlier_count} total outlier(s) handled.")
+```
+
+**Rules:**
+
+- **Never call `print()` directly** — use `log(...)` so output routes correctly in both GUI and CLI contexts.
+- **Never import `logger.py` or use `create_logger()`** — that module has been removed.
+- **Use stdlib `logging` for unexpected errors** (not progress messages):
+
+  ```python
+  import logging
+  _logger = logging.getLogger(__name__)
+
+  try:
+      result = compute_iqr(seg_values)
+  except Exception as e:
+      _logger.warning("IQR calculation failed for segment [%.1f-%.1f]: %s", seg_start, seg_end, e)
+      continue  # skip segment gracefully
+  ```
+
+  Stdlib `WARNING+` records are automatically forwarded to the GUI right panel by the framework.
+
+- **`log_callback` falls back to `print`** — unit tests that call `process()` directly without passing `log_callback` get clean stdout output automatically.
+
+**What NOT to do:**
+
+```python
+# ❌ Hard-codes stdout — breaks in GUI context
+print(f"Processing segment {i}...")
+
+# ❌ Removed module — will raise ImportError
+from logger import create_logger
+log = create_logger(callback=log_callback).log
+```
 
 ### Step 5 — Visualization overlay behavior
 
@@ -1842,31 +1900,35 @@ class YourMethodPreprocessor(PreprocessingMethodBase):
         route_analysis: 'RouteAnalysis',
         x_column: str,
         y_column: str,
-        parameters: Dict[str, Any]
+        log_callback=None,
+        **parameters
     ) -> PreprocessingResult:
         """
         Process route data using <your algorithm>.
-  
+
         Args:
             route_analysis: Complete route analysis with gap/attribute context
             x_column: Name of X-axis column (e.g., "Milepoint")
             y_column: Name of Y-axis column (e.g., "IRI")
-            parameters: Method-specific parameters from user/config
-  
+            log_callback: Optional callable for progress messages routed to the GUI
+                right panel (or stdout in CLI/test contexts).
+            **parameters: Method-specific parameters from user/config
+
         Returns:
             PreprocessingResult with modifications and logs
         """
         start_time = time.time()
-  
+        log = log_callback or print  # routes to GUI right panel or stdout in tests
+
         # 1. Extract parameters (with defaults from config)
         param1 = parameters.get('param1', default_value)
         param2 = parameters.get('param2', default_value)
-  
+
         # 2. Get data
         df = route_analysis.route_data
         y_values = df[y_column].values
         x_values = df[x_column].values
-  
+
         # 3. Create modification context with mandatory breakpoint protection
         ctx = DataModificationContext(
             df,
@@ -1874,34 +1936,36 @@ class YourMethodPreprocessor(PreprocessingMethodBase):
             y_column,
             route_analysis.mandatory_breakpoints  # ← Enables automatic protection
         )
-  
+
         # 4. YOUR ALGORITHM IMPLEMENTATION GOES HERE
-  
+
         # Example: Per-segment processing pattern
         mandatory_bps = sorted(list(route_analysis.mandatory_breakpoints or []))
         if not mandatory_bps:
-            # No segments defined - use data range
             mandatory_bps = [float(x_values.min()), float(x_values.max())]
-  
+
+        num_segments = len(mandatory_bps) - 1
+        log(f"<YourMethod>: processing {num_segments} segment(s)...")
+
         total_modifications = 0
         warnings = []
-  
+
         # Process each segment independently
-        for i in range(len(mandatory_bps) - 1):
+        for i in range(num_segments):
             seg_start = mandatory_bps[i]
             seg_end = mandatory_bps[i + 1]
-  
+
             # Get segment data
             seg_mask = (x_values >= seg_start) & (x_values <= seg_end)
             seg_y_values = y_values[seg_mask]
             seg_indices = np.where(seg_mask)[0]
-  
+
             # Check minimum data requirement
             MIN_POINTS = 4  # Adjust based on your algorithm
             if len(seg_y_values) < MIN_POINTS:
                 warnings.append(f"Segment [{seg_start:.1f}-{seg_end:.1f}] skipped: only {len(seg_y_values)} points")
                 continue
-  
+
             # YOUR ALGORITHM LOGIC HERE
             # Example: Identify points to modify
             # ...
@@ -1921,10 +1985,12 @@ class YourMethodPreprocessor(PreprocessingMethodBase):
                     ctx.modify_y_value(x_val, new_y, reason="<why>")
                     total_modifications += 1
   
+        log(f"  Complete: {total_modifications} modification(s) applied.")
+
         # 5. Get modified data and log
         modified_df = ctx.get_modified_data()
         modification_log = ctx.get_modification_log()
-  
+
         # 6. Reconstruct RouteAnalysis with modified data
         processed_route_analysis = create_processed_route_analysis(
             original_route_analysis=route_analysis,
@@ -2077,12 +2143,12 @@ def test_basic_preprocessing():
     # Instantiate method
     preprocessor = YourMethodPreprocessor()
   
-    # Run preprocessing
+    # Run preprocessing (log_callback omitted → falls back to print in tests)
     result = preprocessor.process(
         route_analysis=route_analysis,
         x_column='Milepoint',
         y_column='IRI',
-        parameters={'param1': 1.5}
+        param1=1.5
     )
   
     # Assertions

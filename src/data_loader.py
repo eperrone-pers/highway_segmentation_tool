@@ -88,7 +88,7 @@ def _process_attribute_breakpoints(
         try:
             if pd.isna(v):
                 return None
-        except Exception:
+        except TypeError:
             pass
         s = "" if v is None else str(v).strip()
         return None if s == "" else s
@@ -339,7 +339,7 @@ def build_attribute_break_analysis(route_analysis: RouteAnalysis) -> Optional[Di
         try:
             x = float(e.get("x"))
             breakpoints.append(x)
-        except Exception:
+        except (TypeError, ValueError):
             continue
 
     return {
@@ -381,7 +381,7 @@ def build_secondary_attribute_break_analysis(route_analysis: RouteAnalysis) -> O
         try:
             x = float(e.get("x"))
             breakpoints.append(x)
-        except Exception:
+        except (TypeError, ValueError):
             continue
 
     return {
@@ -485,7 +485,7 @@ def apply_preprocessing_phase(
         log_callback(f"Applying {method_config.display_name}...")
     
     # Execute preprocessing
-    result = preprocessor.process(route_analysis, x_column, y_column, **validated_params)
+    result = preprocessor.process(route_analysis, x_column, y_column, log_callback=log_callback, **validated_params)
     
     if log_callback and result.modifications_summary:
         log_callback(f"  {result.modifications_summary}")

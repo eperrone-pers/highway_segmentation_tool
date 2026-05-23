@@ -246,9 +246,7 @@ class PeltSegmentationMethod(AnalysisMethodBase):
         log_callback = kwargs.get("log_callback", None)
         stop_callback = kwargs.get("stop_callback", None)
 
-        def log(message: str) -> None:
-            if log_callback:
-                log_callback(message)
+        log = log_callback or print
 
         if penalty <= 0:
             raise ValueError(f"penalty must be > 0 (got {penalty})")
