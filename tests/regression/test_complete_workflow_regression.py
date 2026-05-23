@@ -543,6 +543,21 @@ class MockGUIApp:
             self.available_routes = [route_name]
             self.selected_routes = [route_name]
 
+    def on_optimization_started(self) -> None:
+        pass
+
+    def on_stop_requested(self) -> None:
+        pass
+
+    def on_optimization_finished(self, stopped_early: bool) -> None:
+        if stopped_early:
+            self.log_message("Optimization stopped by user.")
+        else:
+            self.log_message("Optimization completed.")
+
+    def handle_error(self, title, exc=None, severity="error", show_messagebox=True) -> None:
+        self.log_message(f"[{severity.upper()}] {title}" + (f": {exc}" if exc else ""))
+
 
 def setup_mock_gui_app(data_file: Path, x_column: str, y_column: str, route_column: Optional[str], 
                       method_key: str, output_dir: Path) -> MockGUIApp:

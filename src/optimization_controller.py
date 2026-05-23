@@ -127,17 +127,7 @@ class OptimizationController:
         
         self.app.is_running = True
         self.app.stop_requested = False
-
-        if hasattr(self.app, 'start_button'):
-            self.app.start_button.config(state="disabled")
-        if hasattr(self.app, 'stop_button'):
-            self.app.stop_button.config(state="normal")
-
-        if hasattr(self.app, 'results_text'):
-            self.app.results_text.delete(1.0, 'end')
-
-        if hasattr(self.app, 'results_notebook'):
-            self.app.results_notebook.select(0)  # Select Optimization Log tab
+        self.app.on_optimization_started()
 
         self.optimization_thread = threading.Thread(target=self._run_optimization_worker, daemon=True)
         self.optimization_thread.start()
@@ -148,9 +138,8 @@ class OptimizationController:
             self.app.stop_requested = True
             self.app.log_message("Stop requested - optimization will halt after current generation...")
             
-            if hasattr(self.app, 'stop_button'):
-                self.app.stop_button.config(text="Stopping...", state="disabled")
-                
+            self.app.on_stop_requested()
+
             if self.optimization_thread and self.optimization_thread.is_alive():
                 try:
                     # Give the thread reasonable time to finish its current operation
@@ -670,16 +659,7 @@ class OptimizationController:
         """
         self.app.is_running = False
         self.app.stop_requested = False
-
-        if hasattr(self.app, 'start_button'):
-            self.app.start_button.config(state="normal")
-        if hasattr(self.app, 'stop_button'):
-            self.app.stop_button.config(text="⏹ Stop", state="disabled")
-
-        if stopped_early:
-            self.app.log_message("Optimization stopped by user.")
-        else:
-            self.app.log_message("Optimization completed.")
+        self.app.on_optimization_finished(stopped_early)
     
     def _save_consolidated_results(self, all_route_results, method_key, params):
         """Save consolidated results from all routes using ExtensibleJsonResultsManager.

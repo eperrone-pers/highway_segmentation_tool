@@ -708,6 +708,35 @@ class HighwaySegmentationGUI:
         """Request the running optimization to stop."""
         return self.optimization_controller.stop_optimization()
 
+    # --- Optimization lifecycle hooks (called by OptimizationController) ---
+
+    def on_optimization_started(self) -> None:
+        """Prepare the GUI when optimization begins."""
+        if hasattr(self, 'start_button'):
+            self.start_button.config(state="disabled")
+        if hasattr(self, 'stop_button'):
+            self.stop_button.config(state="normal")
+        if hasattr(self, 'results_text'):
+            self.results_text.delete(1.0, 'end')
+        if hasattr(self, 'results_notebook'):
+            self.results_notebook.select(0)
+
+    def on_stop_requested(self) -> None:
+        """Update the GUI when a stop has been requested."""
+        if hasattr(self, 'stop_button'):
+            self.stop_button.config(text="Stopping...", state="disabled")
+
+    def on_optimization_finished(self, stopped_early: bool) -> None:
+        """Restore the GUI when optimization ends."""
+        if hasattr(self, 'start_button'):
+            self.start_button.config(state="normal")
+        if hasattr(self, 'stop_button'):
+            self.stop_button.config(text="⏹ Stop", state="disabled")
+        if stopped_early:
+            self.log_message("Optimization stopped by user.")
+        else:
+            self.log_message("Optimization completed.")
+
     def _collect_current_analysis_export_state(self) -> Optional[dict]:
         """Validate the current GUI state and return a plain dict of export fields.
 
