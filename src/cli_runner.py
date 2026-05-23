@@ -25,9 +25,9 @@ import pandas as pd
 import jsonschema
 
 from config import OptionalNumericParameter, get_optimization_method, resolve_method_class, PreprocessingRunConfig
-from data_loader import RouteAnalysis, analyze_route_gaps, filter_data_by_route, process_route_with_preprocessing
+from data_loader import RouteAnalysis, analyze_route_gaps, process_route_with_preprocessing
 from extensible_results_manager import ExtensibleJsonResultsManager
-from route_utils import INTERNAL_ROUTE_IDS_TO_SKIP_LOWER, normalize_route_id
+from route_utils import filter_data_by_route, list_routes, normalize_route_id
 from value_parsing import coerce_none_like
 
 if TYPE_CHECKING:
@@ -481,16 +481,7 @@ def _determine_routes(
             df.drop(df.index[invalid_mask], inplace=True)
             df[actual_route_column] = normalized_series.loc[~invalid_mask].astype("string")
 
-        unique_routes = df[actual_route_column].unique()
-        normalized_routes = []
-        for route in unique_routes:
-            route_str = normalize_route_id(route)
-            if route_str is None:
-                continue
-            if route_str.lower() in INTERNAL_ROUTE_IDS_TO_SKIP_LOWER:
-                continue
-            normalized_routes.append(route_str)
-        all_routes = sorted(set(normalized_routes))
+        all_routes = list_routes(df, actual_route_column)
 
         if selected_routes is None:
             routes_to_process = all_routes

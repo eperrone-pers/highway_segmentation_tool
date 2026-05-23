@@ -13,8 +13,9 @@ from datetime import datetime
 from tkinter import messagebox
 from config import get_optimization_method, resolve_method_class
 from route_utils import (
-    INTERNAL_ROUTE_IDS_TO_SKIP_LOWER,
     ROUTE_COLUMN_NONE_SENTINEL,
+    filter_data_by_route,
+    list_routes,
     normalize_route_column_selection,
     normalize_route_id,
 )
@@ -251,17 +252,7 @@ class OptimizationController:
                         # If normalization/filtering fails for unexpected reasons, treat as fatal.
                         raise
 
-                    unique_routes = self.app.data.route_data[actual_route_column].unique()
-                    normalized_routes = []
-                    for route in unique_routes:
-                        route_str = normalize_route_id(route)
-                        if route_str is None:
-                            continue
-                        # Filter out internal/sentinel route IDs (case-insensitive)
-                        if route_str.lower() in INTERNAL_ROUTE_IDS_TO_SKIP_LOWER:
-                            continue
-                        normalized_routes.append(route_str)
-                    all_routes = sorted(set(normalized_routes))
+                    all_routes = list_routes(self.app.data.route_data, actual_route_column)
                 else:
                     self.app.log_message(f"[ERROR] Route column '{actual_route_column}' not found in data!")
                     return
@@ -922,8 +913,6 @@ class OptimizationController:
             if not self.app.data:
                 return {}
             
-            from data_loader import filter_data_by_route
-            
             original_data_by_route = {}
             route_column = normalize_route_column_selection(
                 self.app.route_column.get() if hasattr(self.app, 'route_column') else None
@@ -1082,7 +1071,7 @@ class OptimizationController:
             containing only the routes that were successfully prepared. Returns an
             empty list if every route failed.
         """
-        from data_loader import filter_data_by_route, analyze_route_gaps, process_route_with_preprocessing
+        from data_loader import analyze_route_gaps, process_route_with_preprocessing
         
         # Check if preprocessing is configured
         has_preprocessing = False

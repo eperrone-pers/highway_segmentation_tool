@@ -3,7 +3,7 @@ from dataclasses import dataclass
 import logging
 from typing import List, Set, Dict, Tuple, Optional, TYPE_CHECKING
 
-from route_utils import normalize_route_id
+from route_utils import filter_data_by_route, normalize_route_id
 
 # Preprocessing integration
 if TYPE_CHECKING:
@@ -765,30 +765,6 @@ def prepare_route_processing(data, route_column=None, selected_routes=None, data
             'route_column': None,
             'data': data
         }
-
-def filter_data_by_route(data, route_column, route_value):
-    """
-    Filter data by a specific route value.
-    
-    Args:
-        data: DataFrame with highway data
-        route_column: Name of the route column
-        route_value: Route identifier to filter by
-    
-    Returns: 
-        DataFrame: Filtered data for the specific route
-    """
-    if route_column not in data.columns:
-        return data.copy()
-
-    # Treat route identifiers as categorical strings regardless of CSV inference.
-    # This avoids mismatches like int 268296608 (data) vs "268296608" (UI selection).
-    route_str = normalize_route_id(route_value)
-    if route_str is None:
-        return data.iloc[0:0].copy()
-
-    route_series = data[route_column].astype("string").str.strip()
-    return data.loc[route_series == route_str].copy()
 
 
 def load_highway_data(file_path: str) -> Optional[pd.DataFrame]:

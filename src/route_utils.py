@@ -74,6 +74,55 @@ def normalize_route_id(value: Any) -> Optional[str]:
     return route_str
 
 
+def filter_data_by_route(data, route_column: str, route_value: Any):
+    """Filter a DataFrame to rows matching a specific route identifier.
+
+    Route values are normalized before comparison to handle mixed types
+    (e.g., integer 268296608 in data vs string "268296608" from the UI).
+
+    Args:
+        data: DataFrame with highway data.
+        route_column: Name of the route column.
+        route_value: Route identifier to filter by.
+
+    Returns:
+        Copy of rows where the route column matches route_value.
+        Returns a full-DataFrame copy if route_column is absent, or an empty
+        frame if route_value normalizes to None.
+    """
+    if route_column not in data.columns:
+        return data.copy()
+
+    route_str = normalize_route_id(route_value)
+    if route_str is None:
+        return data.iloc[0:0].copy()
+
+    route_series = data[route_column].astype("string").str.strip()
+    return data.loc[route_series == route_str].copy()
+
+
+def list_routes(df, route_column: str) -> list:
+    """Return sorted list of normalized, non-internal route IDs from df[route_column].
+
+    Rows whose identifiers normalize to None (missing/invalid) and internal
+    sentinel IDs (INTERNAL_ROUTE_IDS_TO_SKIP_LOWER) are silently excluded.
+
+    Args:
+        df: DataFrame containing a route column.
+        route_column: Name of the column holding route identifiers.
+
+    Returns:
+        Sorted list of unique normalized route ID strings.
+    """
+    normalized = df[route_column].apply(normalize_route_id)
+    routes = []
+    for route_str in normalized.dropna():
+        s = str(route_str)
+        if s.lower() not in INTERNAL_ROUTE_IDS_TO_SKIP_LOWER:
+            routes.append(s)
+    return sorted(set(routes))
+
+
 def normalize_route_column_selection(value: Any) -> Optional[str]:
     """Normalize a route column selection from the UI.
 

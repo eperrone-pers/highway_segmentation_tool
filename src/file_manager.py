@@ -15,8 +15,8 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 from config import UIConfig
 from route_utils import (
-    INTERNAL_ROUTE_IDS_TO_SKIP_LOWER,
     ROUTE_COLUMN_NONE_SENTINEL,
+    list_routes,
     normalize_route_column_selection,
     normalize_route_id,
 )
@@ -539,12 +539,7 @@ class FileManager:
             normalized = df[route_col].apply(normalize_route_id)
             invalid_count = int(normalized.isna().sum())
 
-            distinct_routes = []
-            for route_str in normalized.dropna().astype(str).tolist():
-                if route_str.lower() in INTERNAL_ROUTE_IDS_TO_SKIP_LOWER:
-                    continue
-                distinct_routes.append(route_str)
-            distinct_routes = sorted(set(distinct_routes))
+            distinct_routes = list_routes(df, route_col)
 
             if invalid_count > 0:
                 self.app.log_message(
