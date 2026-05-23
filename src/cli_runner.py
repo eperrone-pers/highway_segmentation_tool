@@ -13,9 +13,11 @@ The run spec format is defined by:
 
 from __future__ import annotations
 
+import datetime as _dt
 import json
 import os
-from dataclasses import dataclass
+from collections import Counter
+from dataclasses import dataclass, replace as _dc_replace
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, TYPE_CHECKING
 
@@ -89,6 +91,10 @@ class RunSpecError(ValueError):
     """Raised when a run spec is invalid or cannot be executed."""
 
 
+class BatchPartialFailureError(RunSpecError):
+    """Raised when a batch run completes but one or more input files failed."""
+
+
 @dataclass(frozen=True)
 class ResolvedRunSpec:
     """Normalized, execution-ready run spec produced by ``load_and_resolve_run_spec``.
@@ -142,6 +148,16 @@ class ResolvedRunSpec:
 
     output_json_path: Path
     overwrite: bool
+
+
+def _now_utc() -> str:
+    """Return the current UTC time as an ISO-8601 string with Z suffix."""
+    return (
+        _dt.datetime.now(tz=_dt.timezone.utc)
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
 
 
 def _default_logger(msg: str) -> None:
@@ -567,33 +583,18 @@ def _validate_method_parameters(method_key: str, params: Dict[str, Any]) -> None
         raise RunSpecError("Method parameter validation failed:\n" + "\n".join([f"- {e}" for e in errors]))
 
 
-def run_analysis_from_spec_file(
-    spec_path: str | os.PathLike[str],
+def _run_analysis_from_resolved_spec(
+    spec: ResolvedRunSpec,
     *,
-    validate_spec: bool = True,
     log_callback: Optional[LogCallback] = None,
 ) -> str:
-    """Execute an analysis run defined by a run-spec JSON file.
+    """Shared execution core for single-file and batch runs.
 
-    Loads and validates the spec, reads input data, runs the specified analysis
-    method across all selected routes, and writes consolidated JSON results.
-
-    Args:
-        spec_path: Path to the run-spec JSON file.
-        validate_spec: When True, validate the spec against the JSON schema before
-            loading. Set to False only when the caller has already validated.
-        log_callback: Optional callable that receives log messages; defaults to
-            printing to stdout.
-
-    Returns:
-        Absolute path to the written results JSON file.
-
-    Raises:
-        RunSpecError: If the spec is invalid, input data is missing or malformed,
-            no routes could be analyzed, or the output file exists and overwrite is False.
+    Callers load and resolve the spec (and may substitute fields via
+    ``_dc_replace``), then pass the ready ``ResolvedRunSpec`` here.
+    Returns the absolute path to the written results JSON file.
     """
     log = log_callback or _default_logger
-    spec = load_and_resolve_run_spec(spec_path, validate=validate_spec)
 
     log(f"Loading input file: {spec.data_file_path}")
     if not spec.data_file_path.exists():
@@ -790,3 +791,233 @@ def run_analysis_from_spec_file(
 
     log(f"Wrote results JSON: {json_output_path}")
     return json_output_path
+
+
+def run_analysis_from_spec_file(
+    spec_path: str | os.PathLike[str],
+    *,
+    validate_spec: bool = True,
+    log_callback: Optional[LogCallback] = None,
+) -> str:
+    """Execute an analysis run defined by a run-spec JSON file.
+
+    Loads and validates the spec, reads input data, runs the specified analysis
+    method across all selected routes, and writes consolidated JSON results.
+
+    Args:
+        spec_path: Path to the run-spec JSON file.
+        validate_spec: When True, validate the spec against the JSON schema before
+            loading. Set to False only when the caller has already validated.
+        log_callback: Optional callable that receives log messages; defaults to
+            printing to stdout.
+
+    Returns:
+        Absolute path to the written results JSON file.
+
+    Raises:
+        RunSpecError: If the spec is invalid, input data is missing or malformed,
+            no routes could be analyzed, or the output file exists and overwrite is False.
+    """
+    log = log_callback or _default_logger
+    spec = load_and_resolve_run_spec(spec_path, validate=validate_spec)
+    return _run_analysis_from_resolved_spec(spec, log_callback=log)
+
+
+# ---------------------------------------------------------------------------
+# Batch runner
+# ---------------------------------------------------------------------------
+
+def discover_batch_input_files(
+    input_dir: Path,
+    glob_pattern: str,
+    *,
+    recurse: bool,
+) -> List[Path]:
+    """Return sorted list of files matching ``glob_pattern`` in ``input_dir``.
+
+    When ``recurse`` is True, searches all subdirectories recursively.
+    """
+    if recurse:
+        return sorted(input_dir.rglob(glob_pattern))
+    return sorted(input_dir.glob(glob_pattern))
+
+
+def _detect_stem_collisions(files: List[Path]) -> List[str]:
+    """Return list of stems that appear more than once across ``files``."""
+    counts: Counter[str] = Counter(f.stem for f in files)
+    return sorted(stem for stem, n in counts.items() if n > 1)
+
+
+def _write_batch_summary(path: Path, summary: Dict[str, Any]) -> None:
+    path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+
+
+def run_batch_analysis_from_spec_file(
+    spec_path: str | os.PathLike[str],
+    input_dir: str | os.PathLike[str],
+    output_dir: str | os.PathLike[str],
+    *,
+    glob_pattern: str = "*.csv",
+    recurse: bool = False,
+    summary_json: Optional[str | os.PathLike[str]] = None,
+    continue_on_error: bool = True,
+    export_excel: bool = False,
+    validate_spec: bool = True,
+    log_callback: Optional[LogCallback] = None,
+) -> str:
+    """Execute a batch analysis run using a template run spec.
+
+    Discovers every file matching ``glob_pattern`` in ``input_dir``, substitutes
+    that file's path into a per-file copy of the template spec (via
+    ``dataclasses.replace``), runs the analysis, and writes results to
+    ``output_dir/<stem>.json``. A JSON summary is written incrementally so partial
+    progress is preserved even if the run is interrupted.
+
+    Args:
+        spec_path: Path to the template run-spec JSON file.
+        input_dir: Directory to scan for input files.
+        output_dir: Directory where per-file JSON (and optionally XLSX) results land.
+        glob_pattern: Glob pattern used to discover files (default ``*.csv``).
+        recurse: When True, scan subdirectories recursively.
+        summary_json: Path for the batch summary JSON. Defaults to
+            ``<output_dir>/batch_summary.json``.
+        continue_on_error: When True, log failures and continue. When False, stop
+            immediately and raise ``RunSpecError`` on the first failure.
+        export_excel: When True, export each result JSON to an adjacent XLSX file.
+        validate_spec: When True, validate the template spec against the JSON schema.
+        log_callback: Optional log sink; defaults to stdout.
+
+    Returns:
+        Absolute path to the written batch summary JSON file.
+
+    Raises:
+        RunSpecError: On a hard error (bad spec, missing dir, stem collision, or
+            first-failure when ``continue_on_error`` is False).
+        BatchPartialFailureError: When ``continue_on_error`` is True and at least
+            one file failed — raised after all files are attempted.
+    """
+    log = log_callback or _default_logger
+
+    input_dir_path = Path(input_dir).expanduser().resolve()
+    output_dir_path = Path(output_dir).expanduser().resolve()
+    spec_path = Path(spec_path).expanduser().resolve()
+    summary_json_path = (
+        Path(summary_json).expanduser().resolve()
+        if summary_json is not None
+        else output_dir_path / "batch_summary.json"
+    )
+
+    if not input_dir_path.is_dir():
+        raise RunSpecError(f"Input directory does not exist: {input_dir_path}")
+
+    template_spec = load_and_resolve_run_spec(spec_path, validate=validate_spec)
+
+    input_files = discover_batch_input_files(input_dir_path, glob_pattern, recurse=recurse)
+
+    if not input_files:
+        raise RunSpecError(
+            f"No files matching {glob_pattern!r} found in {input_dir_path}"
+        )
+
+    collisions = _detect_stem_collisions(input_files)
+    if collisions:
+        raise RunSpecError(
+            "Stem collisions detected — output names would overwrite each other: "
+            + ", ".join(collisions)
+        )
+
+    output_dir_path.mkdir(parents=True, exist_ok=True)
+    summary_json_path.parent.mkdir(parents=True, exist_ok=True)
+
+    log(f"Batch run: {len(input_files)} file(s) in {input_dir_path}")
+    log(f"Output dir: {output_dir_path}")
+    log(f"Template spec: {spec_path}")
+
+    if export_excel:
+        from excel_export import export_json_to_excel
+
+    summary: Dict[str, Any] = {
+        "batch_version": "1.0.0",
+        "started_at": _now_utc(),
+        "template_spec_path": str(spec_path),
+        "input_dir": str(input_dir_path),
+        "glob": glob_pattern,
+        "recurse": recurse,
+        "output_dir": str(output_dir_path),
+        "summary_json": str(summary_json_path),
+        "continue_on_error": continue_on_error,
+        "export_excel": export_excel,
+        "total_files": len(input_files),
+        "completed": 0,
+        "failed": 0,
+        "results": [],
+    }
+
+    failed_names: List[str] = []
+
+    for i, input_file in enumerate(input_files, 1):
+        stem = input_file.stem
+        out_json = output_dir_path / f"{stem}.json"
+
+        log(f"[{i}/{len(input_files)}] {input_file.name}")
+
+        file_spec = _dc_replace(
+            template_spec,
+            data_file_path=input_file,
+            output_json_path=out_json,
+            overwrite=True,
+        )
+
+        file_result: Dict[str, Any] = {
+            "input_file": str(input_file),
+            "output_json": str(out_json),
+            "status": "pending",
+        }
+
+        try:
+            json_path = _run_analysis_from_resolved_spec(file_spec, log_callback=log)
+            file_result["status"] = "success"
+            file_result["output_json"] = json_path
+
+            if export_excel:
+                xlsx_path = output_dir_path / f"{stem}.xlsx"
+                ok = export_json_to_excel(json_path, str(xlsx_path), str(input_file))
+                file_result["output_xlsx"] = str(xlsx_path) if ok else None
+                if not ok:
+                    log(f"  Warning: Excel export failed for {input_file.name}")
+
+            summary["completed"] += 1
+
+        except Exception as exc:
+            file_result["status"] = "failed"
+            file_result["error"] = str(exc)
+            failed_names.append(input_file.name)
+            summary["failed"] += 1
+            log(f"  ERROR: {input_file.name}: {exc}")
+
+            if not continue_on_error:
+                summary["results"].append(file_result)
+                summary["finished_at"] = _now_utc()
+                _write_batch_summary(summary_json_path, summary)
+                raise RunSpecError(
+                    f"Batch run stopped on first error ({input_file.name}): {exc}"
+                ) from exc
+
+        summary["results"].append(file_result)
+        _write_batch_summary(summary_json_path, summary)
+
+    summary["finished_at"] = _now_utc()
+    _write_batch_summary(summary_json_path, summary)
+
+    log(
+        f"Batch complete: {summary['completed']} succeeded, {summary['failed']} failed"
+    )
+    log(f"Summary written: {summary_json_path}")
+
+    if failed_names:
+        raise BatchPartialFailureError(
+            f"Batch run completed with {len(failed_names)} failure(s): "
+            + ", ".join(failed_names)
+        )
+
+    return str(summary_json_path)

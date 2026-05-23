@@ -88,6 +88,110 @@ def build_run_spec(
     }
 
 
+def default_batch_run_spec_path(output_json_path: os.PathLike[str] | str) -> Path:
+    """Return default batch-template run-spec path derived from the output JSON path.
+
+    Example: Results/network_analysis.json -> Results/network_analysis.batch_template.run_spec.json
+    """
+    out = Path(output_json_path)
+    base = out.with_suffix("")
+    return base.with_name(base.name + ".batch_template.run_spec.json")
+
+
+def default_batch_output_dir(output_json_path: os.PathLike[str] | str) -> Path:
+    """Return default batch output directory derived from the output JSON path stem.
+
+    Example: Results/network_analysis.json -> Results/network_analysis_batch
+    """
+    out = Path(output_json_path)
+    stem = out.with_suffix("").name
+    return out.parent / f"{stem}_batch"
+
+
+def default_batch_manifest_path(output_json_path: os.PathLike[str] | str) -> Path:
+    """Return default batch manifest path adjacent to the output JSON.
+
+    Example: Results/network_analysis.json -> Results/network_analysis.batch_manifest.json
+    """
+    out = Path(output_json_path)
+    base = out.with_suffix("")
+    return base.with_name(base.name + ".batch_manifest.json")
+
+
+def default_batch_summary_path(output_dir: os.PathLike[str] | str) -> Path:
+    """Return default batch summary path inside the given output directory."""
+    return Path(output_dir) / "batch_summary.json"
+
+
+def build_batch_manifest(
+    *,
+    run_spec_path: os.PathLike[str] | str,
+    input_dir: os.PathLike[str] | str,
+    glob: str,
+    recurse: bool,
+    output_dir: os.PathLike[str] | str,
+    summary_json: os.PathLike[str] | str,
+    continue_on_error: bool = True,
+    export_excel: bool = False,
+    application: str = "Highway Segmentation",
+    application_version: str = "dev",
+    created_at: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Build a batch manifest dict describing how to re-execute a batch run."""
+    return {
+        "manifest_version": "1.0.0",
+        "run_spec_path": str(run_spec_path),
+        "input_dir": str(input_dir),
+        "glob": glob,
+        "recurse": bool(recurse),
+        "output_dir": str(output_dir),
+        "summary_json": str(summary_json),
+        "continue_on_error": bool(continue_on_error),
+        "export_excel": bool(export_excel),
+        "created_at": created_at or _iso_utc_now(),
+        "created_by": {
+            "application": application,
+            "version": application_version,
+        },
+    }
+
+
+def build_command_for_batch_run(
+    spec_path: os.PathLike[str] | str,
+    input_dir: os.PathLike[str] | str,
+    output_dir: os.PathLike[str] | str,
+    *,
+    glob_pattern: str = "*.csv",
+    recurse: bool = False,
+    summary_json: Optional[os.PathLike[str] | str] = None,
+    continue_on_error: bool = True,
+    export_excel: bool = False,
+) -> str:
+    """Build a copy/paste-friendly CLI command for a batch run.
+
+    Always emits --glob and --summary-json explicitly so the command is self-documenting
+    and reproducible even when the values match the CLI defaults.
+    """
+    resolved_summary = (
+        str(summary_json) if summary_json is not None else str(default_batch_summary_path(output_dir))
+    )
+    parts = [
+        "python src/cli.py run-batch",
+        f'--spec "{spec_path}"',
+        f'--input-dir "{input_dir}"',
+        f'--glob "{glob_pattern}"',
+        f'--output-dir "{output_dir}"',
+        f'--summary-json "{resolved_summary}"',
+    ]
+    if recurse:
+        parts.append("--recurse")
+    if not continue_on_error:
+        parts.append("--stop-on-error")
+    if export_excel:
+        parts.append("--export-excel")
+    return " ".join(parts)
+
+
 def build_command_for_run_spec(spec_path: os.PathLike[str] | str) -> str:
     """Build a copy/paste-friendly CLI command to execute a run spec.
 

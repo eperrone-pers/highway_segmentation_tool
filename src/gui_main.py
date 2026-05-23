@@ -22,7 +22,30 @@ from settings_manager import SettingsManager
 from config import UIConfig, AlgorithmConstants, ConstrainedOptimizationConfig
 from route_utils import ROUTE_COLUMN_NONE_SENTINEL, normalize_route_column_selection
 from docs_browser import open_markdown_path_in_browser
-from run_spec import build_command_for_run_spec, build_run_spec, default_run_spec_path_for_output
+from cli_export_dialog import CLIExportDialog
+from run_spec import (
+    build_command_for_run_spec,
+    build_run_spec,
+    default_run_spec_path_for_output,
+)
+
+
+def _json_safe(value):
+    """Recursively coerce a value to a JSON-serialisable type."""
+    if value is None:
+        return None
+    if isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, dict):
+        return {str(k): _json_safe(v) for k, v in value.items()}
+    try:
+        if hasattr(value, 'item'):
+            return _json_safe(value.item())
+    except Exception:
+        pass
+    return str(value)
 
 ui_config = UIConfig()
 optimization_config = AlgorithmConstants()
@@ -659,136 +682,131 @@ class HighwaySegmentationGUI:
         """Request the running optimization to stop."""
         return self.optimization_controller.stop_optimization()
 
-    def copy_command_line_for_analysis(self) -> None:
-        """Export a run-spec JSON for the current UI state and copy a CLI command to clipboard."""
+    def _collect_current_analysis_export_state(self) -> Optional[dict]:
+        """Validate the current GUI state and return a plain dict of export fields.
+
+        Shows an error messagebox and returns None if any required field is missing
+        or invalid. Returns a dict on success — no file I/O or clipboard interaction.
+        """
+        data_file_path = self.file_manager.get_data_file_path() if hasattr(self, 'file_manager') else ''
+        if not data_file_path:
+            messagebox.showerror("Data Required", "Please select a data file before exporting a command line.")
+            return None
+
+        x_column = self.x_column.get() if hasattr(self, 'x_column') else ''
+        y_column = self.y_column.get() if hasattr(self, 'y_column') else ''
+        if not x_column or not y_column:
+            messagebox.showerror("Columns Required", "Please select both X and Y columns before exporting a command line.")
+            return None
+
         try:
-            # Validate minimum inputs
-            data_file_path = self.file_manager.get_data_file_path() if hasattr(self, 'file_manager') else ''
-            if not data_file_path:
-                messagebox.showerror("Data Required", "Please select a data file before exporting a command line.")
-                return
+            gap_threshold = float(self.gap_threshold.get())
+        except Exception:
+            messagebox.showerror("Gap Threshold Required", "Gap threshold is missing or invalid.")
+            return None
 
-            x_column = self.x_column.get() if hasattr(self, 'x_column') else ''
-            y_column = self.y_column.get() if hasattr(self, 'y_column') else ''
-            if not x_column or not y_column:
-                messagebox.showerror("Columns Required", "Please select both X and Y columns before exporting a command line.")
-                return
+        params = self.parameter_manager.get_optimization_parameters()
+        method_key = params.get('optimization_method')
+        if not method_key:
+            messagebox.showerror("Method Required", "Optimization method is missing or invalid.")
+            return None
 
-            try:
-                gap_threshold = float(self.gap_threshold.get())
-            except Exception:
-                messagebox.showerror("Gap Threshold Required", "Gap threshold is missing or invalid.")
-                return
+        method_parameters = {
+            k: v
+            for k, v in params.items()
+            if k not in ('optimization_method', 'custom_save_name')
+        }
 
-            params = self.parameter_manager.get_optimization_parameters()
-            method_key = params.get('optimization_method')
-            if not method_key:
-                messagebox.showerror("Method Required", "Optimization method is missing or invalid.")
-                return
+        route_column_raw = self.route_column.get() if hasattr(self, 'route_column') else None
+        route_column = normalize_route_column_selection(route_column_raw)
 
-            method_parameters = {
-                k: v
-                for k, v in params.items()
-                if k not in ('optimization_method', 'custom_save_name')
-            }
+        selected_routes = None
+        if route_column is not None:
+            sr = getattr(self, 'selected_routes', None)
+            if isinstance(sr, (list, tuple)) and sr:
+                selected_routes = [str(r) for r in sr]
 
-            route_column_raw = self.route_column.get() if hasattr(self, 'route_column') else None
-            route_column = normalize_route_column_selection(route_column_raw)
+        save_file_path = self.file_manager.get_save_file_path() if hasattr(self, 'file_manager') else ''
+        if save_file_path:
+            output_json_path = save_file_path
+        else:
+            project_root = os.path.dirname(os.path.dirname(__file__))
+            name = (self.custom_save_name.get() if hasattr(self, 'custom_save_name') else 'highway_segmentation')
+            name = str(name).strip() or 'highway_segmentation'
+            if not name.lower().endswith('.json'):
+                name = name + '.json'
+            output_json_path = os.path.join(project_root, 'Results', name)
 
-            selected_routes = None
-            if route_column is not None:
-                sr = getattr(self, 'selected_routes', None)
-                if isinstance(sr, (list, tuple)) and sr:
-                    selected_routes = [str(r) for r in sr]
+        must_break_raw = getattr(self, 'must_break_columns', None)
+        must_break_columns = None
+        if isinstance(must_break_raw, (list, tuple)):
+            cleaned = [str(c).strip() for c in must_break_raw if str(c).strip()]
+            must_break_columns = cleaned or None
 
-            save_file_path = self.file_manager.get_save_file_path() if hasattr(self, 'file_manager') else ''
-            if save_file_path:
-                output_json_path = save_file_path
-            else:
-                project_root = os.path.dirname(os.path.dirname(__file__))
-                name = (self.custom_save_name.get() if hasattr(self, 'custom_save_name') else 'highway_segmentation')
-                name = str(name).strip() or 'highway_segmentation'
-                if not name.lower().endswith('.json'):
-                    name = name + '.json'
-                output_json_path = os.path.join(project_root, 'Results', name)
+        secondary_break_raw = getattr(self, 'secondary_break_columns', None)
+        secondary_break_columns = None
+        if isinstance(secondary_break_raw, (list, tuple)):
+            cleaned = [str(c).strip() for c in secondary_break_raw if str(c).strip()]
+            secondary_break_columns = cleaned or None
 
-            spec_path = default_run_spec_path_for_output(output_json_path)
+        return {
+            'data_file_path': str(data_file_path),
+            'x_column': str(x_column),
+            'y_column': str(y_column),
+            'gap_threshold': gap_threshold,
+            'method_key': str(method_key),
+            'method_parameters': {str(k): _json_safe(v) for k, v in method_parameters.items()},
+            'route_column': route_column,
+            'selected_routes': [str(r) for r in selected_routes] if selected_routes is not None else None,
+            'must_break_columns': must_break_columns,
+            'secondary_break_columns': secondary_break_columns,
+            'output_json_path': str(output_json_path),
+            'app_version': str(getattr(self, 'app_version', 'dev')),
+        }
 
-            def _json_safe(value):
-                if value is None:
-                    return None
-                if isinstance(value, (str, int, float, bool)):
-                    return value
-                if isinstance(value, (list, tuple)):
-                    return [_json_safe(v) for v in value]
-                if isinstance(value, dict):
-                    return {str(k): _json_safe(v) for k, v in value.items()}
-                try:
-                    if hasattr(value, 'item'):
-                        return _json_safe(value.item())
-                except Exception:
-                    pass
-                return str(value)
+    def _write_single_run_export_artifacts(self, state: dict):
+        """Build and persist the run-spec JSON for a single-file export.
 
-            selected_routes_safe = selected_routes if selected_routes is None else [str(r) for r in selected_routes]
-            method_parameters_safe = {str(k): _json_safe(v) for k, v in method_parameters.items()}
+        Takes the validated state dict from _collect_current_analysis_export_state,
+        writes the run-spec file, and returns (spec_path, cli_command).
+        No GUI interaction — safe to call from a dialog or test.
+        """
+        output_json_path = state['output_json_path']
+        spec_path = default_run_spec_path_for_output(output_json_path)
 
-            must_break_raw = getattr(self, 'must_break_columns', None)
-            must_break_columns_safe = None
-            if isinstance(must_break_raw, (list, tuple)):
-                cleaned = [str(c).strip() for c in must_break_raw if str(c).strip()]
-                must_break_columns_safe = cleaned
+        spec = build_run_spec(
+            data_file_path=state['data_file_path'],
+            x_column=state['x_column'],
+            y_column=state['y_column'],
+            gap_threshold=state['gap_threshold'],
+            must_break_columns=state['must_break_columns'],
+            secondary_break_columns=state['secondary_break_columns'],
+            route_column=state['route_column'],
+            selected_routes=state['selected_routes'],
+            method_key=state['method_key'],
+            method_parameters=state['method_parameters'],
+            output_json_path=output_json_path,
+            overwrite=True,
+            application_version=state['app_version'],
+        )
 
-            secondary_break_raw = getattr(self, 'secondary_break_columns', None)
-            secondary_break_columns_safe = None
-            if isinstance(secondary_break_raw, (list, tuple)):
-                cleaned = [str(c).strip() for c in secondary_break_raw if str(c).strip()]
-                secondary_break_columns_safe = cleaned
+        os.makedirs(os.path.dirname(str(spec_path)), exist_ok=True)
+        with open(spec_path, 'w', encoding='utf-8') as f:
+            json.dump(spec, f, indent=2, ensure_ascii=False)
 
-            spec = build_run_spec(
-                data_file_path=str(data_file_path),
-                x_column=str(x_column),
-                y_column=str(y_column),
-                gap_threshold=float(gap_threshold),
-                must_break_columns=must_break_columns_safe,
-                secondary_break_columns=secondary_break_columns_safe,
-                route_column=route_column,
-                selected_routes=selected_routes_safe,
-                method_key=str(method_key),
-                method_parameters=method_parameters_safe,
-                output_json_path=str(output_json_path),
-                overwrite=True,
-                application_version=str(getattr(self, 'app_version', 'dev')),
-            )
+        cmd = build_command_for_run_spec(str(spec_path))
+        return spec_path, cmd
 
-            os.makedirs(os.path.dirname(str(spec_path)), exist_ok=True)
-            with open(spec_path, 'w', encoding='utf-8') as f:
-                json.dump(spec, f, indent=2, ensure_ascii=False)
-
-            cmd = build_command_for_run_spec(str(spec_path))
-
-            self.root.clipboard_clear()
-            self.root.clipboard_append(cmd)
-            try:
-                self.root.update_idletasks()
-            except Exception:
-                pass
-
-            self.log_message(f"Run spec written: {spec_path}")
-            self.log_message("Copied command line to clipboard")
-
-            messagebox.showinfo(
-                "Command Copied",
-                "A command line to run this analysis has been copied to your clipboard.\n\n"
-                f"Run spec: {spec_path}\n\n"
-                f"Command:\n{cmd}",
-            )
-
-        except Exception as e:
-            if hasattr(self, 'handle_error'):
-                self.handle_error("Could not copy command line", e, severity="error", show_messagebox=True)
-            else:
-                messagebox.showerror("Error", f"Could not copy command line:\n{e}")
+    def copy_command_line_for_analysis(self) -> None:
+        """Open the Export CLI Run dialog for the current UI state."""
+        state = self._collect_current_analysis_export_state()
+        if state is None:
+            return
+        CLIExportDialog.open(
+            self.root,
+            state=state,
+            log_callback=self.log_message,
+        )
     
     def show_help(self):
         """Open documentation in the user's browser (preferred UX).
