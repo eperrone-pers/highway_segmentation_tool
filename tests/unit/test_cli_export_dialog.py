@@ -280,31 +280,6 @@ def test_batch_summary_default_derives_from_output_dir(dialog):
 
 
 # ===========================================================================
-# Batch mode — spec path auto-switch on mode change
-# ===========================================================================
-
-@pytest.mark.unit
-def test_spec_path_switches_to_batch_template_on_mode_change(dialog):
-    dialog._mode_var.set("batch")
-    assert dialog._spec_path_var.get() == "Results/my_roads.batch_template.run_spec.json"
-
-
-@pytest.mark.unit
-def test_spec_path_restores_single_on_switching_back(dialog):
-    dialog._mode_var.set("batch")
-    dialog._mode_var.set("single")
-    assert dialog._spec_path_var.get() == "Results/my_roads.run_spec.json"
-
-
-@pytest.mark.unit
-def test_spec_path_not_overwritten_if_manually_edited(dialog):
-    dialog._spec_path_var.set("Results/custom.run_spec.json")
-    dialog._mode_var.set("batch")
-    # Manual edit should be preserved — not replaced by the batch default
-    assert dialog._spec_path_var.get() == "Results/custom.run_spec.json"
-
-
-# ===========================================================================
 # Batch mode — command preview
 # ===========================================================================
 
@@ -316,12 +291,13 @@ def test_preview_empty_in_batch_mode_when_input_dir_missing(dialog):
 
 
 @pytest.mark.unit
-def test_preview_shows_run_batch_when_fields_populated(dialog):
+def test_preview_shows_run_when_fields_populated(dialog):
     dialog._mode_var.set("batch")
     dialog._batch_input_dir_var.set("/data/incoming")
     dialog._batch_output_dir_var.set("Results/batch_out")
     preview = dialog.get_preview_text()
-    assert "run-batch" in preview
+    assert "run" in preview
+    assert "run-batch" not in preview
     assert "--input-dir" in preview
     assert "--output-dir" in preview
 
@@ -456,7 +432,8 @@ def test_write_artifacts_batch_creates_spec_and_manifest(tmp_path, tk_root, base
     assert artifacts["mode"] == "batch"
     assert Path(artifacts["spec_path"]).exists()
     assert Path(artifacts["manifest_path"]).exists()
-    assert "run-batch" in artifacts["cmd"]
+    assert "run" in artifacts["cmd"]
+    assert "run-batch" not in artifacts["cmd"]
 
 
 @pytest.mark.unit

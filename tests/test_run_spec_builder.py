@@ -181,7 +181,8 @@ def test_build_command_for_batch_run_contains_required_args() -> None:
         "data/incoming",
         "Results/t_batch",
     )
-    assert "run-batch" in cmd
+    assert "run" in cmd
+    assert "run-batch" not in cmd
     assert '--spec "Results/t.batch_template.run_spec.json"' in cmd
     assert '--input-dir "data/incoming"' in cmd
     assert '--output-dir "Results/t_batch"' in cmd

@@ -117,64 +117,58 @@ highway-seg validate-spec --spec <path>
 
 ### `highway-seg run`
 
-Execute an analysis using a run spec file.
+Execute an analysis using a run spec file. Omit `--input-dir` for a single-file
+run; provide `--input-dir` to activate **batch mode** and process a whole directory.
 
-**Usage:**
+**Single-file usage:**
 
 ```bash
 highway-seg run --spec <path>
 ```
 
-**Options:**
-
-- `--spec`: Path to the run spec JSON file (required)
-- `--no-validate-spec`: Skip JSON schema validation before execution
-- `--quiet`: Suppress progress logging and print only the final output path
-
-**Output:** Writes results JSON to the path specified in `output.output_json_path`.
-
-### `highway-seg run-batch`
-
-Execute the same analysis method against every matching file in a directory,
-using a **template run spec** that defines the method and column configuration.
-Results are written per-file and a summary JSON records the outcome of every run.
-
-**Usage:**
+**Batch usage:**
 
 ```bash
-highway-seg run-batch --spec <template-spec> --input-dir <dir> --output-dir <dir>
+highway-seg run --spec <path> --input-dir <dir> --output-dir <dir>
 ```
 
 **Options:**
 
 | Option | Default | Description |
-|---|---|---|
-| `--spec` | *(required)* | Path to the template run spec JSON file |
-| `--input-dir` | *(required)* | Directory containing input CSV files |
-| `--output-dir` | *(required)* | Directory where per-file JSON results are written |
+| --- | --- | --- |
+| `--spec` | *(required)* | Path to the run spec JSON file |
+| `--no-validate-spec` | off | Skip JSON schema validation before execution |
+| `--quiet` | off | Suppress progress logging; prints only the final output path or summary path |
+
+**Batch-mode options** *(activated when `--input-dir` is provided):*
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `--input-dir` | — | Directory containing input CSV files (activates batch mode) |
+| `--output-dir` | *(required with `--input-dir`)* | Directory where per-file JSON results are written |
 | `--glob` | `*.csv` | Glob pattern for file discovery |
 | `--recurse` | off | Recurse into subdirectories when discovering files |
 | `--summary-json` | `<output-dir>/batch_summary.json` | Path for the batch summary JSON |
 | `--stop-on-error` | off | Stop immediately on the first failure (default: continue and report all failures at the end) |
 | `--export-excel` | off | Write a `.xlsx` workbook alongside each result JSON |
-| `--quiet` | off | Suppress per-file progress logging |
-| `--no-validate-spec` | off | Skip JSON schema validation of the template spec |
 
-**Exit codes:**
+**Exit codes (batch mode):**
 
 | Code | Meaning |
-|---|---|
+| --- | --- |
 | `0` | All files processed successfully |
 | `1` | Batch completed but one or more files failed (summary JSON still written) |
 | `2` | Hard error before execution started (missing directory, stem collision, invalid spec) |
 
-**Output:** Prints the path to the batch summary JSON as the final line, suitable for scripting.
+**Single-file output:** Writes results JSON to the path specified in `output.output_json_path`.
+
+**Batch output:** Prints the path to the batch summary JSON as the final line, suitable for scripting.
 
 **Example — process all CSVs in a directory:**
 
 ```bash
-highway-seg run-batch \
-  --spec Results/my_network.batch_template.run_spec.json \
+highway-seg run \
+  --spec Results/my_network.run_spec.json \
   --input-dir data/incoming \
   --output-dir Results/batch_out \
   --quiet
@@ -183,8 +177,8 @@ highway-seg run-batch \
 **Example — recurse, export Excel, stop on first error:**
 
 ```bash
-highway-seg run-batch \
-  --spec Results/network.batch_template.run_spec.json \
+highway-seg run \
+  --spec Results/network.run_spec.json \
   --input-dir data/networks \
   --output-dir Results/batch_out \
   --recurse \
@@ -199,7 +193,7 @@ If you haven't installed the package, you can invoke the CLI directly:
 ```bash
 python src/cli.py validate-spec --spec path/to/spec.json
 python src/cli.py run --spec path/to/spec.json
-python src/cli.py run-batch --spec path/to/template.run_spec.json \
+python src/cli.py run --spec path/to/spec.json \
     --input-dir data/ --output-dir Results/batch_out/
 ```
 
@@ -219,8 +213,8 @@ directory without writing a separate run spec for each one.
 ### Concepts
 
 | Term | Description |
-|---|---|
-| **Template run spec** | An ordinary run spec whose `data_file_path` is substituted per-file at runtime. All other fields (method, columns, gap threshold) apply to every file. |
+| --- | --- |
+| **Run spec (batch)** | A standard run spec whose `data_file_path` is substituted per-file at runtime. All other fields (method, columns, gap threshold) apply to every file. |
 | **Batch manifest** | A companion JSON file that records the batch configuration — template spec path, input directory, glob pattern, output directory, and flags — for full reproducibility. |
 | **Batch summary** | A JSON file written incrementally during the run that records the outcome (success/failure) for every input file. |
 
@@ -228,14 +222,14 @@ directory without writing a separate run spec for each one.
 
 Output files are named after the **stem** of each input file:
 
-```
+```text
 data/incoming/route_A123.csv  →  Results/batch_out/route_A123.json
 data/incoming/route_B456.csv  →  Results/batch_out/route_B456.json
 ```
 
 If `--export-excel` is set, an XLSX workbook is written alongside each JSON:
 
-```
+```text
 Results/batch_out/route_A123.json
 Results/batch_out/route_A123.xlsx
 ```
@@ -264,8 +258,8 @@ has a **Directory batch** mode that generates all required files in one step:
 5. **Run the CLI** using the generated command shown in the preview, e.g.:
 
    ```bash
-   python src/cli.py run-batch \
-     --spec "Results/my_network.batch_template.run_spec.json" \
+   python src/cli.py run \
+     --spec "Results/my_network.run_spec.json" \
      --input-dir "data/incoming" \
      --glob "*.csv" \
      --output-dir "Results/my_network_batch" \
@@ -280,7 +274,7 @@ a run can be re-executed or audited later. Key fields:
 ```json
 {
   "manifest_version": "1.0.0",
-  "run_spec_path": "Results/my_network.batch_template.run_spec.json",
+  "run_spec_path": "Results/my_network.run_spec.json",
   "input_dir": "data/incoming",
   "glob": "*.csv",
   "recurse": false,
@@ -307,7 +301,7 @@ progress is preserved if the run is interrupted.
   "batch_version": "1.0.0",
   "started_at": "2026-05-23T14:00:00Z",
   "finished_at": "2026-05-23T14:02:15Z",
-  "template_spec_path": "Results/my_network.batch_template.run_spec.json",
+  "template_spec_path": "Results/my_network.run_spec.json",
   "input_dir": "data/incoming",
   "glob": "*.csv",
   "recurse": false,
@@ -334,9 +328,9 @@ progress is preserved if the run is interrupted.
 ## Run Spec Structure
 
 A run spec JSON contains three main sections: `input`, `method`, and `output`.
-When used as a **batch template**, the `data_file_path` and `output_json_path`
-fields are substituted per-file at runtime — all other fields apply uniformly
-to every file in the batch.
+When used in **batch mode** (`run --input-dir`), the `data_file_path` and
+`output_json_path` fields are substituted per-file at runtime — all other
+fields apply uniformly to every file in the batch.
 
 ### Minimal Example (Single-Objective Genetic Algorithm)
 
@@ -405,7 +399,7 @@ to every file in the batch.
 The following `method_key` values are available (must match entries in `OPTIMIZATION_METHODS` registry in `src/config.py`):
 
 | Method Key | Display Name | Type | Description |
-| ---------- | ------------ | ---- | ----------- |
+| --- | --- | --- | --- |
 | `single` | Single-Objective GA | Genetic Algorithm | Minimizes total deviation using standard GA |
 | `multi` | Multi-Objective NSGA-II | Genetic Algorithm | Returns Pareto front trading off deviation vs segment length |
 | `constrained` | Constrained GA (Penalty) | Genetic Algorithm | GA with penalty-based constraint handling |
@@ -801,6 +795,7 @@ cat Results/batch_out/batch_summary.json | python -m json.tool
 ```
 
 Look for `"status": "failed"` entries and their `"error"` field. Common causes:
+
 - A file uses different column names than the template spec
 - A file has too few data points for the selected method
 - A file is malformed or not a valid CSV
@@ -822,7 +817,7 @@ If you encounter issues not covered here:
 - **Preprocessing:** The optional `preprocessing` block uses the same preprocessing registry as the GUI workflow.
 - **Results format:** The runner writes results using `ExtensibleJsonResultsManager`, producing schema-compliant results JSON.
 - **Multi-route datasets:** If your CSV contains multiple routes (identified by the `route_column`), the CLI automatically processes all routes and includes all results in the output JSON.
-- **Batch template spec:** The `data_file_path` and `output_json_path` fields in a template run spec are replaced per-file at runtime. All other fields — columns, method, parameters — apply to every file in the batch.
+- **Batch run spec:** The `data_file_path` and `output_json_path` fields in the run spec are replaced per-file at runtime when using batch mode. All other fields — columns, method, parameters — apply uniformly to every file in the batch.
 - **Batch summary is incremental:** The summary JSON is written after every file, so it captures partial results if a batch run is interrupted.
 - **Batch exit codes:** Exit code 1 means some files failed but the run completed; the summary JSON contains the full per-file breakdown. Exit code 2 means a hard error stopped the run before processing began.
 
@@ -847,18 +842,18 @@ If you encounter issues not covered here:
 
 1. **Prepare your data:** A directory of CSVs all sharing the same column layout
 2. **Create batch artifacts:** Use the GUI's **Export CLI Run** dialog in **Directory batch** mode — it writes the template run spec and batch manifest, and shows the command to copy
-3. **Run the batch:** `highway-seg run-batch --spec template.run_spec.json --input-dir data/ --output-dir Results/batch_out/`
+3. **Run the batch:** `highway-seg run --spec template.run_spec.json --input-dir data/ --output-dir Results/batch_out/`
 4. **Check the summary:** Review `batch_summary.json` for per-file status; re-run failed files individually using `highway-seg run` if needed
 5. **View results:** Load any result JSON in the GUI, or process the batch summary programmatically
 
 ### Method Selection Guide
 
 | Use Case | Recommended Method | Key Benefit |
-| -------- | ------------------ | ----------- |
+| --- | --- | --- |
 | Fast, deterministic segmentation | `aashto_cda` | Statistical rigor, no tuning needed |
 | Deterministic change-point detection with penalty tuning | `pelt_segmentation` | Fast segmentation with optional smoothing |
 | Single optimal solution | `single` | Simple, well-understood GA optimization |
 | Trade-off analysis | `multi` | Explore multiple solutions on Pareto front |
 | Hard constraints on segment count | `constrained` or `constrained_deb` | Enforces min/max segment limits |
 | Attribute-based segmentation | Any method + `must_break_columns` | Forces breaks on attribute changes |
-| Process many files with the same method | Any method + `run-batch` | One command, per-file results, incremental summary |
+| Process many files with the same method | Any method + `run --input-dir` | One command, per-file results, incremental summary |

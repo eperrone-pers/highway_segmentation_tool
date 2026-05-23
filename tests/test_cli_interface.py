@@ -79,10 +79,10 @@ def _fake_runner(spec, *, log_callback=None):
 
 
 @pytest.mark.unit
-def test_cli_run_batch_missing_input_dir_arg_exits_nonzero(tmp_path, capsys):
+def test_cli_run_batch_mode_missing_output_dir_exits_nonzero(tmp_path, capsys):
     spec_path = _write_batch_spec(tmp_path)
     with pytest.raises(SystemExit) as exc_info:
-        cli.main(["run-batch", "--spec", str(spec_path), "--output-dir", str(tmp_path / "out")])
+        cli.main(["run", "--spec", str(spec_path), "--input-dir", str(tmp_path)])
     assert exc_info.value.code != 0
 
 
@@ -90,7 +90,7 @@ def test_cli_run_batch_missing_input_dir_arg_exits_nonzero(tmp_path, capsys):
 def test_cli_run_batch_bad_input_dir_returns_2(tmp_path, capsys):
     spec_path = _write_batch_spec(tmp_path)
     rc = cli.main([
-        "run-batch",
+        "run",
         "--spec", str(spec_path),
         "--input-dir", str(tmp_path / "nonexistent"),
         "--output-dir", str(tmp_path / "out"),
@@ -108,7 +108,7 @@ def test_cli_run_batch_success_returns_0_and_prints_summary_path(tmp_path, capsy
 
     with patch("cli_runner._run_analysis_from_resolved_spec", side_effect=_fake_runner):
         rc = cli.main([
-            "run-batch",
+            "run",
             "--spec", str(spec_path),
             "--input-dir", str(data),
             "--output-dir", str(tmp_path / "out"),
@@ -135,7 +135,7 @@ def test_cli_run_batch_partial_failure_returns_1(tmp_path, capsys):
 
     with patch("cli_runner._run_analysis_from_resolved_spec", side_effect=_always_fail):
         rc = cli.main([
-            "run-batch",
+            "run",
             "--spec", str(spec_path),
             "--input-dir", str(data),
             "--output-dir", str(tmp_path / "out"),

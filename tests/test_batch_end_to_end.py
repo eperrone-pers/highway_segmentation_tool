@@ -122,7 +122,7 @@ def test_cli_run_batch_returns_0_and_prints_summary_path(
 ):
     out = tmp_path / "cli_out"
     rc = cli.main([
-        "run-batch",
+        "run",
         "--spec", str(template_spec_path),
         "--input-dir", str(shared_data_dir),
         "--output-dir", str(out),
@@ -139,7 +139,7 @@ def test_cli_run_batch_creates_per_file_outputs(
 ):
     out = tmp_path / "cli_out"
     cli.main([
-        "run-batch",
+        "run",
         "--spec", str(template_spec_path),
         "--input-dir", str(shared_data_dir),
         "--output-dir", str(out),
@@ -187,7 +187,7 @@ def test_dialog_artifacts_are_consumable_by_cli(tmp_path, shared_data_dir, capsy
     # Step 3: user reads the manifest and drives the CLI from its fields
     m = json.loads(manifest_path.read_text(encoding="utf-8"))
     rc = cli.main([
-        "run-batch",
+        "run",
         "--spec", m["run_spec_path"],
         "--input-dir", m["input_dir"],
         "--output-dir", m["output_dir"],

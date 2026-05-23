@@ -176,26 +176,26 @@ The application is split into:
    - Lives in `src/analysis/methods/<your_method>.py`.
 
 3. **Controller dispatch (runtime method selection)**
-    - Chooses which method to instantiate and run based on the GUI-selected `method_key`.
-    - Dispatch is **config-driven** via `OptimizationMethodConfig.method_class_path`.
-    - Lives in `src/optimization_controller.py` (dispatch) and `src/config.py` (registry + class resolver).
+   - Chooses which method to instantiate and run based on the GUI-selected `method_key`.
+   - Dispatch is **config-driven** via `OptimizationMethodConfig.method_class_path`.
+   - Lives in `src/optimization_controller.py` (dispatch) and `src/config.py` (registry + class resolver).
 
         Notes on extensibility:
-        - Method dispatch is already fully config-driven.
-        - Any new `method_key` should be considered valid as long as it exists in `OPTIMIZATION_METHODS`.
-            Avoid hard-coded method-key lists in UI logic.
+     - Method dispatch is already fully config-driven.
+     - Any new `method_key` should be considered valid as long as it exists in `OPTIMIZATION_METHODS`.
+         Avoid hard-coded method-key lists in UI logic.
 
 4. **Results export**
-    - JSON schema output is written by `ExtensibleJsonResultsManager`.
-    - Lives in `src/extensible_results_manager.py`.
+   - JSON schema output is written by `ExtensibleJsonResultsManager`.
+   - Lives in `src/extensible_results_manager.py`.
 
 5. **Visualization behavior**
    - Determines whether to show Pareto plots based on the configured `return_type`.
    - Lives in `src/visualization_ui.py`.
 
 6. **Method documentation (optional but recommended)**
-     - If you add a per-method README at `src/analysis/methods/docs/{method_key}/README.md`,
-         the application Help dialog will automatically offer an “Open in Browser” option for that method.
+   - If you add a per-method README at `src/analysis/methods/docs/{method_key}/README.md`,
+       the application Help dialog will automatically offer an “Open in Browser” option for that method.
      - The method list is configuration-driven from `OPTIMIZATION_METHODS` in `src/config.py` and filtered
          to methods with an existing README at the path above.
 
@@ -1359,8 +1359,8 @@ So, to include a new method in both GUI and CLI regressions:
 ```
 
 1. Keep the parameters in this block **minimal and fast**.
-     - Regression runs should complete quickly and reliably.
-     - Prefer smaller populations/generation counts (or deterministic settings) if applicable.
+   - Regression runs should complete quickly and reliably.
+   - Prefer smaller populations/generation counts (or deterministic settings) if applicable.
 
 2. Make sure the method is registered in `src/config.py` (in `OPTIMIZATION_METHODS`) with the same `method_key`.
 

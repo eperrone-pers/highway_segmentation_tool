@@ -557,8 +557,8 @@ ctx = DataModificationContext(
 ctx.remove_point(0.0, reason="outlier")  # If 0.0 is a mandatory breakpoint...
 
 # ❌ Raises ValueError:
-# "Cannot remove point at x=0.0: this is a mandatory breakpoint 
-#  (gap boundary, route edge, or attribute change). 
+# "Cannot remove point at x=0.0: this is a mandatory breakpoint
+#  (gap boundary, route edge, or attribute change).
 #  Mandatory breakpoints must be preserved for segmentation."
 ```
 
@@ -797,12 +797,12 @@ class TukeyFencesPreprocessor(PreprocessingMethodBase):
     def method_name(self) -> str:
         """User-facing display name"""
         return "Tukey Fences IQR Outlier Detection"
-    
+  
     @property
     def method_key(self) -> str:
         """Internal identifier - must match config registry"""
         return "tukey_fences"
-    
+  
     def process(
         self,
         route_analysis: 'RouteAnalysis',
@@ -812,13 +812,13 @@ class TukeyFencesPreprocessor(PreprocessingMethodBase):
     ) -> PreprocessingResult:
         """
         Process route data to detect and handle outliers.
-        
+  
         Args:
             route_analysis: Complete route analysis with gap/attribute context
             x_column: Name of X-axis column (e.g., "Milepoint")
             y_column: Name of Y-axis column (e.g., "IRI")
             parameters: Method-specific parameters from user/config
-        
+  
         Returns:
             PreprocessingResult with modifications and logs
         """
@@ -844,40 +844,40 @@ def process(self, route_analysis, x_column, y_column, parameters):
     # 1. Extract parameters
     k_factor = parameters.get('k_factor', 1.5)
     action = parameters.get('action', 'remove')
-    
+  
     # 2. Get data
     df = route_analysis.route_data
     y_values = df[y_column].values
     x_values = df[x_column].values
-    
+  
     # 3. Create modification context with mandatory breakpoint protection
     ctx = DataModificationContext(
-        df, 
-        x_column, 
+        df,
+        x_column,
         y_column,
         route_analysis.mandatory_breakpoints  # ← Enables automatic protection
     )
-    
+  
     # 4. Your algorithm logic here...
     # Calculate outliers, etc.
-    
+  
     # 5. Modify data using API (automatic logging)
     for x_val in outliers:
         if action == 'remove':
             ctx.remove_point(x_val, reason=f"outlier beyond {k_factor}*IQR fence")
         elif action == 'cap':
-            ctx.modify_y_value(x_val, fence_value, 
+            ctx.modify_y_value(x_val, fence_value,
                              reason=f"capped to {bound_type} bound",
                              modification_type="y_value_capped")
         elif action == 'interpolate':
             ctx.modify_y_value(x_val, interpolated_value,
                              reason="interpolated from neighbors",
                              modification_type="point_interpolated")
-    
+  
     # 6. Get modified data and log
     modified_df = ctx.get_modified_data()
     modification_log = ctx.get_modification_log()  # Automatic!
-    
+  
     # 7. Build result
     return PreprocessingResult(...)
 ```
@@ -912,8 +912,8 @@ ctx = DataModificationContext(df, x_column, y_column, mandatory_breakpoints)
 ctx.remove_point(12.5, reason="outlier")
 
 # Error message:
-# "Cannot remove point at x=12.5: this is a mandatory breakpoint 
-#  (gap boundary, route edge, or attribute change). 
+# "Cannot remove point at x=12.5: this is a mandatory breakpoint
+#  (gap boundary, route edge, or attribute change).
 #  Mandatory breakpoints must be preserved for segmentation."
 ```
 
@@ -962,36 +962,36 @@ if not mandatory_bps:
 for i in range(len(mandatory_bps) - 1):
     seg_start = mandatory_bps[i]
     seg_end = mandatory_bps[i + 1]
-    
+  
     # Get points in this segment only
     seg_mask = (x_values >= seg_start) & (x_values <= seg_end)
     seg_y_values = y_values[seg_mask]
     seg_indices = np.where(seg_mask)[0]
-    
+  
     # Skip if insufficient data
     MIN_POINTS_FOR_IQR = 4  # Need at least 4 points for Q1, Q2, Q3
     if len(seg_y_values) < MIN_POINTS_FOR_IQR:
         continue
-    
+  
     # Calculate IQR bounds FOR THIS SEGMENT ONLY
     q1, q3 = np.percentile(seg_y_values, [25, 75])
     iqr = q3 - q1
-    
+  
     if iqr == 0:
         continue  # All values identical - skip outlier detection
-    
+  
     lower_bound = q1 - k_factor * iqr
     upper_bound = q3 + k_factor * iqr
-    
+  
     # Identify outliers IN THIS SEGMENT
     outlier_mask = (seg_y_values < lower_bound) | (seg_y_values > upper_bound)
     segment_outlier_indices = seg_indices[outlier_mask]
-    
+  
     # Apply action to each outlier
     for idx in segment_outlier_indices:
         x_val = x_values[idx]
         y_val = y_values[idx]
-        
+  
         if action == 'remove':
             ctx.remove_point(x_val, reason=f"outlier beyond {k_factor}*IQR in segment [{seg_start:.1f}-{seg_end:.1f}]")
         # ... handle cap/interpolate actions
@@ -1031,23 +1031,23 @@ elif action == 'interpolate':
     for idx in segment_outlier_indices:
         # Find position within segment
         local_idx = np.where(seg_indices == idx)[0][0]
-        
+  
         # Skip if at segment boundary - can't get true neighbors on both sides
         if local_idx == 0 or local_idx == len(seg_indices) - 1:
             # Outlier at segment start/end - leave unchanged
             # Alternative: could fall back to remove or cap
             continue
-        
+  
         # Get true neighbors (guaranteed to exist)
         left_neighbor_idx = seg_indices[local_idx - 1]
         right_neighbor_idx = seg_indices[local_idx + 1]
-        
+  
         left_y = y_values[left_neighbor_idx]
         right_y = y_values[right_neighbor_idx]
-        
+  
         # Simple linear interpolation
         interpolated_y = (left_y + right_y) / 2
-        
+  
         ctx.modify_y_value(x_values[idx], interpolated_y,
                           reason="interpolated from neighbors",
                           modification_type="point_interpolated")
@@ -1113,21 +1113,21 @@ def create_processed_route_analysis(
 ) -> 'RouteAnalysis':
     """
     Helper function to reconstruct RouteAnalysis with modified data.
-    
+  
     Reuses gap analysis logic to ensure consistency with framework.
     Preserves all configuration from original RouteAnalysis.
-    
+  
     Args:
         original_route_analysis: Original RouteAnalysis before preprocessing
         modified_df: Modified DataFrame (from DataModificationContext)
         x_column: X-axis column name
         y_column: Y-axis column name
-    
+  
     Returns:
         New RouteAnalysis with modified data and updated metadata
     """
     from data_loader import analyze_route_gaps
-    
+  
     return analyze_route_gaps(
         modified_df,
         x_column,
@@ -1149,9 +1149,9 @@ def create_processed_route_analysis(
 ```python
 def process(self, route_analysis, x_column, y_column, parameters):
     start_time = time.time()
-    
+  
     # ... algorithm implementation ...
-    
+  
     # Reconstruct RouteAnalysis with modified data
     processed_route_analysis = create_processed_route_analysis(
         original_route_analysis=route_analysis,
@@ -1159,37 +1159,37 @@ def process(self, route_analysis, x_column, y_column, parameters):
         x_column=x_column,
         y_column=y_column
     )
-    
+  
     # Build complete result
     return PreprocessingResult(
         method_name=self.method_name,
         method_key=self.method_key,
         route_id=route_analysis.route_id,
-        
+  
         # Modification log (automatic from context)
         modifications_applied=ctx.get_modification_log(),
-        
+  
         # Input parameters (reproducibility)
         input_parameters={
             'k_factor': k_factor,
             'action': action,
             'gap_threshold': route_analysis.gap_threshold,
         },
-        
+  
         # Summary statistics
         statistics={
             'total_modifications': len(ctx.get_modification_log()),
-            'points_removed': sum(1 for m in ctx.get_modification_log() 
+            'points_removed': sum(1 for m in ctx.get_modification_log()
                                  if m.modification_type == 'point_removed'),
-            'points_modified': sum(1 for m in ctx.get_modification_log() 
+            'points_modified': sum(1 for m in ctx.get_modification_log()
                                   if m.modification_type in ['y_value_capped', 'point_interpolated']),
             'outlier_count': total_outlier_count,
             'segments_processed': len(mandatory_bps) - 1,
         },
-        
+  
         # Modified RouteAnalysis
         processed_route_analysis=processed_route_analysis,
-        
+  
         # Optional metadata
         processing_time=time.time() - start_time,
         warnings=warnings if warnings else None
@@ -1235,11 +1235,11 @@ The enhanced visualization automatically shows preprocessing results when presen
 IRI vs Milepoint (with preprocessing overlay)
 
 200 ┤                                     ● (red - original outlier)
-    │                                    
+    │  
 150 ┤     ━━━━━━━━━━━━━━━━━━━━━━━━━━━  (blue line - processed data)
-    │                         
+    │  
 100 ┤                    ◆ (cyan - capped value)
-    │                                    
+    │  
  50 ┤━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     └────────────────────────────────────
     0        5       10       15       20
@@ -1262,10 +1262,10 @@ The visualization reads `PreprocessingResult.modifications_applied` to build the
 for modification in preprocessing_result.modifications_applied:
     if modification.modification_type == 'point_removed':
         # Plot red point at original location
-        ax.scatter(modification.x_value, 
+        ax.scatter(modification.x_value,
                   modification.original_y_value,
                   color='red', marker='o', label='Removed outlier')
-    
+  
     elif modification.modification_type in ['y_value_capped', 'point_interpolated']:
         # Plot red point (original) and cyan point (corrected)
         ax.scatter(modification.x_value,
@@ -1416,7 +1416,7 @@ Copy this checklist when implementing a new preprocessing method:
       "action": "remove",
       "comment": "Remove extreme outliers first"
     },
-    
+  
     "secondary_method": "moving_average",
     "secondary_parameters": {
       "window_size": 5,
@@ -1610,7 +1610,7 @@ Segment: [0.0 ──────────────────────
    # ✅ Fast - NumPy vectorization
    outlier_mask = (seg_y_values < lower_bound) | (seg_y_values > upper_bound)
    outlier_indices = seg_indices[outlier_mask]
-   
+  
    # ❌ Slow - Python loops
    for i, y_val in enumerate(seg_y_values):
        if y_val < lower_bound or y_val > upper_bound:
@@ -1811,32 +1811,32 @@ from preprocessing.base import (
 class YourMethodPreprocessor(PreprocessingMethodBase):
     """
     <Detailed description of your preprocessing method>
-    
+  
     This method implements <algorithm/technique> to <goal>.
-    
+  
     Algorithm overview:
     1. <Step 1>
     2. <Step 2>
     3. <Step 3>
-    
+  
     Parameters (defined in config.py):
         param1: <Description>
         param2: <Description>
-    
+  
     References:
     - <Citation or documentation link if applicable>
     """
-    
+  
     @property
     def method_name(self) -> str:
         """User-facing display name"""
         return "<Your Method Name>"
-    
+  
     @property
     def method_key(self) -> str:
         """Internal identifier - must match config registry"""
         return "your_method_key"
-    
+  
     def process(
         self,
         route_analysis: 'RouteAnalysis',
@@ -1846,85 +1846,85 @@ class YourMethodPreprocessor(PreprocessingMethodBase):
     ) -> PreprocessingResult:
         """
         Process route data using <your algorithm>.
-        
+  
         Args:
             route_analysis: Complete route analysis with gap/attribute context
             x_column: Name of X-axis column (e.g., "Milepoint")
             y_column: Name of Y-axis column (e.g., "IRI")
             parameters: Method-specific parameters from user/config
-        
+  
         Returns:
             PreprocessingResult with modifications and logs
         """
         start_time = time.time()
-        
+  
         # 1. Extract parameters (with defaults from config)
         param1 = parameters.get('param1', default_value)
         param2 = parameters.get('param2', default_value)
-        
+  
         # 2. Get data
         df = route_analysis.route_data
         y_values = df[y_column].values
         x_values = df[x_column].values
-        
+  
         # 3. Create modification context with mandatory breakpoint protection
         ctx = DataModificationContext(
-            df, 
-            x_column, 
+            df,
+            x_column,
             y_column,
             route_analysis.mandatory_breakpoints  # ← Enables automatic protection
         )
-        
+  
         # 4. YOUR ALGORITHM IMPLEMENTATION GOES HERE
-        
+  
         # Example: Per-segment processing pattern
         mandatory_bps = sorted(list(route_analysis.mandatory_breakpoints or []))
         if not mandatory_bps:
             # No segments defined - use data range
             mandatory_bps = [float(x_values.min()), float(x_values.max())]
-        
+  
         total_modifications = 0
         warnings = []
-        
+  
         # Process each segment independently
         for i in range(len(mandatory_bps) - 1):
             seg_start = mandatory_bps[i]
             seg_end = mandatory_bps[i + 1]
-            
+  
             # Get segment data
             seg_mask = (x_values >= seg_start) & (x_values <= seg_end)
             seg_y_values = y_values[seg_mask]
             seg_indices = np.where(seg_mask)[0]
-            
+  
             # Check minimum data requirement
             MIN_POINTS = 4  # Adjust based on your algorithm
             if len(seg_y_values) < MIN_POINTS:
                 warnings.append(f"Segment [{seg_start:.1f}-{seg_end:.1f}] skipped: only {len(seg_y_values)} points")
                 continue
-            
+  
             # YOUR ALGORITHM LOGIC HERE
             # Example: Identify points to modify
             # ...
-            
+  
             # Modify data using API (automatic logging)
             for idx in points_to_modify:
                 x_val = x_values[idx]
                 y_val = y_values[idx]
-                
+  
                 # Choose appropriate modification based on your algorithm
                 if <condition_for_removal>:
                     ctx.remove_point(x_val, reason="<why>")
                     total_modifications += 1
-                    
+  
                 elif <condition_for_modification>:
                     new_y = <calculate_new_value>
                     ctx.modify_y_value(x_val, new_y, reason="<why>")
                     total_modifications += 1
-        
+  
         # 5. Get modified data and log
         modified_df = ctx.get_modified_data()
         modification_log = ctx.get_modification_log()
-        
+  
         # 6. Reconstruct RouteAnalysis with modified data
         processed_route_analysis = create_processed_route_analysis(
             original_route_analysis=route_analysis,
@@ -1932,16 +1932,16 @@ class YourMethodPreprocessor(PreprocessingMethodBase):
             x_column=x_column,
             y_column=y_column
         )
-        
+  
         # 7. Build result with complete metadata
         return PreprocessingResult(
             method_name=self.method_name,
             method_key=self.method_key,
             route_id=route_analysis.route_id,
-            
+  
             # Modification log (automatic from context)
             modifications_applied=modification_log,
-            
+  
             # Input parameters (for reproducibility)
             input_parameters={
                 'param1': param1,
@@ -1949,22 +1949,22 @@ class YourMethodPreprocessor(PreprocessingMethodBase):
                 'gap_threshold': route_analysis.gap_threshold,
                 # Include all relevant configuration
             },
-            
+  
             # Summary statistics
             statistics={
                 'total_modifications': total_modifications,
-                'points_removed': sum(1 for m in modification_log 
+                'points_removed': sum(1 for m in modification_log
                                      if m.modification_type == 'point_removed'),
-                'points_modified': sum(1 for m in modification_log 
+                'points_modified': sum(1 for m in modification_log
                                       if m.modification_type in ['y_value_capped', 'point_interpolated']),
                 'segments_processed': len(mandatory_bps) - 1,
                 'segments_skipped': len([w for w in warnings if 'skipped' in w]),
                 # Add your own statistics
             },
-            
+  
             # Modified RouteAnalysis
             processed_route_analysis=processed_route_analysis,
-            
+  
             # Optional metadata
             processing_time=time.time() - start_time,
             warnings=warnings if warnings else None
@@ -2064,7 +2064,7 @@ def test_basic_preprocessing():
         'Milepoint': [0.0, 1.0, 2.0, 3.0, 4.0],
         'IRI': [100, 105, 500, 110, 115]  # 2.0 is outlier
     })
-    
+  
     # Create minimal RouteAnalysis
     route_analysis = RouteAnalysis(
         route_id="TEST-001",
@@ -2073,10 +2073,10 @@ def test_basic_preprocessing():
         mandatory_breakpoints={0.0, 5.0},
         # ... other required fields
     )
-    
+  
     # Instantiate method
     preprocessor = YourMethodPreprocessor()
-    
+  
     # Run preprocessing
     result = preprocessor.process(
         route_analysis=route_analysis,
@@ -2084,7 +2084,7 @@ def test_basic_preprocessing():
         y_column='IRI',
         parameters={'param1': 1.5}
     )
-    
+  
     # Assertions
     assert result.method_key == "your_method_key"
     assert len(result.modifications_applied) > 0
@@ -2116,28 +2116,28 @@ def test_full_pipeline_with_preprocessing():
     """Test preprocessing through OptimizationController"""
     from src.optimization_controller import OptimizationController
     from src.file_manager import FileManager
-    
+  
     # Load test data
     file_manager = FileManager()
     file_manager.load_file("test_data.csv")
-    
+  
     # Configure preprocessing
     preprocessing_config = PreprocessingRunConfig(
         primary_method="your_method_key",
         primary_parameters={'param1': 1.5}
     )
-    
+  
     # Run controller
     controller = OptimizationController(
         # ... configuration
     )
-    
+  
     results = controller.run_analysis()
-    
+  
     # Verify preprocessing occurred
     assert results[0].preprocessing_results is not None
     assert len(results[0].preprocessing_results) > 0
-    
+  
     # Verify JSON export includes preprocessing
     # Verify visualization overlay works
 ```
@@ -2400,7 +2400,7 @@ DataModification(
 ```python
 ctx.cap_y_value(12.5, 161.0, "upper")
 # Equivalent to:
-# ctx.modify_y_value(12.5, 161.0, 
+# ctx.modify_y_value(12.5, 161.0,
 #                    reason="capped to upper fence (161.0)",
 #                    modification_type="y_value_capped")
 ```
@@ -2506,8 +2506,8 @@ ctx.remove_point(5.5, reason="outlier")  # ❌ Raises ValueError
 **Error message:**
 
 ```text
-ValueError: Cannot remove point at x=5.5: this is a mandatory breakpoint 
-(gap boundary, route edge, or attribute change). 
+ValueError: Cannot remove point at x=5.5: this is a mandatory breakpoint
+(gap boundary, route edge, or attribute change).
 Mandatory breakpoints must be preserved for segmentation.
 ```
 

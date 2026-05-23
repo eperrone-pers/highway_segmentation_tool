@@ -1106,7 +1106,7 @@ See Section 8 of this document for detailed decision framework.
 ```text
 Primary strength: Deterministic change-point detection with excellent
                   smoothing for noisy data
-                  
+  
 Best use: Fast exploration, validation, noisy data handling
 
 Position in workflow: Secondary/validation method after AASHTO CDA

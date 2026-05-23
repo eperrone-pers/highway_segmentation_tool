@@ -263,8 +263,8 @@ Notes:
 {
   "pareto_points": [
     {
-      "point_id": 0, 
-      "objective_values": [1.85, 3.2], 
+      "point_id": 0,
+      "objective_values": [1.85, 3.2],
       "segmentation": {
         "breakpoints": [0.0, 2.5, 5.2, 7.1, 12.3, 15.6, 16.8, 25.3],
         "segment_lengths": [2.5, 2.7, 1.9, 5.2, 3.3, 1.2, 8.7],
@@ -272,8 +272,8 @@ Notes:
       }
     },
     {
-      "point_id": 1, 
-      "objective_values": [2.1, 2.8], 
+      "point_id": 1,
+      "objective_values": [2.1, 2.8],
       "segmentation": {
         "breakpoints": [0.0, 5.2, 7.1, 11.8, 15.6, 16.8, 22.4, 25.3],
         "segment_lengths": [5.2, 1.9, 4.7, 3.8, 1.2, 5.6, 2.9],
@@ -440,14 +440,14 @@ Constrained/single-objective methods typically emit a single point; multi-object
       "patternProperties": {
         ".*": {
           "anyOf": [
-            {"type": "string"}, {"type": "number"}, {"type": "boolean"}, 
+            {"type": "string"}, {"type": "number"}, {"type": "boolean"},
             {"type": "array"}, {"type": "object"}
           ]
         }
       }
     },
     "route_processing": {
-      "type": "object", 
+      "type": "object",
       "required": ["route_mode", "selected_routes"],
       "properties": {
         "route_mode": {"type": "string", "enum": ["single_route", "multi_route"]},
@@ -484,7 +484,7 @@ Constrained/single-objective methods typically emit a single point; multi-object
     "required": ["route_info", "input_data_analysis", "processing_results"],
     "properties": {
       "route_info": {
-        "type": "object", 
+        "type": "object",
         "required": ["route_id"],
         "properties": {
           "route_id": {"type": "string"}
@@ -545,7 +545,7 @@ Constrained/single-objective methods typically emit a single point; multi-object
                     "items": {"type": "number"}
                   },
                   "removed_breakpoints": {
-                    "type": "array", 
+                    "type": "array",
                     "items": {"type": "number"}
                   },
                   "consolidation_reason": {"type": "string"}
@@ -647,7 +647,7 @@ Constrained/single-objective methods typically emit a single point; multi-object
                       "description": "All breakpoints including mandatory breakpoints plus optimization-generated breakpoints"
                     },
                     "segment_lengths": {
-                      "type": "array", 
+                      "type": "array",
                       "items": {"type": "number", "minimum": 0}
                     },
                     "segment_count": {"type": "integer", "minimum": 1},
@@ -664,7 +664,7 @@ Constrained/single-objective methods typically emit a single point; multi-object
                           "is_mandatory": {"type": "boolean"},
                           "data_point_count": {"type": "integer", "minimum": 0},
                           "y_value_min": {"type": ["number", "null"]},
-                          "y_value_max": {"type": ["number", "null"]}, 
+                          "y_value_max": {"type": ["number", "null"]},
                           "y_value_avg": {"type": ["number", "null"]},
                           "y_value_std": {"type": ["number", "null"]}
                         }
@@ -756,19 +756,19 @@ GENETIC_ALGORITHM_METHOD = OptimizationMethod(
     display_name="Single-Objective Genetic Algorithm",
     parameters=[
         # UI-visible parameters
-        ParameterDefinition("population_size", "Population Size", 
+        ParameterDefinition("population_size", "Population Size",
                           "Number of individuals in population", int, 100, (10, 10000), "algorithm", True),
-        ParameterDefinition("num_generations", "Generations", 
+        ParameterDefinition("num_generations", "Generations",
                           "Number of evolutionary generations", int, 200, (1, 100000), "algorithm", True),
-        ParameterDefinition("min_length", "Min Length", 
+        ParameterDefinition("min_length", "Min Length",
                           "Minimum segment length", float, 0.2, (0.1, 1.0), "constraints", True),
-        
+  
         # Hidden parameters (not in UI, but in results for reproducibility)
-        ParameterDefinition("selection_pressure", "Selection Pressure", 
+        ParameterDefinition("selection_pressure", "Selection Pressure",
                           "Internal selection pressure coefficient", float, 2.0, (1.0, 5.0), "algorithm", False),
-        ParameterDefinition("diversity_threshold", "Diversity Threshold", 
+        ParameterDefinition("diversity_threshold", "Diversity Threshold",
                           "Population diversity monitoring threshold", float, 0.01, (0.001, 0.1), "algorithm", False),
-        ParameterDefinition("cache_warming_iterations", "Cache Warming", 
+        ParameterDefinition("cache_warming_iterations", "Cache Warming",
                           "Pre-computation iterations for performance", int, 10, (0, 100), "system", False),
     ]
 )
@@ -789,7 +789,7 @@ GENETIC_ALGORITHM_METHOD = OptimizationMethod(
 # Single-Objective method parameters
 "method_parameters": {
   "population_size": 100,
-  "num_generations": 200, 
+  "num_generations": 200,
   "mutation_rate": 0.1,
   "crossover_rate": 0.8,
   "elite_ratio": 0.1,

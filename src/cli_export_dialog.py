@@ -7,7 +7,7 @@ a CLI command is copied.
 Execution modes
 ---------------
 Single file   — generates ``python src/cli.py run --spec "..."``
-Directory batch — generates ``python src/cli.py run-batch --spec "..." ...``
+Directory batch — generates ``python src/cli.py run --spec "..." --input-dir "..." --output-dir "..."``
 """
 
 from __future__ import annotations
@@ -26,7 +26,6 @@ from run_spec import (
     build_run_spec,
     default_batch_manifest_path,
     default_batch_output_dir,
-    default_batch_run_spec_path,
     default_batch_summary_path,
     default_run_spec_path_for_output,
 )
@@ -61,13 +60,9 @@ class CLIExportDialog:
         self._log = log_callback or (lambda _msg: None)
         self.result: Optional[str] = None
 
-        # Precompute both mode defaults so switching modes can auto-update the
-        # spec path when the user has not manually edited it.
+        # Both modes share the same run-spec format and default path.
         self._default_single_spec = str(
             default_run_spec_path_for_output(state["output_json_path"])
-        )
-        self._default_batch_spec = str(
-            default_batch_run_spec_path(state["output_json_path"])
         )
 
         self._dialog = tk.Toplevel(parent)
@@ -383,9 +378,6 @@ class CLIExportDialog:
                 row=self._options_row, column=0, sticky="ew", pady=(0, 8)
             )
             self._dialog.geometry(f"{self._WIDTH}x{self._HEIGHT_BATCH}")
-            # Auto-update spec path to batch template naming if not manually edited
-            if self._spec_path_var.get() == self._default_single_spec:
-                self._spec_path_var.set(self._default_batch_spec)
             self._update_batch_preflight()
         else:
             self._batch_frame.grid_remove()
@@ -393,9 +385,6 @@ class CLIExportDialog:
                 row=self._options_row, column=0, sticky="ew", pady=(0, 8)
             )
             self._dialog.geometry(f"{self._WIDTH}x{self._HEIGHT_SINGLE}")
-            # Restore single-file spec path if it still matches the batch default
-            if self._spec_path_var.get() == self._default_batch_spec:
-                self._spec_path_var.set(self._default_single_spec)
         self._update_preview()
 
     # ------------------------------------------------------------------

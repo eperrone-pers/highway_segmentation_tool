@@ -176,7 +176,7 @@ def build_command_for_batch_run(
         str(summary_json) if summary_json is not None else str(default_batch_summary_path(output_dir))
     )
     parts = [
-        "python src/cli.py run-batch",
+        "python src/cli.py run",
         f'--spec "{spec_path}"',
         f'--input-dir "{input_dir}"',
         f'--glob "{glob_pattern}"',

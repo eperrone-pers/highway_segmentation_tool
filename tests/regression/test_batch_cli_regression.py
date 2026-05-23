@@ -85,7 +85,7 @@ def flat_run(tmp_path_factory):
     spec = _build_template_spec(tmp)
     out = tmp / "results"
     rc = cli.main([
-        "run-batch",
+        "run",
         "--spec", str(spec),
         "--input-dir", str(BATCH_DATA_DIR),
         "--output-dir", str(out),
@@ -106,7 +106,7 @@ def recurse_run(tmp_path_factory):
     spec = _build_template_spec(tmp)
     out = tmp / "results"
     rc = cli.main([
-        "run-batch",
+        "run",
         "--spec", str(spec),
         "--input-dir", str(BATCH_DATA_DIR),
         "--output-dir", str(out),
@@ -129,7 +129,7 @@ def custom_summary_run(tmp_path_factory):
     out = tmp / "results"
     custom_summary = tmp / "my_batch_summary.json"
     rc = cli.main([
-        "run-batch",
+        "run",
         "--spec", str(spec),
         "--input-dir", str(BATCH_DATA_DIR),
         "--output-dir", str(out),
@@ -150,7 +150,7 @@ def excel_run(tmp_path_factory):
     spec = _build_template_spec(tmp)
     out = tmp / "results"
     rc = cli.main([
-        "run-batch",
+        "run",
         "--spec", str(spec),
         "--input-dir", str(BATCH_DATA_DIR),
         "--output-dir", str(out),
