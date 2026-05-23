@@ -80,7 +80,10 @@ def test_gui_autosave_prunes_legacy_optimization_keys():
         get_save_file_path=lambda: "C:/out",
     )
 
-    gui.settings_manager = SimpleNamespace(save_settings=Mock(return_value=True))
+    gui.settings_manager = SimpleNamespace(
+        save_settings=Mock(return_value=True),
+        validate_method_key=lambda k: k,
+    )
     gui.root = FakeRoot()
 
     gui.custom_save_name = FakeVar("new")
@@ -92,7 +95,6 @@ def test_gui_autosave_prunes_legacy_optimization_keys():
 
     # Method key resolution
     gui.ui_builder = SimpleNamespace(method_dropdown=SimpleNamespace(get=lambda: "Multi-Objective NSGA-II"))
-    gui._migrate_method_key = lambda k: k
     gui._get_selected_method_key_safe = lambda: "multi"
 
     # Called by _save_current_settings; keep it harmless

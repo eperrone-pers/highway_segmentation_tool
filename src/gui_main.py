@@ -1,8 +1,8 @@
 """Main GUI class for the Highway Segmentation application.
 
-Coordinates between five specialized managers — UIBuilder, FileManager,
-ParameterManager, OptimizationController, and SettingsManager — rather
-than implementing all concerns directly.
+Coordinates between six specialized managers — UIBuilder, FileManager,
+ParameterManager, OptimizationController, SettingsManager, and HelpManager —
+rather than implementing all concerns directly.
 """
 
 import tkinter as tk
@@ -15,13 +15,13 @@ from datetime import datetime
 from typing import List, Optional
 
 from ui_builder import UIBuilder
-from file_manager import FileManager  
+from file_manager import FileManager
+from help_manager import HelpManager
 from parameter_manager import ParameterManager
 from optimization_controller import OptimizationController
 from settings_manager import SettingsManager
 from config import UIConfig, AlgorithmConstants, ConstrainedOptimizationConfig
 from route_utils import ROUTE_COLUMN_NONE_SENTINEL, normalize_route_column_selection
-from docs_browser import open_markdown_path_in_browser
 from cli_export_dialog import CLIExportDialog
 from run_spec import (
     build_command_for_run_spec,
@@ -108,6 +108,7 @@ class HighwaySegmentationGUI:
 
         self.ui_builder = UIBuilder(self)
         self.file_manager = FileManager(self)
+        self.help_manager = HelpManager(self)
         self.parameter_manager = ParameterManager(self)
         self.optimization_controller = OptimizationController(self)
         self.settings_manager = SettingsManager()
@@ -391,7 +392,7 @@ class HighwaySegmentationGUI:
 
         try:
             if hasattr(self, 'optimization_method'):
-                return self._migrate_method_key(self.optimization_method)
+                return self.settings_manager.validate_method_key(self.optimization_method)
         except (AttributeError, ValueError, KeyError, TypeError):
             pass
         return None
@@ -834,442 +835,9 @@ class HighwaySegmentationGUI:
         )
     
     def show_help(self):
-        """Open documentation in the user's browser (preferred UX).
+        """Open the documentation browser dialog."""
+        self.help_manager.show_help()
 
-        This dialog intentionally does not render markdown inline. It provides
-        config-driven shortcuts to open:
-        - USER_GUIDE.md
-        - Method-specific README.md files under src/analysis/methods/docs/{method_key}/README.md
-        - Preprocessing README.md files under src/preprocessing/methods/docs/{method_key}/README.md
-        """
-        project_root = os.path.dirname(os.path.dirname(__file__))
-        user_guide_path = os.path.join(project_root, "USER_GUIDE.md")
-
-        help_window = self._create_help_window()
-        main_frame = self._build_help_main_frame(help_window)
-        self._build_help_header(main_frame)
-        self._build_user_guide_section(main_frame, user_guide_path)
-        self._build_method_docs_section(main_frame, project_root)
-        self._build_preprocessing_docs_section(main_frame, project_root)
-        self._build_help_close_button(main_frame, help_window)
-        self._center_window(help_window)
-
-    def _create_help_window(self) -> tk.Toplevel:
-        help_window = tk.Toplevel(self.root)
-        help_window.title("Documentation")
-        help_window.geometry("620x380")
-        help_window.resizable(False, False)
-        help_window.grab_set()  # Make it modal
-        return help_window
-
-    def _build_help_main_frame(self, help_window: tk.Toplevel) -> ttk.Frame:
-        main_frame = ttk.Frame(help_window, padding=12)
-        main_frame.pack(fill="both", expand=True)
-        return main_frame
-
-    def _build_help_header(self, main_frame: ttk.Frame) -> None:
-        ttk.Label(
-            main_frame,
-            text="Documentation",
-            font=("Arial", 14, "bold"),
-        ).pack(anchor="w")
-
-        ttk.Label(
-            main_frame,
-            text="Open the User Guide, analysis method docs, or preprocessing docs in your browser.",
-        ).pack(anchor="w", pady=(4, 12))
-
-    def _build_user_guide_section(self, main_frame: ttk.Frame, user_guide_path: str) -> None:
-        user_guide_frame = ttk.LabelFrame(main_frame, text="User Guide", padding=10)
-        user_guide_frame.pack(fill="x")
-
-        ttk.Button(
-            user_guide_frame,
-            text="🌐 Open User Guide in Browser",
-            command=lambda: self._open_markdown_path_in_browser(user_guide_path, title="User Guide"),
-        ).pack(anchor="w")
-
-    def _build_method_docs_section(self, main_frame: ttk.Frame, project_root: str) -> None:
-        method_frame = ttk.LabelFrame(main_frame, text="Method Documentation", padding=10)
-        method_frame.pack(fill="x", pady=(12, 0))
-
-        available_docs = self._get_available_method_docs(project_root)
-        if not available_docs:
-            ttk.Label(
-                method_frame,
-                text="No method README files found under src/analysis/methods/docs/.",
-            ).pack(anchor="w")
-            return
-
-        ttk.Label(method_frame, text="Method:").pack(side="left")
-
-        method_display_names = [item[0] for item in available_docs]
-        selected_method = tk.StringVar(value=method_display_names[0])
-
-        method_combo = ttk.Combobox(
-            method_frame,
-            textvariable=selected_method,
-            values=method_display_names,
-            state="readonly",
-            width=36,
-        )
-        method_combo.pack(side="left", padx=(6, 10))
-
-        def open_selected_method_doc() -> None:
-            display_name = selected_method.get()
-            for name, _, readme_path in available_docs:
-                if name == display_name:
-                    self._open_markdown_path_in_browser(readme_path, title=f"Method Doc - {name}")
-                    return
-            messagebox.showerror("Error", f"Could not resolve README for '{display_name}'")
-
-        ttk.Button(
-            method_frame,
-            text="🌐 Open in Browser",
-            command=open_selected_method_doc,
-        ).pack(side="left")
-
-    def _build_preprocessing_docs_section(self, main_frame: ttk.Frame, project_root: str) -> None:
-        preprocessing_frame = ttk.LabelFrame(main_frame, text="Preprocessing Documentation", padding=10)
-        preprocessing_frame.pack(fill="x", pady=(12, 0))
-
-        available_docs = self._get_available_preprocessing_docs(project_root)
-        if not available_docs:
-            ttk.Label(
-                preprocessing_frame,
-                text="No preprocessing README files found under src/preprocessing/methods/docs/.",
-            ).pack(anchor="w")
-            return
-
-        ttk.Label(preprocessing_frame, text="Algorithm:").pack(side="left")
-
-        preprocessing_display_names = [item[0] for item in available_docs]
-        selected_preprocessing = tk.StringVar(value=preprocessing_display_names[0])
-
-        preprocessing_combo = ttk.Combobox(
-            preprocessing_frame,
-            textvariable=selected_preprocessing,
-            values=preprocessing_display_names,
-            state="readonly",
-            width=36,
-        )
-        preprocessing_combo.pack(side="left", padx=(6, 10))
-
-        def open_selected_preprocessing_doc() -> None:
-            display_name = selected_preprocessing.get()
-            for name, _, readme_path in available_docs:
-                if name == display_name:
-                    self._open_markdown_path_in_browser(
-                        readme_path,
-                        title=f"Preprocessing Doc - {name}",
-                    )
-                    return
-            messagebox.showerror("Error", f"Could not resolve README for '{display_name}'")
-
-        ttk.Button(
-            preprocessing_frame,
-            text="🌐 Open in Browser",
-            command=open_selected_preprocessing_doc,
-        ).pack(side="left")
-
-    def _build_help_close_button(self, main_frame: ttk.Frame, help_window: tk.Toplevel) -> None:
-        button_row = ttk.Frame(main_frame)
-        button_row.pack(fill="x", pady=(14, 0))
-        ttk.Button(button_row, text="Close", command=help_window.destroy).pack(side="right")
-
-    def _center_window(self, window: tk.Toplevel) -> None:
-        window.update_idletasks()
-        x = (window.winfo_screenwidth() // 2) - (window.winfo_width() // 2)
-        y = (window.winfo_screenheight() // 2) - (window.winfo_height() // 2)
-        window.geometry(f"+{x}+{y}")
-
-    def _get_available_method_docs(self, project_root: str):
-        """Return list of (display_name, method_key, readme_path) for methods with docs."""
-        try:
-            from config import OPTIMIZATION_METHODS
-        except Exception:
-            return []
-
-        docs_root = os.path.join(project_root, "src", "analysis", "methods", "docs")
-        available = []
-        for method in OPTIMIZATION_METHODS:
-            readme_path = os.path.join(docs_root, method.method_key, "README.md")
-            if os.path.exists(readme_path):
-                available.append((method.display_name, method.method_key, readme_path))
-        return available
-
-    def _get_available_preprocessing_docs(self, project_root: str):
-        """Return list of (display_name, method_key, readme_path) for preprocessing methods with docs."""
-        try:
-            from config import PREPROCESSING_METHODS
-        except Exception:
-            return []
-
-        docs_root = os.path.join(project_root, "src", "preprocessing", "methods", "docs")
-        available = []
-        for method in PREPROCESSING_METHODS:
-            readme_path = os.path.join(docs_root, method.method_key, "README.md")
-            if os.path.exists(readme_path):
-                available.append((method.display_name, method.method_key, readme_path))
-        return available
-
-    def _open_markdown_path_in_browser(self, markdown_path: str, title: str):
-        """Render a markdown file to HTML and open it in the browser."""
-        try:
-            import importlib
-
-            markdown_module = importlib.import_module("markdown")
-        except Exception:
-            markdown_module = None
-
-        open_markdown_path_in_browser(
-            root=self.root,
-            markdown_path=markdown_path,
-            title=title,
-            messagebox=messagebox,
-            markdown_available=markdown_module is not None,
-            markdown_module=markdown_module,
-        )
-
-    def _restore_file_paths_from_settings(self) -> None:
-        """Apply stored file paths (best-effort)."""
-        data_path = self.settings.get('files', {}).get('data_file_path', '')
-        if data_path and os.path.exists(data_path):
-            self.file_manager.set_data_file_path(data_path)
-            # Load CSV columns to populate dropdowns when restoring settings
-            self.file_manager.load_csv_columns()
-
-        save_path = self.settings.get('files', {}).get('save_file_path', '')
-        if save_path:
-            self.file_manager.set_save_file_path(save_path)
-
-    def _resolve_method_key_from_opt_settings(self, opt_settings) -> str:
-        """Resolve and validate the optimization method key from settings."""
-        # Load optimization method FIRST before applying parameters
-        # NOTE: We store the optimization method selection under 'optimization_method'
-        # to avoid colliding with AASHTO CDA's parameter name 'method'.
-        method_key = opt_settings.get('optimization_method', None)
-
-        # If older settings stored the optimization method under a generic 'method' key,
-        # accept it only if it is a valid registry method key.
-        if method_key is None:
-            legacy_candidate = opt_settings.get('method', None)
-            method_key = legacy_candidate
-
-        # Validate against registry (no numeric-ID migration; keep it simple).
-        # If invalid, treat as an incompatibility error and require user selection.
-        try:
-            method_key = self._migrate_method_key(method_key)
-        except Exception as e:
-            try:
-                self.log_message(
-                    f"ERROR: Settings contain an unknown optimization method ({method_key}). "
-                    f"Please select a valid method from the dropdown. Details: {e}"
-                )
-            except Exception:
-                pass
-            try:
-                messagebox.showerror(
-                    "Incompatible Settings",
-                    "Saved settings refer to an unknown optimization method.\n\n"
-                    "Please choose a valid method from the dropdown and re-save your settings.",
-                )
-            except Exception:
-                pass
-            # Keep the currently initialized GUI default method.
-            method_key = getattr(self, 'optimization_method', None) or 'multi'
-
-        return method_key
-
-    def _seed_dynamic_parameters_store_from_legacy(self, opt_settings, method_key: str) -> None:
-        """Seed per-method dynamic parameter store from legacy flat settings (best-effort)."""
-        # Migration: if per-method store is empty/missing for this method, seed it from
-        # the legacy flat optimization dict (min_length/max_length/etc were historically shared).
-        try:
-            if isinstance(opt_settings, dict):
-                store = opt_settings.setdefault('dynamic_parameters_by_method', {})
-                if isinstance(store, dict) and method_key and method_key not in store:
-                    # Only include keys that are likely to be dynamic method parameters.
-                    # We avoid copying 'optimization_method' and other meta keys.
-                    legacy_candidate = {
-                        k: v for k, v in opt_settings.items()
-                        if k not in {
-                            'optimization_method',
-                            'dynamic_parameters_by_method'
-                        }
-                    }
-                    store[method_key] = legacy_candidate
-        except Exception as e:
-            # Non-fatal migration failure; do not block startup.
-            if hasattr(self, 'log_message'):
-                self.log_message(f"Warning: Could not seed per-method parameters for '{method_key}': {e}")
-            else:
-                logging.getLogger(__name__).warning(
-                    "Could not seed per-method parameters for %r: %s", method_key, e
-                )
-
-    def _apply_method_selection_to_dropdown(self, opt_settings, method_key: str) -> None:
-        """Apply method selection to dropdown and refresh method-specific UI (best-effort)."""
-        # Apply method selection to dropdown BEFORE loading parameters
-        if self.method_dropdown is not None:
-            try:
-                # Convert method key to display name
-                from config import get_optimization_method
-                method_config = get_optimization_method(method_key)
-                self.method_dropdown.set(method_config.display_name)
-
-                # Refresh dynamic parameter UI for the selected method
-                try:
-                    if hasattr(self, 'parameter_manager'):
-                        self.parameter_manager.on_method_change()
-                    elif hasattr(self, 'ui_builder'):
-                        self.ui_builder.set_method_description(method_key)
-                        self.ui_builder.refresh_dynamic_params_grid(method_key)
-                except Exception as e:
-                    self.log_message(f"Warning: Could not refresh dynamic parameters for '{method_key}': {e}")
-
-            except (ValueError, KeyError) as e:
-                # Fallback to default if method not found or invalid
-                self.log_message(f"Could not restore method '{method_key}': {e}. Using default.")
-                # Clear the invalid method from settings to prevent this error on next startup
-                # NOTE: do not overwrite AASHTO CDA's parameter name 'method'.
-                opt_settings['optimization_method'] = 'multi'  # Fix the bad optimization setting
-                self.method_dropdown.set("Multi-Objective NSGA-II")
-                self.optimization_method = 'multi'  # Ensure we have correct key even with fallback
-
-                # Refresh dynamic parameter UI for the fallback method
-                try:
-                    if hasattr(self, 'parameter_manager'):
-                        self.parameter_manager.on_method_change()
-                    elif hasattr(self, 'ui_builder'):
-                        self.ui_builder.set_method_description('multi')
-                        self.ui_builder.refresh_dynamic_params_grid('multi')
-                except Exception as e:
-                    self.log_message(f"Warning: Could not refresh dynamic parameters for fallback: {e}")
-
-    def _apply_method_parameters_from_opt_settings(self, opt_settings, method_key: str) -> None:
-        """Apply optimization parameters to the UI for the resolved method."""
-        merged_settings = opt_settings.copy() if isinstance(opt_settings, dict) else {}
-        per_method_store = merged_settings.get('dynamic_parameters_by_method', {}) if isinstance(merged_settings, dict) else {}
-        per_method_params = per_method_store.get(method_key) if isinstance(per_method_store, dict) else None
-        if isinstance(per_method_params, dict):
-            merged_settings.update(per_method_params)
-
-        self.parameter_manager.apply_settings(merged_settings)
-
-        # Track active method for later switch persistence
-        self._active_method_key = method_key
-
-    def _restore_ui_state_from_settings(self) -> None:
-        """Restore UI state fields (columns/routes) from settings."""
-        ui_state = self.settings.get('ui_state', {})
-        if 'x_column' in ui_state and hasattr(self, 'x_column'):
-            self.x_column.set(ui_state['x_column'])
-        if 'y_column' in ui_state and hasattr(self, 'y_column'):
-            self.y_column.set(ui_state['y_column'])
-        if 'gap_threshold' in ui_state and hasattr(self, 'gap_threshold'):
-            self.gap_threshold.set(ui_state['gap_threshold'])
-        if 'route_column' in ui_state and hasattr(self, 'route_column'):
-            route_col_value = ui_state['route_column']
-            # Validate route_column value - reject if it looks corrupted (contains suspicious patterns)
-            if route_col_value and isinstance(route_col_value, str):
-                # Check for obvious corruption patterns like concatenated labels
-                suspicious_patterns = ['Gap Threshold', 'X Column', 'Y Column', 'Route Column']
-                if any(pattern in route_col_value for pattern in suspicious_patterns):
-                    self.log_message(f"Rejecting corrupted route_column value from settings: '{route_col_value}'")
-                    self.route_column.set(ROUTE_COLUMN_NONE_SENTINEL)
-                else:
-                    self.route_column.set(route_col_value)
-            else:
-                self.route_column.set(route_col_value)
-
-        # Restore must-break columns (backward compatible default: [])
-        try:
-            raw = ui_state.get('must_break_columns', [])
-            if raw is None:
-                raw = []
-            if isinstance(raw, list):
-                self.must_break_columns = [str(v).strip() for v in raw if str(v).strip()]
-            else:
-                self.must_break_columns = []
-        except Exception:
-            self.must_break_columns = []
-
-        # Update UI summary label if present
-        try:
-            if hasattr(self, '_update_must_break_columns_display'):
-                self._update_must_break_columns_display()
-        except Exception:
-            pass
-
-        # Restore secondary-break columns (backward compatible default: [])
-        try:
-            raw = ui_state.get('secondary_break_columns', [])
-            if raw is None:
-                raw = []
-            if isinstance(raw, list):
-                self.secondary_break_columns = [str(v).strip() for v in raw if str(v).strip()]
-            else:
-                self.secondary_break_columns = []
-        except Exception:
-            self.secondary_break_columns = []
-
-        # Update UI summary label if present
-        try:
-            if hasattr(self, '_update_secondary_break_columns_display'):
-                self._update_secondary_break_columns_display()
-        except Exception:
-            pass
-        
-        # Restore preprocessing panel configurations
-        preprocessing_settings = self.settings.get('preprocessing', {})
-        
-        # Restore pregap preprocessing panel
-        if hasattr(self, 'pregap_preprocess_panel') and self.pregap_preprocess_panel:
-            try:
-                pregap_config = preprocessing_settings.get('pregap_config', {})
-                method_key = pregap_config.get('method')
-                parameters = pregap_config.get('parameters', {})
-                if method_key:
-                    self.pregap_preprocess_panel.set_method(method_key, parameters, expand=True)
-            except Exception as e:
-                self.log_message(f"Warning: Could not restore pregap preprocessing config: {e}")
-        
-        # Restore primary preprocessing panel
-        if hasattr(self, 'primary_preprocess_panel') and self.primary_preprocess_panel:
-            try:
-                primary_config = preprocessing_settings.get('primary_config', {})
-                method_key = primary_config.get('method')
-                parameters = primary_config.get('parameters', {})
-                if method_key:
-                    self.primary_preprocess_panel.set_method(method_key, parameters, expand=True)
-            except Exception as e:
-                self.log_message(f"Warning: Could not restore primary preprocessing config: {e}")
-        
-        # Restore secondary preprocessing (postprocessing) panel
-        if hasattr(self, 'secondary_preprocess_panel') and self.secondary_preprocess_panel:
-            try:
-                secondary_config = preprocessing_settings.get('secondary_config', {})
-                method_key = secondary_config.get('method')
-                parameters = secondary_config.get('parameters', {})
-                if method_key:
-                    self.secondary_preprocess_panel.set_method(method_key, parameters, expand=True)
-            except Exception as e:
-                self.log_message(f"Warning: Could not restore secondary preprocessing config: {e}")
-
-        # Restore route selection
-        if 'selected_routes' in ui_state:
-            self.selected_routes = ui_state['selected_routes'].copy()
-
-        # If route column is set and data file exists, trigger full route processing
-        if (
-            hasattr(self, 'route_column')
-            and normalize_route_column_selection(self.route_column.get()) is not None
-            and self.file_manager.get_data_file_path()
-        ):
-            self.log_message("Detecting routes from restored settings...")
-            self.on_route_column_change()
-    
     # ===== REMAINING DIRECT METHODS =====
     # These methods remain in the main class as they coordinate between managers
     
@@ -1394,43 +962,7 @@ class HighwaySegmentationGUI:
     
     def _apply_loaded_settings(self):
         """Apply loaded settings to all UI elements."""
-        try:
-            self._restore_file_paths_from_settings()
-
-            opt_settings = self.settings.get('optimization', {})
-
-            method_key = self._resolve_method_key_from_opt_settings(opt_settings)
-            self.optimization_method = method_key
-
-            self._seed_dynamic_parameters_store_from_legacy(opt_settings, method_key)
-            self._apply_method_selection_to_dropdown(opt_settings, method_key)
-            self._apply_method_parameters_from_opt_settings(opt_settings, method_key)
-            self._restore_ui_state_from_settings()
-
-        except Exception as e:
-            self.handle_error("Could not apply some loaded settings", e, "warning")
-    
-    def _migrate_method_key(self, method_key):
-        """Validate a method key against the config registry.
-
-        Args:
-            method_key: Key to validate (string form expected).
-
-        Returns:
-            str: The validated method key, unchanged.
-
-        Raises:
-            ValueError: If the key is not found in the registry.
-        """
-        if isinstance(method_key, str):
-            try:
-                from config import get_optimization_method
-                get_optimization_method(method_key)
-                return method_key
-            except Exception:
-                pass
-
-        raise ValueError(f"Unknown optimization method key in settings: {method_key!r}")
+        self.settings_manager.apply_to_app(self)
     
     def _setup_parameter_tracking(self):
         """Set up automatic saving when parameters change."""
@@ -1517,10 +1049,10 @@ class HighwaySegmentationGUI:
                     except (ValueError, KeyError):
                         method_key = 'multi'
 
-                method_key = self._migrate_method_key(method_key)
+                method_key = self.settings_manager.validate_method_key(method_key)
                 self.settings['optimization']['optimization_method'] = method_key
             elif hasattr(self, 'optimization_method'):
-                method_key = self._migrate_method_key(self.optimization_method)
+                method_key = self.settings_manager.validate_method_key(self.optimization_method)
                 self.settings['optimization']['optimization_method'] = method_key
             else:
                 self.settings['optimization']['optimization_method'] = 'multi'
