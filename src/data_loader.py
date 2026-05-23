@@ -3,6 +3,7 @@ from dataclasses import dataclass
 import logging
 from typing import List, Set, Dict, Tuple, Optional, TYPE_CHECKING
 
+from config import get_preprocessing_method, resolve_preprocessing_class
 from route_utils import filter_data_by_route, normalize_route_id
 
 # Preprocessing integration
@@ -460,9 +461,6 @@ def apply_preprocessing_phase(
     """
     if not method_key:
         return route_analysis, None
-    
-    # Import here to avoid circular dependencies
-    from config import get_preprocessing_method, resolve_preprocessing_class
     
     # Resolve method class
     cls = resolve_preprocessing_class(method_key)

@@ -9,6 +9,7 @@ from typing import Dict, List, Any, Optional, Union
 from datetime import datetime
 from pathlib import Path
 
+from config import get_optimization_method
 from value_parsing import SetEncoder
 
 # Import analysis framework
@@ -213,8 +214,6 @@ class JsonResultsManager:
         # Build method configuration section (config-driven)
         method_key = first_result.method_key
         try:
-            # Import locally to avoid circular import issues
-            from config import get_optimization_method
             cfg = get_optimization_method(method_key)
         except Exception as e:
             raise ValueError(
