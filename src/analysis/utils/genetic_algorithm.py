@@ -1693,12 +1693,11 @@ class HighwaySegmentGA:
                     for gap_start, gap_end in gap_segments
                 )
 
-                is_mandatory_segment = (clean[i] in mandatory_set) and (clean[i + 1] in mandatory_set)
-
-                # Mandatory-bounded segments (and explicit data gaps) may violate length constraints.
-                # Do not introduce optional breakpoints inside them during repair, because that can
-                # create user-controllable subsegments that *must* meet constraints and may be infeasible.
-                if is_known_gap_segment or is_mandatory_segment:
+                # Only skip repair for true data gaps (no observations inside the span).
+                # Mandatory-bounded non-gap spans have real data and CAN accept additional
+                # breakpoints — skipping them here is what causes >max_length segments to
+                # survive into the Pareto front.
+                if is_known_gap_segment:
                     i += 1
                     continue
 
@@ -1753,35 +1752,38 @@ class HighwaySegmentGA:
         if not mandatory_set.issubset(chrom_set):
             return False
 
-        # Distinguish mandatory-only segments (length warnings only) from user-controlled ones
+        # Only true data-gap segments are excused from length constraints — they contain no
+        # observations so no breakpoint can be inserted.  All other segments (including those
+        # whose endpoints happen to be mandatory breakpoints) are controllable by the GA and
+        # must satisfy min/max_length.
+        gap_segments_val = getattr(getattr(self, 'route_analysis', None), 'gap_segments', []) or []
+        gap_set_val = {(gs, ge) for gs, ge in gap_segments_val}
+
         constraint_violations = []
-        
+
         for segment_idx, (start_bp, end_bp) in enumerate(zip(chromosome, chromosome[1:])):
             length = end_bp - start_bp
-            
-            # Determine if this is a mandatory segment (bounded by mandatory breakpoints)
-            start_is_mandatory = start_bp in mandatory_set
-            end_is_mandatory = end_bp in mandatory_set
-            is_mandatory_segment = start_is_mandatory and end_is_mandatory
-            
+
             if length < self.min_length or length > self.max_length:
-                if is_mandatory_segment:
-                    # Mandatory segments may violate length constraints due to physical/data limitations.
-                    # They are not controllable by the algorithm, so treat as warning-only.
+                is_known_gap_segment = (start_bp, end_bp) in gap_set_val or any(
+                    abs(gs - start_bp) < 1e-9 and abs(ge - end_bp) < 1e-9
+                    for gs, ge in gap_segments_val
+                )
+                if is_known_gap_segment:
+                    # True data gaps: no observations inside, cannot be split — warning only.
                     constraint_violations.append({
-                        'type': 'mandatory',
+                        'type': 'gap',
                         'segment': segment_idx,
                         'length': length,
                         'start': start_bp,
-                        'end': end_bp
+                        'end': end_bp,
                     })
                 else:
-                    # Error: user-controllable segment violates constraints (algorithm failure)
+                    # All other segments are controllable; a length violation is an algorithm failure.
                     return False
-        
-        # Report mandatory segment constraint violations (warnings only)
-        # NOTE: Removed unnecessary warnings - constraint violations during route analysis
-        # and population generation are expected and automatically handled by the algorithm
+
+        # NOTE: gap-segment violations are logged nowhere intentionally — they are expected and
+        # automatically handled by the algorithm.
         
         # Check start/end points
         if chromosome[0] != self.x_data[0] or chromosome[-1] != self.x_data[-1]:
