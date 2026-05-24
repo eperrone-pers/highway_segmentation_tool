@@ -68,20 +68,25 @@ class TukeyFencesPreprocessor(PreprocessingMethodBase):
         route_analysis: "RouteAnalysis",
         x_column: str,
         y_column: str,
+        log_callback=None,
         **parameters
     ) -> PreprocessingResult:
         """
         Apply Tukey Fences outlier detection to route data.
-        
+
         Args:
             route_analysis: RouteAnalysis object with route data
             x_column: Name of X-axis column (e.g., "Milepoint")
             y_column: Name of Y-axis column (e.g., "IRI")
+            log_callback: Optional callable for progress messages. Use like:
+                ``log = log_callback or print; log("Processing...")``.
             **parameters: Method parameters (k_factor, action)
-        
+
         Returns:
             PreprocessingResult with modified route analysis and complete modification log
         """
+        log = log_callback or print
+
         # Extract parameters (with defaults)
         k_factor = parameters.get('k_factor', 1.5)
         action = parameters.get('action', 'remove')

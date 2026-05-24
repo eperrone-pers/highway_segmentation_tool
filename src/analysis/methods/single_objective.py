@@ -121,9 +121,7 @@ class SingleObjectiveMethod(AnalysisMethodBase):
         
         start_time = time.time()
 
-        def log(message):
-            if log_callback:
-                log_callback(message)
+        log = log_callback or print
                 
         log("Initializing single-objective genetic algorithm...")
         log("Objective: Maximize data fit (minimize deviation)")

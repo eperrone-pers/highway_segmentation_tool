@@ -276,7 +276,7 @@ class PreprocessingMethodBase(ABC):
             def description(self) -> str:
                 return "Detailed description of what this method does."
             
-            def process(self, route_analysis, x_column, y_column, **parameters):
+            def process(self, route_analysis, x_column, y_column, log_callback=None, **parameters):
                 # Create modification context
                 ctx = DataModificationContext(route_analysis.route_data, x_column, y_column)
                 
@@ -347,24 +347,29 @@ class PreprocessingMethodBase(ABC):
         route_analysis: "RouteAnalysis",
         x_column: str,
         y_column: str,
+        log_callback=None,
         **parameters
     ) -> PreprocessingResult:
         """
         Apply preprocessing to route data.
-        
+
         This is the main method that performs the preprocessing operation.
         Must use DataModificationContext for all data modifications to ensure
         automatic logging.
-        
+
         Args:
             route_analysis: RouteAnalysis object containing route data and metadata
             x_column: Name of X-axis column in route_data DataFrame
             y_column: Name of Y-axis column in route_data DataFrame
+            log_callback: Optional callable for progress messages routed to the GUI
+                right panel (or stdout in CLI/test contexts). Use like:
+                ``log = log_callback or print; log("Processing segment 3/17...")``.
+                Pass None when no progress output is needed.
             **parameters: Method-specific parameters (validated before this call)
-        
+
         Returns:
             PreprocessingResult: Complete result with modified data and modification log
-        
+
         Raises:
             ValueError: If parameters are invalid or processing fails
             RuntimeError: If mandatory breakpoints would be violated

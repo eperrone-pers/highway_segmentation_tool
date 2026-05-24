@@ -1,7 +1,6 @@
 """Statistical analysis utilities and console summary formatters for optimization results."""
 
 import numpy as np
-from logger import create_logger
 
 
 def calculate_non_mandatory_segment_stats(chromosome, mandatory_breakpoints):
@@ -54,55 +53,55 @@ def calculate_non_mandatory_segment_stats(chromosome, mandatory_breakpoints):
 # ===== SUMMARY AND REPORTING FUNCTIONS =====
 # Functions for printing optimization results and performance summaries
 
-def print_optimization_summary(pareto_front, fitness_values, generation_times, elapsed_time, enable_performance_stats=True, cache_stats=None):
+def print_optimization_summary(pareto_front, fitness_values, generation_times, elapsed_time, enable_performance_stats=True, cache_stats=None, log_callback=None):
     """
     Print a comprehensive summary of the optimization results
     """
-    print(f"\n{'='*60}")
-    print("OPTIMIZATION SUMMARY")
-    print(f"{'='*60}")
-    
+    log = log_callback or print
+
+    log(f"\n{'='*60}")
+    log("OPTIMIZATION SUMMARY")
+    log(f"{'='*60}")
+
     # Basic results
     pareto_fitness = [fitness_values[i] for i in pareto_front]
-    print(f"[OK] Total runtime: {elapsed_time:.1f}s")
-    print(f"[OK] Pareto front solutions: {len(pareto_front)}")
-    
+    log(f"[OK] Total runtime: {elapsed_time:.1f}s")
+    log(f"[OK] Pareto front solutions: {len(pareto_front)}")
+
     if pareto_fitness:
         # Fitness statistics
         deviations = [f[0] for f in pareto_fitness]
         avg_lengths = [f[1] for f in pareto_fitness]
-        
-        print(f"[OK] Fitness range (deviation): {min(deviations):.3f} to {max(deviations):.3f}")
-        print(f"[OK] Average segment length range: {min(avg_lengths):.3f} to {max(avg_lengths):.3f} miles")
-        
+
+        log(f"[OK] Fitness range (deviation): {min(deviations):.3f} to {max(deviations):.3f}")
+        log(f"[OK] Average segment length range: {min(avg_lengths):.3f} to {max(avg_lengths):.3f} miles")
+
         # Best solutions
         best_fitness_idx = pareto_front[np.argmin(deviations)]
         best_length_idx = pareto_front[np.argmin(avg_lengths)]
-        
-        print(f"\n[BEST] Best fitness solution: #{best_fitness_idx} (deviation: {min(deviations):.3f})")
-        print(f"[BEST] Most compact solution: #{best_length_idx} (avg length: {min(avg_lengths):.3f} miles)")
-    
+
+        log(f"\n[BEST] Best fitness solution: #{best_fitness_idx} (deviation: {min(deviations):.3f})")
+        log(f"[BEST] Most compact solution: #{best_length_idx} (avg length: {min(avg_lengths):.3f} miles)")
+
     # Performance statistics
     if enable_performance_stats and generation_times:
         avg_gen_time = np.mean(generation_times)
-        print("\n[PERF] Performance:")
-        print(f"   Average generation time: {avg_gen_time:.3f}s")
-        print(f"   Generations per second: {1.0/avg_gen_time:.1f}")
-        
+        log("\n[PERF] Performance:")
+        log(f"   Average generation time: {avg_gen_time:.3f}s")
+        log(f"   Generations per second: {1.0/avg_gen_time:.1f}")
+
         if cache_stats:
             total_cache_hits = cache_stats['fitness_cache_size'] + cache_stats['multi_fitness_cache_size']
-            print(f"   Cache efficiency: {total_cache_hits} evaluations avoided")
-    
-    print(f"{'='*60}\n")
+            log(f"   Cache efficiency: {total_cache_hits} evaluations avoided")
+
+    log(f"{'='*60}\n")
 
 
 def print_single_objective_summary(best_chromosome, best_fitness, fitness_history, elapsed_time, enable_performance_stats=True, diversity_stats=None, log_callback=None):
     """
     Print a comprehensive summary of single-objective optimization results
     """
-    # Create logger instance for summary output
-    logger = create_logger(callback=log_callback)
-    log = logger.log
+    log = log_callback or print
             
     log(f"\n{'='*60}")
     log("SINGLE-OBJECTIVE OPTIMIZATION SUMMARY")
@@ -118,23 +117,23 @@ def print_single_objective_summary(best_chromosome, best_fitness, fitness_histor
     if len(fitness_history) > 1:
         improvement = fitness_history[-1] - fitness_history[0]
         log(f"[OK] Fitness improvement: {improvement:.6f} ({improvement/fitness_history[0]*100:+.1f}%)")
-    
+
     # Segment analysis
     segment_lengths = [end_bp - start_bp for start_bp, end_bp in zip(best_chromosome, best_chromosome[1:])]
     log(f"[OK] Average segment length: {np.mean(segment_lengths):.3f} miles")
     log(f"[OK] Segment length range: {min(segment_lengths):.3f} - {max(segment_lengths):.3f} miles")
-    
+
     # Performance statistics
     if enable_performance_stats and diversity_stats:
         log("\n[PERF] Performance:")
         log(f"   Final population diversity: {diversity_stats['unique_segment_counts']} different designs")
         log(f"   Segment count range: {diversity_stats['min_segments']} - {diversity_stats['max_segments']} (avg: {diversity_stats['avg_segments']:.1f})")
-        
+
         if len(fitness_history) > 0:
             generations_per_second = len(fitness_history) / elapsed_time
             log(f"   Evolution rate: {generations_per_second:.1f} generations/second")
-    
-    print(f"{'='*60}\n")
+
+    log(f"{'='*60}\n")
 
 
 def print_constrained_single_objective_summary(best_chromosome, best_constrained_fitness, best_unconstrained_fitness, 

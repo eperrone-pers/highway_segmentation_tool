@@ -16,9 +16,12 @@ Author: Highway Segmentation GA Team
 Phase: 1.95.4 - Multi-Objective Method Extraction
 """
 
+import logging
 import time
 import random
 from typing import Any
+
+_logger = logging.getLogger(__name__)
 
 from ..base import AnalysisMethodBase, AnalysisResult
 from ..utils.ga_utilities import (
@@ -27,7 +30,6 @@ from ..utils.ga_utilities import (
 from ..utils.segment_metrics import average_length_excluding_gap_segments
 from ..utils.genetic_algorithm import HighwaySegmentGA
 from config import get_optimization_method
-from logger import create_logger
 
 
 class MultiObjectiveMethod(AnalysisMethodBase):
@@ -121,8 +123,7 @@ class MultiObjectiveMethod(AnalysisMethodBase):
         )
 
         start_time = time.time()
-        logger = create_logger(callback=log_callback)
-        log = logger.log
+        log = log_callback or print
 
         log("Initializing NSGA-II multi-objective optimization...")
         log("Objectives: Minimize deviation (data fit) vs. Maximize average segment length")
@@ -316,7 +317,7 @@ class MultiObjectiveMethod(AnalysisMethodBase):
                 try:
                     positive_deviation = -float(negative_deviation)
                 except (ValueError, TypeError):
-                    print(f"Warning: Could not convert deviation {negative_deviation} to number, using fallback")
+                    _logger.warning("Could not convert deviation %s to number, using fallback", negative_deviation)
                     positive_deviation = sum(segments)**2 if segments else 0
                     
             if positive_deviation < best_deviation_fitness:

@@ -19,9 +19,12 @@ Author: Highway Segmentation GA Team
 Version: 1.95+ (Performance Optimized)
 """
 
+import logging
 import numpy as np
 import random
 from config import AlgorithmConstants
+
+_logger = logging.getLogger(__name__)
 
 # Create algorithm constants instance
 optimization_config = AlgorithmConstants()
@@ -272,16 +275,16 @@ class HighwaySegmentGA:
         self.mandatory_breakpoints = self.route_analysis.mandatory_breakpoints.copy()
         
         # Log results using pre-computed analysis
-        print("[INFO] Using pre-computed gap analysis:")
-        print(f"  - Route: {self.route_analysis.route_stats['route_start']:.3f} to {self.route_analysis.route_stats['route_end']:.3f} miles")
-        print(f"  - Total gaps detected: {len(self.route_analysis.gap_segments)}")
-        print(f"  - Gap coverage: {self.route_analysis.route_stats['gap_total_length']:.3f} miles ({self.route_analysis.route_stats['gap_total_length']/self.route_analysis.route_stats['total_length']*100:.1f}%)")
-        print(f"  - Valid data points: {self.route_analysis.route_stats['valid_points']}/{self.route_analysis.route_stats['total_points']}")
-        print(f"  - Final mandatory breakpoints: {len(self.mandatory_breakpoints)}")
-        
+        _logger.debug("Using pre-computed gap analysis:")
+        _logger.debug("  - Route: %.3f to %.3f miles", self.route_analysis.route_stats['route_start'], self.route_analysis.route_stats['route_end'])
+        _logger.debug("  - Total gaps detected: %d", len(self.route_analysis.gap_segments))
+        _logger.debug("  - Gap coverage: %.3f miles (%.1f%%)", self.route_analysis.route_stats['gap_total_length'], self.route_analysis.route_stats['gap_total_length']/self.route_analysis.route_stats['total_length']*100)
+        _logger.debug("  - Valid data points: %d/%d", self.route_analysis.route_stats['valid_points'], self.route_analysis.route_stats['total_points'])
+        _logger.debug("  - Final mandatory breakpoints: %d", len(self.mandatory_breakpoints))
+
         if self.route_analysis.gap_segments:
             for i, (start, end) in enumerate(self.route_analysis.gap_segments, 1):
-                print(f"    Gap {i}: {start:.3f} to {end:.3f} miles ({end-start:.3f} miles)")
+                _logger.debug("    Gap %d: %.3f to %.3f miles (%.3f miles)", i, start, end, end - start)
     
     def _merge_nearby_breakpoints_for_constraints(self, breakpoints):
         """
@@ -301,7 +304,7 @@ class HighwaySegmentGA:
             
             if distance_to_last < self.min_length:
                 # This breakpoint would create a segment too short - skip it
-                print(f"[INFO] Constraint merging: skipping breakpoint {current_bp:.3f} (too close to {merged[-1]:.3f}, distance: {distance_to_last:.3f} < {self.min_length})")
+                _logger.debug("Constraint merging: skipping breakpoint %.3f (too close to %.3f, distance: %.3f < %.3f)", current_bp, merged[-1], distance_to_last, self.min_length)
                 continue
             else:
                 # Check if adding this breakpoint would make the next segment too short
@@ -310,7 +313,7 @@ class HighwaySegmentGA:
                 
                 if distance_to_next < self.min_length and i + 1 < len(breakpoints) - 1:
                     # Next segment would be too short - merge by skipping current breakpoint
-                    print(f"[INFO] Constraint merging: skipping breakpoint {current_bp:.3f} (would make next segment too short: {distance_to_next:.3f} < {self.min_length})")
+                    _logger.debug("Constraint merging: skipping breakpoint %.3f (would make next segment too short: %.3f < %.3f)", current_bp, distance_to_next, self.min_length)
                     continue
                 else:
                     merged.append(current_bp)
@@ -483,12 +486,12 @@ class HighwaySegmentGA:
         max_possible_segments = int(splittable_length / self.min_length)
         segment_range = max_possible_segments - min_possible_segments
         
-        print(f"[INFO] Splittable route length: {splittable_length:.2f} miles")
-        print(f"[INFO] Segment range: {min_possible_segments} to {max_possible_segments} segments")
-        
+        _logger.debug("Splittable route length: %.2f miles", splittable_length)
+        _logger.debug("Segment range: %d to %d segments", min_possible_segments, max_possible_segments)
+
         # Check if conditions are met for 10-bin uniform distribution
         if self.population_size >= 50 and segment_range > 20:
-            print("[INFO] Using 10-bin uniform distribution approach")
+            _logger.debug("Using 10-bin uniform distribution approach")
             try:
                 population, segment_counts = self._generate_uniform_distribution_population(
                     min_possible_segments, max_possible_segments, mandatory_list, splittable_length
@@ -496,24 +499,24 @@ class HighwaySegmentGA:
             except ValueError as e:
                 # Some routes/constraint combos can make certain segment counts infeasible given discrete X locations.
                 # Do not hard-fail route optimization; fall back to the robust mixed-strategy initializer.
-                print(f"[WARNING] Uniform init-pop failed ({e}); falling back to strategy-based initialization")
+                _logger.warning("Uniform init-pop failed (%s); falling back to strategy-based initialization", e)
                 population, segment_counts = self._generate_fallback_population(
                     min_possible_segments, max_possible_segments
                 )
         else:
-            print(f"[INFO] Using fallback strategy (pop_size={self.population_size}, range={segment_range})")
+            _logger.debug("Using fallback strategy (pop_size=%d, range=%d)", self.population_size, segment_range)
             population, segment_counts = self._generate_fallback_population(
                 min_possible_segments, max_possible_segments
             )
-        
-        # Print diversity statistics
-        print(f"[INFO] Population diversity: {min(segment_counts)}-{max(segment_counts)} segments")
-        print(f"[INFO] Average segments: {np.mean(segment_counts):.1f}, Std: {np.std(segment_counts):.1f}")
-        
+
+        # Log diversity statistics
+        _logger.debug("Population diversity: %d-%d segments", min(segment_counts), max(segment_counts))
+        _logger.debug("Average segments: %.1f, Std: %.1f", np.mean(segment_counts), np.std(segment_counts))
+
         # Show distribution
         unique_counts = np.unique(segment_counts, return_counts=True)
         distribution = {int(count): int(freq) for count, freq in zip(unique_counts[0], unique_counts[1])}
-        print(f"[INFO] Segment distribution: {distribution}")
+        _logger.debug("Segment distribution: %s", distribution)
         
         return population
     
@@ -572,9 +575,10 @@ class HighwaySegmentGA:
 
                 if chromosome is None:
                     route_id = getattr(getattr(self, 'route_analysis', None), 'route_id', 'Unknown')
-                    print(
-                        f"[ERROR] Uniform init-pop generation failed for route {route_id} after {max_retries} retries "
-                        f"(last_error={last_error}, target_segments={target_segments})."
+                    _logger.error(
+                        "Uniform init-pop generation failed for route %s after %d retries "
+                        "(last_error=%s, target_segments=%s).",
+                        route_id, max_retries, last_error, target_segments,
                     )
                     raise ValueError(
                         f"Failed to generate valid chromosome after {max_retries} retries "
@@ -731,7 +735,7 @@ class HighwaySegmentGA:
             if chromosome is None:
                 self._generation_stats['failed_generations'] += 1
                 self._generation_stats['fallback_chromosomes'] += 1
-                print("[WARNING] Failed to generate valid chromosome, using mandatory breakpoints only")
+                _logger.warning("Failed to generate valid chromosome, using mandatory breakpoints only")
                 chromosome = list(self.mandatory_breakpoints)
             
             population.append(chromosome)
@@ -880,7 +884,7 @@ class HighwaySegmentGA:
         try:
             chromosome = [float(x) if x is not None else 0.0 for x in chromosome]
         except (ValueError, TypeError):
-            print(f"[ERROR] Invalid chromosome values: {chromosome}")
+            _logger.error("Invalid chromosome values: %s", chromosome)
             return 0.0
             
         # Check if mandatory breakpoints are available (should always be true after initialization)
@@ -998,9 +1002,11 @@ class HighwaySegmentGA:
             # SAFETY CHECK: Segment lengths should never be negative!
             # This validates algorithm correctness and catches potential data errors
             if avg_segment_length < 0:
-                print(f"🚨 ERROR: Negative average segment length {avg_segment_length:.6f} for chromosome {chromosome}")
-                print(f"   Chromosome has {len(chromosome)-1} segments")
-                print(f"   First few segments: {[chromosome[i+1] - chromosome[i] for i in range(min(3, len(chromosome)-1))]}")
+                _logger.error(
+                    "Negative average segment length %.6f for chromosome %s; %d segments; first few: %s",
+                    avg_segment_length, chromosome, len(chromosome) - 1,
+                    [chromosome[i+1] - chromosome[i] for i in range(min(3, len(chromosome)-1))],
+                )
                 avg_segment_length = abs(avg_segment_length)  # Emergency fix - take absolute value
                 
             # Return objectives formatted for NSGA-II maximization framework
@@ -1103,10 +1109,10 @@ class HighwaySegmentGA:
         if enable and self._x_to_idx_map is None:
             # Build index mapping when first enabled
             self._build_x_value_index_map()
-            print(f"[HYBRID CACHE] Segment-level caching enabled - built index map for {len(self.sorted_x_data)} points")
-            print("[HYBRID CACHE] Both chromosome and segment caches now active for maximum performance")
+            _logger.debug("Segment-level caching enabled - built index map for %d points", len(self.sorted_x_data))
+            _logger.debug("Both chromosome and segment caches now active for maximum performance")
         elif not enable:
-            print("[HYBRID CACHE] Segment caching disabled - using chromosome-level caching only")
+            _logger.debug("Segment caching disabled - using chromosome-level caching only")
             
         return old_state
     
@@ -1687,12 +1693,11 @@ class HighwaySegmentGA:
                     for gap_start, gap_end in gap_segments
                 )
 
-                is_mandatory_segment = (clean[i] in mandatory_set) and (clean[i + 1] in mandatory_set)
-
-                # Mandatory-bounded segments (and explicit data gaps) may violate length constraints.
-                # Do not introduce optional breakpoints inside them during repair, because that can
-                # create user-controllable subsegments that *must* meet constraints and may be infeasible.
-                if is_known_gap_segment or is_mandatory_segment:
+                # Only skip repair for true data gaps (no observations inside the span).
+                # Mandatory-bounded non-gap spans have real data and CAN accept additional
+                # breakpoints — skipping them here is what causes >max_length segments to
+                # survive into the Pareto front.
+                if is_known_gap_segment:
                     i += 1
                     continue
 
@@ -1747,35 +1752,38 @@ class HighwaySegmentGA:
         if not mandatory_set.issubset(chrom_set):
             return False
 
-        # Distinguish mandatory-only segments (length warnings only) from user-controlled ones
+        # Only true data-gap segments are excused from length constraints — they contain no
+        # observations so no breakpoint can be inserted.  All other segments (including those
+        # whose endpoints happen to be mandatory breakpoints) are controllable by the GA and
+        # must satisfy min/max_length.
+        gap_segments_val = getattr(getattr(self, 'route_analysis', None), 'gap_segments', []) or []
+        gap_set_val = {(gs, ge) for gs, ge in gap_segments_val}
+
         constraint_violations = []
-        
+
         for segment_idx, (start_bp, end_bp) in enumerate(zip(chromosome, chromosome[1:])):
             length = end_bp - start_bp
-            
-            # Determine if this is a mandatory segment (bounded by mandatory breakpoints)
-            start_is_mandatory = start_bp in mandatory_set
-            end_is_mandatory = end_bp in mandatory_set
-            is_mandatory_segment = start_is_mandatory and end_is_mandatory
-            
+
             if length < self.min_length or length > self.max_length:
-                if is_mandatory_segment:
-                    # Mandatory segments may violate length constraints due to physical/data limitations.
-                    # They are not controllable by the algorithm, so treat as warning-only.
+                is_known_gap_segment = (start_bp, end_bp) in gap_set_val or any(
+                    abs(gs - start_bp) < 1e-9 and abs(ge - end_bp) < 1e-9
+                    for gs, ge in gap_segments_val
+                )
+                if is_known_gap_segment:
+                    # True data gaps: no observations inside, cannot be split — warning only.
                     constraint_violations.append({
-                        'type': 'mandatory',
+                        'type': 'gap',
                         'segment': segment_idx,
                         'length': length,
                         'start': start_bp,
-                        'end': end_bp
+                        'end': end_bp,
                     })
                 else:
-                    # Error: user-controllable segment violates constraints (algorithm failure)
+                    # All other segments are controllable; a length violation is an algorithm failure.
                     return False
-        
-        # Report mandatory segment constraint violations (warnings only)
-        # NOTE: Removed unnecessary warnings - constraint violations during route analysis
-        # and population generation are expected and automatically handled by the algorithm
+
+        # NOTE: gap-segment violations are logged nowhere intentionally — they are expected and
+        # automatically handled by the algorithm.
         
         # Check start/end points
         if chromosome[0] != self.x_data[0] or chromosome[-1] != self.x_data[-1]:

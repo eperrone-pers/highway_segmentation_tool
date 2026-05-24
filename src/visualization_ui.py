@@ -14,7 +14,7 @@ import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.figure import Figure
 from matplotlib.widgets import SpanSelector
-from logger import create_logger
+import logging
 import json
 import os
 from pathlib import Path
@@ -26,7 +26,7 @@ from matplotlib import transforms
 from matplotlib import colors as mcolors
 import bisect
 
-from route_utils import normalize_route_column_selection
+from route_utils import normalize_route_column_selection, normalize_route_id
 from visualization.utils import safe_print as _safe_print, default_colors
 from visualization.results_binding import (
     resolve_routes,
@@ -36,6 +36,7 @@ from visualization.results_binding import (
 )
 from visualization.pareto import prepare_pareto_series
 
+logger = logging.getLogger(__name__)
 
 # Matplotlib may emit this warning during draw/zoom when layout can't satisfy all decorations.
 # It's noisy (not fatal) and can be triggered by draw paths outside our control (e.g. toolbar).
@@ -79,9 +80,8 @@ class EnhancedVisualizationWindow:
         """
         # Validate required column parameters - fail fast with clear errors
         if not x_column or not y_column:
-            logger = create_logger()
             error_msg = f"Column mapping configuration is required but missing: x_column='{x_column}', y_column='{y_column}'"
-            logger.log(f"EnhancedVisualizationWindow initialization failed: {error_msg}")
+            logger.error("EnhancedVisualizationWindow initialization failed: %s", error_msg)
             raise ValueError(f"Invalid column configuration: {error_msg}")
         
         self.parent_app = parent_app
@@ -1656,8 +1656,6 @@ class EnhancedVisualizationWindow:
         
     def update_visualizations(self):
         """Update both visualizations based on selected route and analysis method."""
-        from route_utils import normalize_route_id
-
         route_id = normalize_route_id(self.route_var.get()) or str(self.route_var.get()).strip()
 
         try:
@@ -1782,8 +1780,6 @@ class EnhancedVisualizationWindow:
         
     def get_current_route_data(self, route_id):
         """Get original data for the specified route from loaded data."""
-        from route_utils import normalize_route_id
-
         route_key = normalize_route_id(route_id) or str(route_id).strip()
         if hasattr(self, 'original_data_by_route') and route_key in self.original_data_by_route:
             return self.original_data_by_route[route_key]
@@ -1793,8 +1789,6 @@ class EnhancedVisualizationWindow:
         """Get optimization results for the specified route using actual schema structure."""
         if not self.json_results or 'route_results' not in self.json_results:
             return None
-
-        from route_utils import normalize_route_id
 
         route_key = normalize_route_id(route_id) or str(route_id).strip()
         for route_result in self.json_results['route_results']:
@@ -2011,8 +2005,6 @@ class EnhancedVisualizationWindow:
 
         # Normalize early so we can compare to the previous route and decide
         # whether to preserve the current x-window (zoom/paging) on redraw.
-        from route_utils import normalize_route_id
-
         route_id = normalize_route_id(route_id) or str(route_id).strip()
 
         prev_xlim = None

@@ -3,20 +3,22 @@
 Separates widget creation logic from the main application class.
 """
 
+import logging
 import tkinter as tk
 from tkinter import ttk
 from tkinter import messagebox
 from config import (
-    UIConfig, 
-    get_optimization_method_names, 
+    UIConfig,
+    get_optimization_method_names,
     get_method_key_from_display_name,
     get_preprocessing_method_names,
     get_preprocessing_method_key_from_display_name,
     get_optimization_method
 )
 from value_parsing import parse_optional_float, parse_optional_int
-from logger import create_logger
 from route_utils import ROUTE_COLUMN_NONE_SENTINEL
+
+logger = logging.getLogger(__name__)
 from parameter_tree_view import ParameterTreeView, DEFAULT_TREEVIEW_HEIGHT
 
 ui_config = UIConfig()
@@ -1140,14 +1142,14 @@ class UIBuilder:
                             elif hasattr(self.app, 'log_message'):
                                 self.app.log_message(f"Warning: Could not restore parameter '{param_name}': {e}")
                             else:
-                                create_logger().log(f"Warning: Could not restore {param_name}: {e}")
+                                logger.warning("Could not restore %s: %s", param_name, e)
             
         except (ValueError, AttributeError) as e:
             # Handle case where method is not found or dropdown not ready
             if hasattr(self.app, 'handle_error'):
                 self.app.handle_error("Error updating dynamic parameters", e, severity="warning", show_messagebox=False)
             else:
-                create_logger().log(f"Warning: Error updating dynamic parameters: {e}")
+                logger.warning("Error updating dynamic parameters: %s", e)
             # Fallback to first method if current selection fails
             if hasattr(self.app, 'method_dropdown') and self.app.method_dropdown.get():
                 try:
@@ -1167,7 +1169,7 @@ class UIBuilder:
                     elif hasattr(self.app, 'log_message'):
                         self.app.log_message(f"Warning: Could not fall back to first method: {e}")
                     else:
-                        create_logger().log(f"Warning: Could not fall back to first method: {e}")
+                        logger.warning("Could not fall back to first method: %s", e)
     
     def _toggle_parameter_sections(self, required_sections):
         """Show/hide parameter sections based on required sections list."""
@@ -1383,7 +1385,7 @@ class UIBuilder:
             elif hasattr(self.app, 'log_message'):
                 self.app.log_message(f"Warning: Error getting parameter groups for method {method_key}: {e}")
             else:
-                create_logger().log(f"Warning: Error getting parameter groups for method {method_key}: {e}")
+                logger.warning("Error getting parameter groups for method %s: %s", method_key, e)
             return {}
     
     def create_dynamic_parameter_widgets(self, parent, method_key: str):

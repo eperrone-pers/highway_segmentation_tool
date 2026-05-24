@@ -1,7 +1,8 @@
-"""Value parsing and coercion utilities.
+"""Value parsing, coercion, and serialization utilities.
 
-This module centralizes small parsing rules that are used in multiple places
-(GUI widgets, settings persistence, config parameter definitions).
+This module centralizes small parsing and serialization helpers used in
+multiple places (GUI widgets, settings persistence, config parameter
+definitions, JSON output).
 
 Keep this module free of tkinter/pandas/numpy imports so it is safe to use in
 core logic and tests.
@@ -9,8 +10,18 @@ core logic and tests.
 
 from __future__ import annotations
 
+import json
 import math
 from typing import Any, Optional, Union
+
+
+class SetEncoder(json.JSONEncoder):
+    """JSON encoder that converts sets to lists for serialization."""
+
+    def default(self, obj: Any) -> Any:
+        if isinstance(obj, set):
+            return list(obj)
+        return super().default(obj)
 
 
 _NONE_LIKE_STRINGS = {"none", "(none)", "null"}

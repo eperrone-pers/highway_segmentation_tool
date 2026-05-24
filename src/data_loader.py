@@ -3,7 +3,8 @@ from dataclasses import dataclass
 import logging
 from typing import List, Set, Dict, Tuple, Optional, TYPE_CHECKING
 
-from route_utils import normalize_route_id
+from config import get_preprocessing_method, resolve_preprocessing_class
+from route_utils import filter_data_by_route, normalize_route_id
 
 # Preprocessing integration
 if TYPE_CHECKING:
@@ -88,7 +89,7 @@ def _process_attribute_breakpoints(
         try:
             if pd.isna(v):
                 return None
-        except Exception:
+        except TypeError:
             pass
         s = "" if v is None else str(v).strip()
         return None if s == "" else s
@@ -339,7 +340,7 @@ def build_attribute_break_analysis(route_analysis: RouteAnalysis) -> Optional[Di
         try:
             x = float(e.get("x"))
             breakpoints.append(x)
-        except Exception:
+        except (TypeError, ValueError):
             continue
 
     return {
@@ -381,7 +382,7 @@ def build_secondary_attribute_break_analysis(route_analysis: RouteAnalysis) -> O
         try:
             x = float(e.get("x"))
             breakpoints.append(x)
-        except Exception:
+        except (TypeError, ValueError):
             continue
 
     return {
@@ -461,9 +462,6 @@ def apply_preprocessing_phase(
     if not method_key:
         return route_analysis, None
     
-    # Import here to avoid circular dependencies
-    from config import get_preprocessing_method, resolve_preprocessing_class
-    
     # Resolve method class
     cls = resolve_preprocessing_class(method_key)
     preprocessor = cls()
@@ -485,7 +483,7 @@ def apply_preprocessing_phase(
         log_callback(f"Applying {method_config.display_name}...")
     
     # Execute preprocessing
-    result = preprocessor.process(route_analysis, x_column, y_column, **validated_params)
+    result = preprocessor.process(route_analysis, x_column, y_column, log_callback=log_callback, **validated_params)
     
     if log_callback and result.modifications_summary:
         log_callback(f"  {result.modifications_summary}")
@@ -765,30 +763,6 @@ def prepare_route_processing(data, route_column=None, selected_routes=None, data
             'route_column': None,
             'data': data
         }
-
-def filter_data_by_route(data, route_column, route_value):
-    """
-    Filter data by a specific route value.
-    
-    Args:
-        data: DataFrame with highway data
-        route_column: Name of the route column
-        route_value: Route identifier to filter by
-    
-    Returns: 
-        DataFrame: Filtered data for the specific route
-    """
-    if route_column not in data.columns:
-        return data.copy()
-
-    # Treat route identifiers as categorical strings regardless of CSV inference.
-    # This avoids mismatches like int 268296608 (data) vs "268296608" (UI selection).
-    route_str = normalize_route_id(route_value)
-    if route_str is None:
-        return data.iloc[0:0].copy()
-
-    route_series = data[route_column].astype("string").str.strip()
-    return data.loc[route_series == route_str].copy()
 
 
 def load_highway_data(file_path: str) -> Optional[pd.DataFrame]:

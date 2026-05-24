@@ -15,8 +15,8 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 from config import UIConfig
 from route_utils import (
-    INTERNAL_ROUTE_IDS_TO_SKIP_LOWER,
     ROUTE_COLUMN_NONE_SENTINEL,
+    list_routes,
     normalize_route_column_selection,
     normalize_route_id,
 )
@@ -210,7 +210,7 @@ class FileManager:
                             self.app._update_must_break_columns_display()
                         if hasattr(self.app, 'on_parameter_change'):
                             self.app.on_parameter_change()
-            except Exception:
+            except (AttributeError, TypeError):
                 pass
             
             # Reset route state when loading new file
@@ -343,7 +343,7 @@ class FileManager:
                         return False
                     # Leading-zero integers like "00123" should remain strings.
                     return bool(s.str.match(r"^0\d+$").any())
-                except Exception:
+                except (AttributeError, TypeError, ValueError):
                     return False
 
             def _safe_to_numeric(series: pd.Series) -> pd.Series:
@@ -539,12 +539,7 @@ class FileManager:
             normalized = df[route_col].apply(normalize_route_id)
             invalid_count = int(normalized.isna().sum())
 
-            distinct_routes = []
-            for route_str in normalized.dropna().astype(str).tolist():
-                if route_str.lower() in INTERNAL_ROUTE_IDS_TO_SKIP_LOWER:
-                    continue
-                distinct_routes.append(route_str)
-            distinct_routes = sorted(set(distinct_routes))
+            distinct_routes = list_routes(df, route_col)
 
             if invalid_count > 0:
                 self.app.log_message(
@@ -737,7 +732,7 @@ class FileManager:
         if display_name and hasattr(self.app, 'method_dropdown') and hasattr(self.app.method_dropdown, 'set'):
             try:
                 self.app.method_dropdown.set(display_name)
-            except Exception:
+            except tk.TclError:
                 pass
 
         # If display name not present, attempt to set from registry.
@@ -745,14 +740,14 @@ class FileManager:
             try:
                 method_config = get_optimization_method(method_key)
                 self.app.method_dropdown.set(method_config.display_name)
-            except Exception:
+            except tk.TclError:
                 pass
 
         if method_key:
             try:
                 self.app.optimization_method = method_key
                 setattr(self.app, '_active_method_key', method_key)
-            except Exception:
+            except AttributeError:
                 pass
 
             # Ensure settings structure exists
@@ -762,7 +757,7 @@ class FileManager:
                 opt = self.app.settings.setdefault('optimization', {})
                 opt['optimization_method'] = method_key
                 opt.setdefault('dynamic_parameters_by_method', {})
-            except Exception:
+            except (AttributeError, TypeError):
                 pass
 
         # Restore framework/global UI state
@@ -783,13 +778,13 @@ class FileManager:
         if 'selected_routes' in route_processing:
             try:
                 self.app.selected_routes = list(route_processing.get('selected_routes') or [])
-            except Exception:
+            except (AttributeError, TypeError):
                 pass
 
         if 'custom_save_name' in route_processing and hasattr(self.app, 'custom_save_name') and hasattr(self.app.custom_save_name, 'set'):
             try:
                 self.app.custom_save_name.set(route_processing.get('custom_save_name') or '')
-            except Exception:
+            except tk.TclError:
                 pass
 
         method_params = input_params.get('method_parameters', {}) or {}
@@ -797,7 +792,7 @@ class FileManager:
             if 'gap_threshold' in method_params:
                 try:
                     self.app.gap_threshold.set(method_params.get('gap_threshold'))
-                except Exception:
+                except tk.TclError:
                     pass
 
         # Restore method-scoped parameters into the settings-backed store
@@ -809,13 +804,13 @@ class FileManager:
                     opt = self.app.settings.setdefault('optimization', {})
                     store = opt.setdefault('dynamic_parameters_by_method', {})
                     store[method_key] = dict(method_params)
-            except Exception:
+            except (AttributeError, KeyError, TypeError):
                 # Fall back to raw store write
                 try:
                     opt = self.app.settings.setdefault('optimization', {})
                     store = opt.setdefault('dynamic_parameters_by_method', {})
                     store[method_key] = dict(method_params)
-                except Exception:
+                except (AttributeError, TypeError):
                     pass
 
         # Refresh method description/grid (best-effort)
@@ -825,7 +820,7 @@ class FileManager:
                     self.app.ui_builder.set_method_description(method_key)
                 if method_key and hasattr(self.app.ui_builder, 'refresh_dynamic_params_grid'):
                     self.app.ui_builder.refresh_dynamic_params_grid(method_key)
-        except Exception:
+        except (AttributeError, tk.TclError):
             pass
     
     def _validate_json_schema(self, json_data):
@@ -1065,14 +1060,14 @@ class FileManager:
                     try:
                         if hasattr(self.app, 'method_dropdown'):
                             method_key = get_method_key_from_display_name(self.app.method_dropdown.get())
-                    except Exception:
+                    except (AttributeError, tk.TclError):
                         method_key = getattr(self.app, 'optimization_method', None)
 
                     # Persist active method's latest params into the store
                     try:
                         if hasattr(self.app, '_persist_dynamic_parameters_for_method') and method_key:
                             self.app._persist_dynamic_parameters_for_method(method_key)
-                    except Exception:
+                    except (AttributeError, tk.TclError):
                         pass
 
                     dynamic_store = {}
@@ -1080,7 +1075,7 @@ class FileManager:
                         opt = getattr(self.app, 'settings', {}).get('optimization', {})
                         if isinstance(opt, dict):
                             dynamic_store = opt.get('dynamic_parameters_by_method', {}) or {}
-                    except Exception:
+                    except (AttributeError, TypeError):
                         dynamic_store = {}
 
                     config = {
@@ -1185,14 +1180,14 @@ class FileManager:
                         store = opt.get('dynamic_parameters_by_method', {})
                         if isinstance(store, dict):
                             app_opt['dynamic_parameters_by_method'] = store
-                    except Exception:
+                    except (AttributeError, TypeError):
                         pass
 
                     # Update UI based on method
                     try:
                         if hasattr(self.app, 'on_method_change'):
                             self.app.on_method_change()
-                    except Exception:
+                    except (AttributeError, tk.TclError):
                         pass
 
                 else:

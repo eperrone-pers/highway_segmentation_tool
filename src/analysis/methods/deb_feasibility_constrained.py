@@ -78,11 +78,7 @@ class DebFeasibilityConstrainedMethod(AnalysisMethodBase):
                 "Use analyze_route_gaps(...) to build one from a DataFrame."
             )
 
-        def log(message: str) -> None:
-            if log_callback:
-                log_callback(message)
-            else:
-                logger.info(message)
+        log = log_callback or print
 
         method_config = get_optimization_method(self.method_key)
         param_defaults = {param.name: param.default_value for param in method_config.parameters}

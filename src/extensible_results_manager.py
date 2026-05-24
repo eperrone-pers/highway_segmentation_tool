@@ -13,14 +13,9 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Union
 
-logger = logging.getLogger(__name__)
+from value_parsing import SetEncoder
 
-class SetEncoder(json.JSONEncoder):
-    """Custom JSON encoder that converts sets to lists for serialization."""
-    def default(self, obj):
-        if isinstance(obj, set):
-            return list(obj)
-        return super().default(obj)
+logger = logging.getLogger(__name__)
 
 # Import analysis framework and base JSON manager
 try:
@@ -601,7 +596,7 @@ class ExtensibleJsonResultsManager:
             
         except Exception as e:
             # Fallback: return basic structure on any error
-            print(f"Warning: Error calculating segment statistics: {e}")
+            logging.warning("Error calculating segment statistics: %s", e)
             segment_details = []
             for i in range(len(breakpoints) - 1):
                 segment_details.append({

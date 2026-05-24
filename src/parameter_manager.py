@@ -5,11 +5,13 @@ This module handles parameter validation, state management, and UI updates
 related to optimization parameters, separating this logic from the main GUI class.
 """
 
+import logging
 import tkinter as tk
 from tkinter import messagebox
 from config import AlgorithmConstants, ConstrainedOptimizationConfig, get_method_key_from_display_name, get_optimization_method
 from value_parsing import coerce_none_like
-from logger import create_logger
+
+logger = logging.getLogger(__name__)
 
 # Create config instances
 optimization_config = AlgorithmConstants()
@@ -110,7 +112,7 @@ class ParameterManager:
                                         errors.append(
                                             f"{param_def.display_name} must contain columns from the loaded data file"
                                         )
-                except Exception:
+                except (TypeError, AttributeError):
                     # Non-fatal: fall back to method-level validation.
                     pass
 
@@ -121,7 +123,7 @@ class ParameterManager:
                     max_length = float(params['max_length'])
                     if min_length >= max_length:
                         errors.append("Maximum segment length must be greater than minimum")
-                except Exception:
+                except (ValueError, TypeError):
                     # Type errors already handled by per-parameter validation
                     pass
             
@@ -178,7 +180,7 @@ class ParameterManager:
             try:
                 # Framework-level default (keep consistent with GUI initialization)
                 self.app.gap_threshold.set(0.5)
-            except Exception:
+            except tk.TclError:
                 pass
 
         # Reset framework-level must-break columns
@@ -187,7 +189,7 @@ class ParameterManager:
                 self.app.must_break_columns = []
             if hasattr(self.app, '_update_must_break_columns_display'):
                 self.app._update_must_break_columns_display()
-        except Exception:
+        except (AttributeError, tk.TclError):
             pass
 
         # Clear per-method dynamic parameter overrides so defaults apply again
@@ -195,7 +197,7 @@ class ParameterManager:
             if hasattr(self.app, 'settings') and isinstance(getattr(self.app, 'settings', None), dict):
                 opt = self.app.settings.setdefault('optimization', {})
                 opt['dynamic_parameters_by_method'] = {}
-        except Exception:
+        except (AttributeError, TypeError):
             pass
         
         # Method settings - reset to default method
@@ -214,7 +216,7 @@ class ParameterManager:
             try:
                 if hasattr(self.app, 'ui_builder') and hasattr(self.app.ui_builder, '_commit_dynamic_param_cell_edit'):
                     self.app.ui_builder._commit_dynamic_param_cell_edit()
-            except Exception:
+            except (AttributeError, tk.TclError):
                 pass
 
             # Update the optimization_method attribute based on dropdown selection
@@ -234,7 +236,7 @@ class ParameterManager:
             elif hasattr(self.app, 'log_message'):
                 self.app.log_message(f"Warning: Error updating method display: {e}")
             else:
-                create_logger().log(f"Warning: Error updating method display: {e}")
+                logger.warning("Error updating method display: %s", e)
     
     def _get_selected_method_key(self, strict: bool = False):
         """Get the currently selected method key from the dropdown.
@@ -334,7 +336,7 @@ class ParameterManager:
         # Framework/global parameters (keep minimal)
         try:
             custom_save_name = self.app.custom_save_name.get()
-        except Exception:
+        except (AttributeError, tk.TclError):
             custom_save_name = "highway_segmentation"
 
         values = {
@@ -437,7 +439,7 @@ class ParameterManager:
         summary.append("FRAMEWORK PARAMETERS:")
         try:
             summary.append(f"  Gap Threshold: {float(self.app.gap_threshold.get()):.3f} miles")
-        except Exception:
+        except (AttributeError, ValueError, tk.TclError):
             summary.append("  Gap Threshold: (invalid)")
         summary.append(f"  Custom Save Name: {params.get('custom_save_name', '')}")
         summary.append("")
@@ -448,7 +450,7 @@ class ParameterManager:
             dyn = self.app.ui_builder.get_parameter_values()
             for name, value in dyn.items():
                 summary.append(f"  {name}: {value}")
-        except Exception:
+        except (AttributeError, tk.TclError):
             for name, value in params.items():
                 if name in ('optimization_method', 'custom_save_name'):
                     continue

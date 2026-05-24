@@ -102,11 +102,7 @@ class ConstrainedMethod(AnalysisMethodBase):
                 "Use analyze_route_gaps(...) to build one from a DataFrame."
             )
         
-        def log(message: str):
-            if log_callback:
-                log_callback(message)
-            else:
-                print(message)
+        log = log_callback or print
         
         method_config = get_optimization_method('constrained')
         param_defaults = {param.name: param.default_value for param in method_config.parameters}

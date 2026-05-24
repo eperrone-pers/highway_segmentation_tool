@@ -1,8 +1,11 @@
 """Export highway segmentation JSON results to multi-sheet Excel workbooks."""
 
 import json
+import logging
 import os
 import pandas as pd
+
+_logger = logging.getLogger(__name__)
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List
@@ -108,7 +111,7 @@ class HighwaySegmentationExcelExporter:
             (``FileNotFoundError``).
         """
         try:
-            print(f"[INFO] Starting Excel export to: {output_path}")
+            _logger.info("Starting Excel export to: %s", output_path)
             
             # Create all tabs
             self._create_analysis_summary_tab()
@@ -124,13 +127,12 @@ class HighwaySegmentationExcelExporter:
             
             # Save workbook
             self.workbook.save(output_path)
-            print(f"[SUCCESS] Excel export completed successfully: {output_path}")
+            _logger.info("Excel export completed successfully: %s", output_path)
             return True, ""
             
         except PermissionError as e:
             error_msg = f"Cannot save Excel file - it may be open in Excel or another program.\n\nPlease close the file and try again:\n{output_path}"
-            import logging
-            logging.error(f"Excel export failed due to permission error: {e}")
+            _logger.error("Excel export failed due to permission error: %s", e)
             return False, error_msg
             
         except FileNotFoundError as e:
@@ -637,10 +639,10 @@ class HighwaySegmentationExcelExporter:
                     max_length = max(len(str(cell.value or "")) for cell in column)
                     ws.column_dimensions[column[0].column_letter].width = min(max_length + 2, 30)
                     
-                print(f"[SUCCESS] Loaded original data from {original_csv_path}: {len(original_df)} rows, {len(original_df.columns)} columns")
-                
+                _logger.info("Loaded original data from %s: %d rows, %d columns", original_csv_path, len(original_df), len(original_df.columns))
+
             except Exception as e:
-                print(f"[WARNING] Could not load original CSV: {e}")
+                _logger.warning("Could not load original CSV: %s", e)
                 self._create_original_data_error_tab()
         else:
             self._create_original_data_error_tab()
@@ -685,7 +687,7 @@ class HighwaySegmentationExcelExporter:
         # Search through all paths until we find the file
         for path in search_paths:
             if os.path.exists(path):
-                print(f"[SUCCESS] Found original data file: {path}")
+                _logger.info("Found original data file: %s", path)
                 return path
         return None
     
@@ -846,11 +848,11 @@ def export_json_to_excel(json_path: str, output_path: str = None, original_csv_p
         if success:
             return True
         else:
-            print(f"[ERROR] {error_msg}")
+            _logger.error("Export failed: %s", error_msg)
             return False
-        
+
     except Exception as e:
-        print(f"[ERROR] Export failed: {e}")
+        _logger.error("Export failed: %s", e)
         return False
 
 

@@ -9,12 +9,8 @@ from typing import Dict, List, Any, Optional, Union
 from datetime import datetime
 from pathlib import Path
 
-class SetEncoder(json.JSONEncoder):
-    """Custom JSON encoder that converts sets to lists for serialization."""
-    def default(self, obj):
-        if isinstance(obj, set):
-            return list(obj)
-        return super().default(obj)
+from config import get_optimization_method
+from value_parsing import SetEncoder
 
 # Import analysis framework
 try:
@@ -218,8 +214,6 @@ class JsonResultsManager:
         # Build method configuration section (config-driven)
         method_key = first_result.method_key
         try:
-            # Import locally to avoid circular import issues
-            from config import get_optimization_method
             cfg = get_optimization_method(method_key)
         except Exception as e:
             raise ValueError(

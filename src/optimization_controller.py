@@ -4,6 +4,8 @@ Separates optimization concerns (thread lifecycle, route processing, file saving
 from the main GUI class.
 """
 
+from __future__ import annotations
+
 import threading
 import time
 import os
@@ -12,9 +14,11 @@ from dataclasses import asdict
 from datetime import datetime
 from tkinter import messagebox
 from config import get_optimization_method, resolve_method_class
+from optimization_handler import OptimizationHandler
 from route_utils import (
-    INTERNAL_ROUTE_IDS_TO_SKIP_LOWER,
     ROUTE_COLUMN_NONE_SENTINEL,
+    filter_data_by_route,
+    list_routes,
     normalize_route_column_selection,
     normalize_route_id,
 )
@@ -28,12 +32,13 @@ class OptimizationController:
     thread execution, progress monitoring, result handling, and cleanup operations.
     """
     
-    def __init__(self, main_app):
+    def __init__(self, main_app: OptimizationHandler):
         """
         Initialize the optimization controller with a reference to the main application.
-        
+
         Args:
-            main_app: Reference to the main HighwaySegmentationGUI instance
+            main_app: Any object that satisfies the OptimizationHandler protocol
+                (HighwaySegmentationGUI in the GUI path; a compatible stub in tests).
         """
         self.app = main_app
         self.optimization_thread = None
@@ -126,17 +131,7 @@ class OptimizationController:
         
         self.app.is_running = True
         self.app.stop_requested = False
-
-        if hasattr(self.app, 'start_button'):
-            self.app.start_button.config(state="disabled")
-        if hasattr(self.app, 'stop_button'):
-            self.app.stop_button.config(state="normal")
-
-        if hasattr(self.app, 'results_text'):
-            self.app.results_text.delete(1.0, 'end')
-
-        if hasattr(self.app, 'results_notebook'):
-            self.app.results_notebook.select(0)  # Select Optimization Log tab
+        self.app.on_optimization_started()
 
         self.optimization_thread = threading.Thread(target=self._run_optimization_worker, daemon=True)
         self.optimization_thread.start()
@@ -147,9 +142,8 @@ class OptimizationController:
             self.app.stop_requested = True
             self.app.log_message("Stop requested - optimization will halt after current generation...")
             
-            if hasattr(self.app, 'stop_button'):
-                self.app.stop_button.config(text="Stopping...", state="disabled")
-                
+            self.app.on_stop_requested()
+
             if self.optimization_thread and self.optimization_thread.is_alive():
                 try:
                     # Give the thread reasonable time to finish its current operation
@@ -251,17 +245,7 @@ class OptimizationController:
                         # If normalization/filtering fails for unexpected reasons, treat as fatal.
                         raise
 
-                    unique_routes = self.app.data.route_data[actual_route_column].unique()
-                    normalized_routes = []
-                    for route in unique_routes:
-                        route_str = normalize_route_id(route)
-                        if route_str is None:
-                            continue
-                        # Filter out internal/sentinel route IDs (case-insensitive)
-                        if route_str.lower() in INTERNAL_ROUTE_IDS_TO_SKIP_LOWER:
-                            continue
-                        normalized_routes.append(route_str)
-                    all_routes = sorted(set(normalized_routes))
+                    all_routes = list_routes(self.app.data.route_data, actual_route_column)
                 else:
                     self.app.log_message(f"[ERROR] Route column '{actual_route_column}' not found in data!")
                     return
@@ -679,16 +663,7 @@ class OptimizationController:
         """
         self.app.is_running = False
         self.app.stop_requested = False
-
-        if hasattr(self.app, 'start_button'):
-            self.app.start_button.config(state="normal")
-        if hasattr(self.app, 'stop_button'):
-            self.app.stop_button.config(text="⏹ Stop", state="disabled")
-
-        if stopped_early:
-            self.app.log_message("Optimization stopped by user.")
-        else:
-            self.app.log_message("Optimization completed.")
+        self.app.on_optimization_finished(stopped_early)
     
     def _save_consolidated_results(self, all_route_results, method_key, params):
         """Save consolidated results from all routes using ExtensibleJsonResultsManager.
@@ -922,8 +897,6 @@ class OptimizationController:
             if not self.app.data:
                 return {}
             
-            from data_loader import filter_data_by_route
-            
             original_data_by_route = {}
             route_column = normalize_route_column_selection(
                 self.app.route_column.get() if hasattr(self.app, 'route_column') else None
@@ -1082,7 +1055,7 @@ class OptimizationController:
             containing only the routes that were successfully prepared. Returns an
             empty list if every route failed.
         """
-        from data_loader import filter_data_by_route, analyze_route_gaps, process_route_with_preprocessing
+        from data_loader import analyze_route_gaps, process_route_with_preprocessing
         
         # Check if preprocessing is configured
         has_preprocessing = False
