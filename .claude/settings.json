@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m py_compile gui_main.py)",
+      "Bash(python -m py_compile visualization_ui.py)",
+      "Bash(git commit -m ' *)",
+      "Bash(python -m py_compile multi_select_dialog.py file_manager.py ui_builder.py)",
+      "Bash(python run_tests.py --unit --integration)",
+      "Bash(python -m py_compile excel_export.py extensible_results_manager.py json_results_manager.py analysis_utilities.py plugins/multi_objective_plugin.py plugins/single_objective_plugin.py)",
+      "Bash(python -m py_compile src/excel_export.py)",
+      "Bash(python -m pytest tests/ -m \"not regression and not performance\" -q --tb=no --ignore=tests/regression)",
+      "Bash(python3 -)",
+      "Bash(pymarkdown scan *)",
+      "Bash(ruff check *)",
+      "Bash(pip install *)",
+      "Bash(ruff --version)",
+      "Bash(python -m pytest tests/regression/ --collect-only)",
+      "Bash(python -m pytest tests/ -q --tb=short)",
+      "Bash(git checkout *)",
+      "Bash(git check-ignore *)"
+    ]
+  }
+}
