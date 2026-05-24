@@ -246,10 +246,10 @@ collisions in real time as you configure the dialog.
 
 ### Batch workflow (GUI → CLI)
 
-The **Export CLI Run** dialog (accessible from the **Copy CLI command** button)
+The **Export CLI Run** dialog (accessible from the **Create Batch Command** button)
 has a **Directory batch** mode that generates all required files in one step:
 
-1. **Open the dialog** — click "Copy CLI command" in the GUI with an analysis configured.
+1. **Open the dialog** — click "Create Batch Command" in the GUI with an analysis configured.
 2. **Switch to "Directory batch"** mode using the radio button.
 3. **Set the input directory** containing your CSV files and adjust the glob / recurse settings. The preflight panel shows how many files match and warns about naming collisions.
 4. **Click "Save spec files"** (or "Copy command") — the dialog writes:

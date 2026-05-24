@@ -1256,7 +1256,7 @@ class UIBuilder:
         ttk.Button(actions_frame, text="❓ Help",
                   command=self.app.show_help).grid(row=1, column=0, padx=(0, 5), pady=(5, 0))
 
-        ttk.Button(actions_frame, text="📋 Copy CLI Command",
+        ttk.Button(actions_frame, text="📋 Create Batch Command",
                   command=self.app.copy_command_line_for_analysis).grid(row=1, column=1, padx=(0, 5), pady=(5, 0))
 
         ttk.Button(actions_frame, text="❌ Exit",
