@@ -151,7 +151,6 @@ class HighwaySegmentationGUI:
                 f"Missing required dependency: {dep.module} ({dep.label}). {install_cmd(dep.pip_package)}",
                 severity="critical",
                 show_messagebox=False,
-                silence_console=True,
             )
 
         messagebox.showerror(
@@ -192,7 +191,7 @@ class HighwaySegmentationGUI:
         self.route_column = tk.StringVar(value=ROUTE_COLUMN_NONE_SENTINEL)  # New route column selection
         
         # Framework parameters (like x/y columns)
-        self.gap_threshold = tk.DoubleVar(value=0.5)
+        self.gap_threshold = tk.DoubleVar(value=10000)
 
         # Must-break columns are stored as a plain list and persisted under settings.ui_state.must_break_columns.
         self.must_break_columns: List[str] = []
@@ -327,7 +326,7 @@ class HighwaySegmentationGUI:
         """Reset parameters - delegates to ParameterManager for method-specific, resets framework parameters."""
         # Reset framework parameters to defaults
         if hasattr(self, 'gap_threshold'):
-            self.gap_threshold.set(0.5)  # Framework default
+            self.gap_threshold.set(10000)  # Framework default: no gap detection
         
         # Delegate method-specific parameter reset to parameter manager
         return self.parameter_manager.reset_parameters()
@@ -885,8 +884,7 @@ class HighwaySegmentationGUI:
         self.results_text.see(tk.END)
     
     def handle_error(self, error_message: str, exception: Optional[Exception] = None,
-                    severity: str = "error", show_messagebox: bool = False,
-                    silence_console: bool = True) -> None:
+                    severity: str = "error", show_messagebox: bool = False) -> None:
         """Log an error to the GUI and optionally show a dialog.
 
         Args:
@@ -894,7 +892,6 @@ class HighwaySegmentationGUI:
             exception: Original exception object (if any).
             severity: One of 'info', 'warning', 'error', 'critical'.
             show_messagebox: Whether to show a popup dialog.
-            silence_console: When True, suppress console output.
         """
         severity_prefix = {
             'info': 'ℹ️ INFO',
@@ -918,11 +915,6 @@ class HighwaySegmentationGUI:
                 messagebox.showwarning("Warning", error_message)
             else:
                 messagebox.showinfo("Information", error_message)
-
-        if not silence_console:
-            print(f"[{severity.upper()}] {error_message}")
-            if exception:
-                print(f"   Exception: {exception}")
 
     def show_current_parameters(self):
         """Display all current parameter values in the log for user review."""
@@ -1191,7 +1183,7 @@ class HighwaySegmentationGUI:
             plt.ioff()
         except Exception as e:
             self.handle_error("Failed to cleanup matplotlib resources", e,
-                             severity="warning", silence_console=True)
+                             severity="warning")
 
         self.is_running = False
 
@@ -1204,7 +1196,7 @@ class HighwaySegmentationGUI:
             self.root.destroy()
         except Exception as e:
             self.handle_error("Error occurred during application shutdown", e,
-                             severity="error", silence_console=True)
+                             severity="error")
     
     def on_parameter_change(self):
         """Debounce settings saves so rapid edits don't thrash the file system."""
@@ -1246,6 +1238,9 @@ def main():
         style.theme_use("winnative")
     elif sys.platform == "darwin" and "aqua" in theme_names:
         style.theme_use("aqua")
+        # The aqua theme renders LabelFrame titles in a small secondary system
+        # font. Override to match body text so section headers are readable.
+        style.configure("TLabelframe.Label", font="TkDefaultFont")
     elif "clam" in theme_names:
         style.theme_use("clam")
     

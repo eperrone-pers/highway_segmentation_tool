@@ -3,11 +3,12 @@
 This module keeps the GUI class smaller by centralizing the markdown->HTML
 rendering and temporary file lifecycle used by the Documentation dialog.
 
-Intentionally lightweight; the caller provides tkinter root/messagebox.
+Intentionally lightweight; the caller provides messagebox.
 """
 
 from __future__ import annotations
 
+import atexit
 import os
 import tempfile
 import webbrowser
@@ -79,24 +80,24 @@ def render_markdown_to_html(markdown_module: Any, markdown_content: str, title: 
 
 def open_markdown_path_in_browser(
     *,
-    root: Any,
     markdown_path: str,
     title: str,
     messagebox: Any,
     markdown_available: bool,
     markdown_module: Any,
 ) -> None:
-    """Render a markdown file to HTML and open it in the browser."""
+    """Render a markdown file to HTML and open it in the browser.
+
+    Falls back to opening the raw .md file directly when the markdown package
+    is not installed — readable plaintext at worst, rendered markdown in many
+    environments (VS Code, GitHub Desktop, some browsers).
+    """
     if not os.path.exists(markdown_path):
         messagebox.showerror("Not Found", f"File not found:\n{markdown_path}")
         return
 
     if not markdown_available or markdown_module is None:
-        messagebox.showerror(
-            "Markdown Not Available",
-            "HTML documentation view requires the 'markdown' package. "
-            "Install it (pip install markdown) or use the packaged environment.",
-        )
+        webbrowser.open("file://" + os.path.abspath(markdown_path))
         return
 
     try:
@@ -113,14 +114,13 @@ def open_markdown_path_in_browser(
 
         webbrowser.open("file://" + os.path.abspath(temp_path))
 
-        # Best-effort cleanup after a delay (keep file long enough for browser to load).
         def cleanup() -> None:
             try:
                 os.unlink(temp_path)
             except OSError:
                 pass
 
-        root.after(5000, cleanup)
+        atexit.register(cleanup)
 
     except Exception as e:
         messagebox.showerror("Error", f"Could not open browser: {e}")

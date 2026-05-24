@@ -20,6 +20,7 @@ from route_utils import ROUTE_COLUMN_NONE_SENTINEL
 
 logger = logging.getLogger(__name__)
 from parameter_tree_view import ParameterTreeView, DEFAULT_TREEVIEW_HEIGHT
+from tooltip import ParameterTreeTooltip, attach_tooltip
 
 ui_config = UIConfig()
 
@@ -472,7 +473,13 @@ class UIBuilder:
         ttk.Label(gap_frame, text=" 2. Gap Analysis - Gap Threshold (in x units):").grid(row=0, column=0, sticky="w")
         self.app.gap_threshold_entry = ttk.Entry(gap_frame, textvariable=self.app.gap_threshold, width=20)
         self.app.gap_threshold_entry.grid(row=0, column=1, sticky="w", padx=ui_config.standard_padding_x)
-        
+        attach_tooltip(
+            self.app.gap_threshold_entry,
+            "Minimum gap between consecutive x-axis measurements that forces a segment boundary.\n"
+            "Default (10000) effectively disables gap detection. Lower values (e.g. 1.0) split\n"
+            "segments wherever the data has a physical gap larger than that distance.",
+        )
+
         return row + 1
     
     def create_primary_attribute_breaks_section(self, parent, row):
@@ -598,6 +605,7 @@ class UIBuilder:
 
         tree.bind("<Double-1>", self._on_dynamic_param_double_click)
         tree.bind("<Button-1>", self._on_dynamic_param_single_click)
+        ParameterTreeTooltip(tree, lambda: self.app.dynamic_params_defs)
         
         # Fix mousewheel scrolling to work within treeview instead of parent
         def on_mousewheel(event):
@@ -1043,61 +1051,6 @@ class UIBuilder:
         # TextParameter and other string-like values
         return text
     
-    def _create_basic_ga_section(self, parent, row):
-        """Create basic genetic algorithm parameters section."""
-        ga_frame = ttk.LabelFrame(parent, text="Genetic Algorithm Parameters", padding="5")
-        ga_frame.grid(row=row, column=0, columnspan=2, sticky="ew", pady=(10, 0))
-        
-        # Global parameters shared across all optimization methods
-        basic_params = [
-            ("Population Size:", self.app.population_size, "pop_size_entry"),
-            ("Generations:", self.app.num_generations, "generations_entry"), 
-            ("Crossover Rate (0-1):", self.app.crossover_rate, "crossover_rate_entry"),
-            ("Mutation Rate (0-1):", self.app.mutation_rate, "mutation_rate_entry")
-        ]
-        
-        for i, (label, var, attr_name) in enumerate(basic_params):
-            ttk.Label(ga_frame, text=label).grid(row=i, column=0, sticky="w")
-            entry = ttk.Entry(ga_frame, textvariable=var, width=ui_config.entry_field_width_small)
-            entry.grid(row=i, column=1, sticky="w", padx=ui_config.standard_padding_x)
-            setattr(self.app, attr_name, entry)
-        
-        return ga_frame
-    
-    def _create_single_objective_section(self, parent, row):
-        """Create single-objective specific parameters section."""  
-        single_frame = ttk.LabelFrame(parent, text="Single-Objective Parameters", padding="5")
-        single_frame.grid(row=row, column=0, columnspan=2, sticky="ew", pady=(10, 0))
-        
-        # Elite ratio parameter (only for single-objective methods)
-        ttk.Label(single_frame, text="Elite Ratio (0-1):").grid(row=0, column=0, sticky="w")
-        elite_entry = ttk.Entry(single_frame, textvariable=self.app.elite_ratio, 
-                               width=ui_config.entry_field_width_small)
-        elite_entry.grid(row=0, column=1, sticky="w", padx=ui_config.standard_padding_x)
-        self.app.elite_ratio_entry = elite_entry
-        
-        return single_frame
-    
-    def _create_constraint_params_section(self, parent, row):
-        """Create constraint-specific parameters section."""
-        constraint_frame = ttk.LabelFrame(parent, text="Constraint Parameters", padding="5")
-        constraint_frame.grid(row=row, column=0, columnspan=2, sticky="ew", pady=(10, 0))
-        
-        # Constraint parameters
-        constraint_params = [
-            ("Target Avg Length (miles):", self.app.target_avg_length, "target_length_entry"),
-            ("Length Tolerance:", self.app.length_tolerance, "tolerance_entry"),
-            ("Penalty Weight:", self.app.penalty_weight, "penalty_entry")
-        ]
-        
-        for i, (label, var, attr_name) in enumerate(constraint_params):
-            ttk.Label(constraint_frame, text=label).grid(row=i, column=0, sticky="w")
-            entry = ttk.Entry(constraint_frame, textvariable=var, width=ui_config.entry_field_width_small)
-            entry.grid(row=i, column=1, sticky="w", padx=ui_config.standard_padding_x)
-            setattr(self.app, attr_name, entry)
-        
-        return constraint_frame
-    
     def _update_dynamic_parameters(self):
         """Update parameter widgets dynamically based on selected method."""
         try:
@@ -1171,61 +1124,6 @@ class UIBuilder:
                     else:
                         logger.warning("Could not fall back to first method: %s", e)
     
-    def _toggle_parameter_sections(self, required_sections):
-        """Show/hide parameter sections based on required sections list."""
-        # Basic GA parameters are always shown
-        if hasattr(self.app, 'basic_ga_frame'):
-            self.app.basic_ga_frame.grid()
-        
-        # Single-objective parameters (for single and constrained methods)
-        if hasattr(self.app, 'single_objective_frame'):
-            if "single_objective" in required_sections:
-                self.app.single_objective_frame.grid()
-            else:
-                self.app.single_objective_frame.grid_remove()
-        
-        # Constraint parameters (only for constrained method)
-        if hasattr(self.app, 'constraint_params_frame'):
-            if "constraint_params" in required_sections:
-                self.app.constraint_params_frame.grid()
-            else:
-                self.app.constraint_params_frame.grid_remove()
-    
-    def create_performance_section(self, parent, row):
-        """Create the performance and caching controls section."""
-        perf_frame = ttk.LabelFrame(parent, text="⚡ Performance & Caching", padding="6")  # Reduced from 10
-        perf_frame.grid(row=row, column=0, sticky="ew", pady=3)  # Reduced from 5
-        
-        # Cache management (other performance settings now handled by dynamic parameters)
-        cache_frame = ttk.Frame(perf_frame)
-        cache_frame.grid(row=0, column=0, sticky="ew", pady=(5, 0))  # Reduced from (10, 0)
-        
-        ttk.Label(cache_frame, text="Cache clear interval (generations):").grid(row=0, column=0, sticky="w")
-        ttk.Entry(cache_frame, textvariable=self.app.cache_clear_interval, 
-                 width=ui_config.entry_field_width_small).grid(row=0, column=1, sticky="w", 
-                                                              padx=ui_config.standard_padding_x)
-        
-        return row + 1
-    
-    # create_save_load_section method removed - now integrated into create_file_operations_section
-    
-    def create_action_buttons(self, parent, row):
-        """Create the main action buttons."""
-        button_frame = ttk.Frame(parent)
-        button_frame.grid(row=row, column=0, sticky="ew", pady=10)  # Reduced from 20
-        
-        # Main action buttons
-        self.app.start_button = ttk.Button(button_frame, text="🚀 Start",
-                                          command=self.app.start_optimization,
-                                          style="Accent.TButton")
-        self.app.start_button.grid(row=0, column=0, padx=(0, 10))
-        
-        self.app.stop_button = ttk.Button(button_frame, text="⏹ Stop", 
-                                         command=self.app.stop_optimization, state="disabled")
-        self.app.stop_button.grid(row=0, column=1)
-        
-        return row + 1
-    
     def create_right_pane_actions(self, parent):
         """Create action buttons for the right pane."""
         top_right_frame = ttk.Frame(parent)
@@ -1256,7 +1154,7 @@ class UIBuilder:
         ttk.Button(actions_frame, text="❓ Help",
                   command=self.app.show_help).grid(row=1, column=0, padx=(0, 5), pady=(5, 0))
 
-        ttk.Button(actions_frame, text="📋 Copy CLI Command",
+        ttk.Button(actions_frame, text="📋 Create Batch Command",
                   command=self.app.copy_command_line_for_analysis).grid(row=1, column=1, padx=(0, 5), pady=(5, 0))
 
         ttk.Button(actions_frame, text="❌ Exit",

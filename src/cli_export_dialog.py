@@ -66,7 +66,7 @@ class CLIExportDialog:
         )
 
         self._dialog = tk.Toplevel(parent)
-        self._dialog.title("Export CLI Run")
+        self._dialog.title("Create Batch Command")
         self._dialog.geometry(f"{self._WIDTH}x{self._HEIGHT_SINGLE}")
         self._dialog.resizable(False, False)
         self._dialog.transient(parent)

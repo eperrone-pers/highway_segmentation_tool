@@ -4,7 +4,7 @@ This repository supports running analyses headlessly (no GUI) using a **run spec
 
 A run spec can be:
 
-- generated from the GUI via **Export CLI Run** (opens a dialog with Single file and Directory batch modes), or
+- generated from the GUI via **Create Batch Command** (opens a dialog with Single file and Directory batch modes), or
 - written/edited manually.
 
 The run spec schema is defined in:
@@ -246,10 +246,10 @@ collisions in real time as you configure the dialog.
 
 ### Batch workflow (GUI → CLI)
 
-The **Export CLI Run** dialog (accessible from the **Copy CLI command** button)
+The **Create Batch Command** dialog (accessible from the **Create Batch Command** button)
 has a **Directory batch** mode that generates all required files in one step:
 
-1. **Open the dialog** — click "Copy CLI command" in the GUI with an analysis configured.
+1. **Open the dialog** — click "Create Batch Command" in the GUI with an analysis configured.
 2. **Switch to "Directory batch"** mode using the radio button.
 3. **Set the input directory** containing your CSV files and adjust the glob / recurse settings. The preflight panel shows how many files match and warns about naming collisions.
 4. **Click "Save spec files"** (or "Copy command") — the dialog writes:
@@ -573,7 +573,7 @@ Example snippet:
 }
 ```
 
-The GUI's **Export CLI Run** dialog generates the correct command:
+The GUI's **Create Batch Command** dialog generates the correct command:
 
 ```bash
 python src/cli.py run --spec "path/to/your.run_spec.json"
@@ -833,7 +833,7 @@ If you encounter issues not covered here:
 ### Typical Workflow — Single file
 
 1. **Prepare your data:** CSV with route, x-coordinate (milepoint), and y-coordinate (metric) columns
-2. **Create run spec:** Use the GUI's **Export CLI Run** dialog (Single file mode) or write manually
+2. **Create run spec:** Use the GUI's **Create Batch Command** dialog (Single file mode) or write manually
 3. **Validate:** `highway-seg validate-spec --spec your_spec.json`
 4. **Run analysis:** `highway-seg run --spec your_spec.json`
 5. **View results:** Load output JSON in GUI or process programmatically
@@ -841,7 +841,7 @@ If you encounter issues not covered here:
 ### Typical Workflow — Directory batch
 
 1. **Prepare your data:** A directory of CSVs all sharing the same column layout
-2. **Create batch artifacts:** Use the GUI's **Export CLI Run** dialog in **Directory batch** mode — it writes the template run spec and batch manifest, and shows the command to copy
+2. **Create batch artifacts:** Use the GUI's **Create Batch Command** dialog in **Directory batch** mode — it writes the template run spec and batch manifest, and shows the command to copy
 3. **Run the batch:** `highway-seg run --spec template.run_spec.json --input-dir data/ --output-dir Results/batch_out/`
 4. **Check the summary:** Review `batch_summary.json` for per-file status; re-run failed files individually using `highway-seg run` if needed
 5. **View results:** Load any result JSON in the GUI, or process the batch summary programmatically

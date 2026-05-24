@@ -7,6 +7,9 @@ and enable standardized result handling across the system.
 
 Key Components:
 - AnalysisResult: Standardized result structure for all analysis methods
+- AnalysisResult.to_route_result_dict(): Serializes an AnalysisResult to the flat
+  dict format consumed by the controller and result saver — encapsulates all
+  method-specific output keys so the controller needs no per-method branching
 - AnalysisMethodBase: Abstract base class defining the analysis method interface
 - Parameter validation and method discovery contracts
 
@@ -112,6 +115,129 @@ class AnalysisResult:
         """Get fitness of primary solution (float for single-obj, list for multi-obj)"""
         return self.best_solution.get('fitness', 0.0)
 
+    def to_route_result_dict(self) -> Dict[str, Any]:
+        """Serialize this result to the flat dict format consumed by the controller and saver.
+
+        Centralises all method-specific output keys here so that
+        ``OptimizationController._run_single_route_optimization`` needs no
+        per-method branching.  Adding a new method only requires populating
+        ``AnalysisResult`` correctly — no controller changes.
+
+        Common keys (all methods):
+            route_id, method_key, best_fitness, objective_values, best_chromosome,
+            best_segments, avg_segment_length, execution_time, mandatory_breakpoints,
+            data_summary, input_parameters, optimization_stats, performance_metrics,
+            final_population_fitness, generation_stats, preprocessing_*
+
+        Additional keys for multi-objective methods (is_multi_objective() == True):
+            all_solutions, pareto_front_size, best_deviation_fitness, best_segment_count
+
+        Additional keys for constrained methods (detected by solution content):
+            best_unconstrained_fitness, length_deviation, target_avg_length, tolerance
+
+        Additional keys for methods with convergence history:
+            fitness_history, length_history
+
+        Additional keys for AASHTO CDA (method_key == 'aashto_cda'):
+            analysis_method, statistical_parameters, all_solutions, method_stats
+
+        Returns:
+            Dict with all applicable keys for this method's result shape.
+        """
+        best_solution = self.best_solution
+        input_parameters = self.input_parameters or {}
+
+        def _get_numeric(value: Any, default: float = 0.0) -> float:
+            if isinstance(value, (int, float)):
+                return value
+            if isinstance(value, list) and value and isinstance(value[0], (int, float)):
+                return value[0]
+            return default
+
+        def _flatten_log(nested_log: List) -> List:
+            if not nested_log:
+                return []
+            flattened: List = []
+            for phase_log in nested_log:
+                if isinstance(phase_log, list):
+                    flattened.extend(phase_log)
+                elif isinstance(phase_log, dict):
+                    flattened.append(phase_log)
+            return flattened
+
+        result: Dict[str, Any] = {
+            'route_id': self.route_id,
+            'method_key': self.method_key,
+            'best_fitness': _get_numeric(
+                best_solution.get('deviation_fitness', best_solution.get('fitness', 0.0))
+            ),
+            'objective_values': best_solution.get(
+                'objective_values', [best_solution.get('fitness', 0.0)]
+            ),
+            'best_chromosome': best_solution.get('chromosome', []),
+            'avg_segment_length': best_solution.get('avg_segment_length', 0.0),
+            'execution_time': self.processing_time,
+            'mandatory_breakpoints': self.mandatory_breakpoints,
+            'data_summary': self.data_summary,
+            'input_parameters': input_parameters,
+            'optimization_stats': self.optimization_stats,
+            'performance_metrics': self.optimization_stats.get('performance_metrics', {}),
+            'final_population_fitness': self.optimization_stats.get('final_population_fitness', []),
+            'generation_stats': self.optimization_stats.get('generation_stats', []),
+            'preprocessing_metadata': self.preprocessing_metadata,
+            'preprocessing_summary': self.preprocessing_summary,
+            'preprocessing_modification_log': _flatten_log(self.preprocessing_modification_log),
+        }
+
+        # Segment count: try multiple fallback keys produced by different methods
+        if 'segments' in best_solution and isinstance(best_solution.get('segments'), list):
+            result['best_segments'] = len(best_solution['segments'])
+        else:
+            result['best_segments'] = (
+                best_solution.get('num_segments')
+                or best_solution.get('segment_count')
+                or best_solution.get('best_segments')
+                or 0
+            )
+
+        # Multi-objective: Pareto front keys
+        if self.is_multi_objective():
+            result['all_solutions'] = self.all_solutions
+            result['pareto_front_size'] = self.optimization_stats.get(
+                'pareto_front_size', len(self.all_solutions)
+            )
+            result['best_deviation_fitness'] = self.optimization_stats.get('best_deviation_fitness')
+            result['best_segment_count'] = self.optimization_stats.get('best_segment_count')
+
+        # Constrained: penalty/length-deviation keys (detected by solution content)
+        if 'unconstrained_fitness' in best_solution:
+            result['best_unconstrained_fitness'] = best_solution.get('unconstrained_fitness', 0.0)
+        if 'length_deviation' in best_solution:
+            result['length_deviation'] = best_solution.get('length_deviation', 0.0)
+        if 'target_avg_length' in input_parameters:
+            result['target_avg_length'] = input_parameters.get('target_avg_length')
+        if 'length_tolerance' in input_parameters:
+            result['tolerance'] = input_parameters.get('length_tolerance')
+
+        # Convergence history (present for GA-based methods that track it)
+        if 'best_fitness_history' in self.optimization_stats:
+            result['fitness_history'] = self.optimization_stats.get('best_fitness_history', [])
+        if 'avg_length_history' in self.optimization_stats:
+            result['length_history'] = self.optimization_stats.get('avg_length_history', [])
+
+        # AASHTO CDA: statistical parameters (driven by method_key, not key-sniffing)
+        if self.method_key == 'aashto_cda':
+            result['analysis_method'] = 'AASHTO Enhanced CDA'
+            result['statistical_parameters'] = {
+                'alpha': input_parameters.get('alpha'),
+                'error_estimation_method': input_parameters.get('method'),
+                'use_segment_length': input_parameters.get('use_segment_length'),
+            }
+            result['all_solutions'] = self.all_solutions
+            result['method_stats'] = self.optimization_stats
+
+        return result
+
 
 class AnalysisMethodBase(ABC):
     """
@@ -207,7 +333,7 @@ class AnalysisMethodBase(ABC):
             'max_length': {'type': float, 'min': 1.0, 'required': True}, 
             'population_size': {'type': int, 'min': 10, 'default': 100},
             'num_generations': {'type': int, 'min': 1, 'default': 200},
-            'gap_threshold': {'type': float, 'min': 0.0, 'default': 0.5}
+            'gap_threshold': {'type': float, 'min': 0.0, 'default': 10000}
         }
     
     @abstractmethod

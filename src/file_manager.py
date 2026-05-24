@@ -1086,7 +1086,7 @@ class FileManager:
                         'ui_state': {
                             'x_column': self.app.x_column.get() if hasattr(self.app, 'x_column') else '',
                             'y_column': self.app.y_column.get() if hasattr(self.app, 'y_column') else '',
-                            'gap_threshold': self.app.gap_threshold.get() if hasattr(self.app, 'gap_threshold') else 0.5,
+                            'gap_threshold': self.app.gap_threshold.get() if hasattr(self.app, 'gap_threshold') else 10000,
                             'route_column': self.app.route_column.get() if hasattr(self.app, 'route_column') else '',
                             'selected_routes': getattr(self.app, 'selected_routes', None),
                             'window_geometry': self.app.root.geometry(),

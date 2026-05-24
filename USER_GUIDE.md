@@ -299,7 +299,7 @@ Buttons are arranged in two rows:
 **Row 2 (secondary actions):**
 
 - **❓ Help**: Opens a Documentation dialog with buttons to open the User Guide and any available method-specific docs in your browser.
-- **📋 Copy CLI Command**: Creates a run spec JSON and copies a runnable `highway-seg run` CLI command to your clipboard.
+- **📋 Create Batch Command**: Creates a run spec JSON and copies a runnable `highway-seg run` CLI command to your clipboard.
 - **❌ Exit**: Exits the application (saving settings).
 
 #### 🗂️ **Results Tabs**
@@ -439,7 +439,7 @@ The framework provides three optional preprocessing phases:
    - Use case: Outlier detection, noise reduction, data cleaning
    - Applied **within** segments defined by structural boundaries
    - Available method: Tukey Fences Outlier Detection
-   - **This is the main preprocessing phase most users will configure**
+   - This is the main preprocessing phase most users will configure
 
 3. **Postprocessing** (Step 6 - rare): Applied after all attribute breaks
    - Use case: Final transformations before analysis

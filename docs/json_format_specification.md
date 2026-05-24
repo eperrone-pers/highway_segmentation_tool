@@ -1054,7 +1054,7 @@ else:
 ### **Available Validation Paths**
 
 - **Schema file**: `src/highway_segmentation_results_schema.json`
-- **Sample/manual validation script**: `docs/validate_json_schema.py`
+- **Validation script**: `src/validate_json_schema.py`
 - **Regression output validation script**: `tests/regression/validate_regression_outputs.py`
 
 ### **Recommended Validation Workflow**
@@ -1068,7 +1068,7 @@ For normal branch verification:
 To validate a specific JSON file against the schema:
 
 ```powershell
-& .venv\Scripts\python.exe docs\validate_json_schema.py path\to\results.json
+& .venv\Scripts\python.exe src\validate_json_schema.py path\to\results.json
 ```
 
 To validate persisted regression artifacts after an artifact-retaining run:

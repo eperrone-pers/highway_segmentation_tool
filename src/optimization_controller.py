@@ -15,12 +15,12 @@ from datetime import datetime
 from tkinter import messagebox
 from config import get_optimization_method, resolve_method_class
 from optimization_handler import OptimizationHandler
+from optimization_results_saver import OptimizationResultsSaver
 from route_utils import (
-    ROUTE_COLUMN_NONE_SENTINEL,
-    filter_data_by_route,
     list_routes,
     normalize_route_column_selection,
     normalize_route_id,
+    prepare_routes_for_optimization,
 )
 
 
@@ -60,46 +60,6 @@ class OptimizationController:
         # Route selection is UI state owned by the GUI; clearing it here can erase a
         # user's filter right before optimization starts (especially when auto-loading).
 
-    def _prepare_save_filename(self, custom_name):
-        """Resolve a user-provided filename to a full path, prompting on overwrite.
-
-        Adds a .json extension if missing and resolves the path relative to the
-        configured save directory. Returns None if the user cancels the overwrite dialog.
-
-        Args:
-            custom_name (str): User-provided filename (with or without extension).
-
-        Returns:
-            str or None: Full resolved path for saving, or None if user cancels.
-        """
-        if not custom_name:
-            return None
-        
-        if not custom_name.lower().endswith('.json'):
-            json_filename = f"{custom_name}.json"
-        else:
-            json_filename = custom_name
-
-        save_path = self.app.file_manager.get_save_file_path()
-        if save_path:
-            save_dir = os.path.dirname(save_path)
-            full_path = os.path.join(save_dir, json_filename)
-        else:
-            full_path = json_filename
-        
-        json_exists = os.path.exists(full_path)
-        
-        if json_exists:
-            response = messagebox.askyesno(
-                "File Exists", 
-                f"The following file already exists:\n{json_filename}\n\nDo you want to overwrite it?",
-                icon='warning'
-            )
-            if not response:
-                return None
-        
-        return full_path
-    
     def start_optimization(self):
         """Validate inputs and launch the optimization worker thread.
 
@@ -329,10 +289,7 @@ class OptimizationController:
                 except Exception as e:
                     self.app.log_message(f"Warning: Could not load secondary preprocessing config: {e}")
             
-            # Clear any previous preprocessed data
-            self.preprocessed_data_by_route = {}
-            
-            prepared_routes = self._prepare_multi_route_analyses(
+            prepared_routes, self.preprocessed_data_by_route = prepare_routes_for_optimization(
                 self.app.data,
                 actual_route_column,
                 routes_to_process,
@@ -341,6 +298,9 @@ class OptimizationController:
                 gap_threshold=gap_threshold,
                 is_single_route_mode=is_single_route_mode,
                 preprocessing_config=preprocessing_config,
+                must_break_columns=getattr(self.app, 'must_break_columns', None),
+                secondary_break_columns=getattr(self.app, 'secondary_break_columns', None),
+                log_callback=self.app.log_message,
             )
             if not prepared_routes:
                 self.app.log_message("ERROR: No routes could be analyzed successfully")
@@ -378,7 +338,8 @@ class OptimizationController:
             
             if all_route_results and not self.app.stop_requested:
                 if self.app.custom_save_name.get():
-                    json_path = self._save_consolidated_results(all_route_results, method_key, params)
+                    saver = OptimizationResultsSaver(self.app)
+                    json_path = saver.save(all_route_results, method_key, params, self.preprocessed_data_by_route)
                     if json_path:
                         self.app.log_message(f"Consolidated results saved for {len(all_route_results)} route(s)")
                         
@@ -502,9 +463,6 @@ class OptimizationController:
                 self.app.log_message(f"Route {route_id}: Optimization failed for method_key='{method_key}'")
                 return None
 
-            best_solution = analysis_result.best_solution
-            input_parameters = analysis_result.input_parameters or {}
-            
             # Enrich data_summary with attribute break analysis from RouteAnalysis
             if not analysis_result.data_summary:
                 analysis_result.data_summary = {}
@@ -544,80 +502,7 @@ class OptimizationController:
                                 mod_log_dicts.append(mod)
                         analysis_result.preprocessing_modification_log.append(mod_log_dicts)
 
-            def _get_numeric(value, default=0.0):
-                if isinstance(value, (int, float)):
-                    return value
-                if isinstance(value, list) and value and isinstance(value[0], (int, float)):
-                    return value[0]
-                return default
-
-            result = {
-                'route_id': route_id,
-                'method_key': method_key,
-                'best_fitness': _get_numeric(best_solution.get('deviation_fitness', best_solution.get('fitness', 0.0))),
-                'objective_values': best_solution.get('objective_values', [best_solution.get('fitness', 0.0)]),
-                'best_chromosome': best_solution.get('chromosome', []),
-                'avg_segment_length': best_solution.get('avg_segment_length', 0.0),
-                'execution_time': analysis_result.processing_time,
-                'mandatory_breakpoints': analysis_result.mandatory_breakpoints,
-
-                'data_summary': analysis_result.data_summary,
-                'input_parameters': input_parameters,
-                'optimization_stats': analysis_result.optimization_stats,
-                'performance_metrics': analysis_result.optimization_stats.get('performance_metrics', {}),
-                'final_population_fitness': analysis_result.optimization_stats.get('final_population_fitness', []),
-                'generation_stats': analysis_result.optimization_stats.get('generation_stats', []),
-                
-                # Include preprocessing results if available (flatten nested lists for compatibility)
-                'preprocessing_metadata': getattr(analysis_result, 'preprocessing_metadata', []),
-                'preprocessing_summary': getattr(analysis_result, 'preprocessing_summary', []),
-                'preprocessing_modification_log': self._flatten_preprocessing_log(getattr(analysis_result, 'preprocessing_modification_log', [])),
-            }
-
-            # Derive segment count consistently when available
-            if 'segments' in best_solution and isinstance(best_solution.get('segments'), list):
-                result['best_segments'] = len(best_solution.get('segments', []))
-            else:
-                result['best_segments'] = (
-                    best_solution.get('num_segments')
-                    or best_solution.get('segment_count')
-                    or best_solution.get('best_segments')
-                    or 0
-                )
-
-            if getattr(method_config, 'return_type', None) == 'multi_objective':
-                result['all_solutions'] = analysis_result.all_solutions
-                result['pareto_front_size'] = analysis_result.optimization_stats.get(
-                    'pareto_front_size', len(analysis_result.all_solutions)
-                )
-                result['best_deviation_fitness'] = analysis_result.optimization_stats.get('best_deviation_fitness')
-                result['best_segment_count'] = analysis_result.optimization_stats.get('best_segment_count')
-
-            if 'unconstrained_fitness' in best_solution:
-                result['best_unconstrained_fitness'] = best_solution.get('unconstrained_fitness', 0.0)
-            if 'length_deviation' in best_solution:
-                result['length_deviation'] = best_solution.get('length_deviation', 0.0)
-            if 'target_avg_length' in input_parameters:
-                result['target_avg_length'] = input_parameters.get('target_avg_length')
-            if 'length_tolerance' in input_parameters:
-                result['tolerance'] = input_parameters.get('length_tolerance')
-
-            if 'best_fitness_history' in analysis_result.optimization_stats:
-                result['fitness_history'] = analysis_result.optimization_stats.get('best_fitness_history', [])
-            if 'avg_length_history' in analysis_result.optimization_stats:
-                result['length_history'] = analysis_result.optimization_stats.get('avg_length_history', [])
-
-            if all(k in input_parameters for k in ['alpha', 'method', 'use_segment_length']):
-                result['analysis_method'] = 'AASHTO Enhanced CDA'
-                result['statistical_parameters'] = {
-                    'alpha': input_parameters.get('alpha'),
-                    'error_estimation_method': input_parameters.get('method'),
-                    'use_segment_length': input_parameters.get('use_segment_length'),
-                }
-                result['all_solutions'] = analysis_result.all_solutions
-                result['method_stats'] = analysis_result.optimization_stats
-
-            return result
+            return analysis_result.to_route_result_dict()
             
         except Exception as e:
             if route_id:
@@ -625,29 +510,6 @@ class OptimizationController:
             else:
                 self.app.log_message(f"Optimization error: {str(e)}")
             return None
-    
-    def _flatten_preprocessing_log(self, nested_log):
-        """
-        Flatten nested preprocessing modification log (list of lists) into a single flat list.
-        
-        Args:
-            nested_log: List of lists of modification dicts (one list per preprocessing phase)
-            
-        Returns:
-            Flat list of modification dicts
-        """
-        if not nested_log:
-            return []
-        
-        flattened = []
-        for phase_log in nested_log:
-            if isinstance(phase_log, list):
-                flattened.extend(phase_log)
-            elif isinstance(phase_log, dict):
-                # Single dict entry, add it directly
-                flattened.append(phase_log)
-        
-        return flattened
     
     def _finalize_optimization(self, stopped_early=False):
         """Reset UI state after optimization completes or is stopped.
@@ -664,266 +526,6 @@ class OptimizationController:
         self.app.is_running = False
         self.app.stop_requested = False
         self.app.on_optimization_finished(stopped_early)
-    
-    def _save_consolidated_results(self, all_route_results, method_key, params):
-        """Save consolidated results from all routes using ExtensibleJsonResultsManager.
-
-        Args:
-            all_route_results: List of result dictionaries from all processed routes.
-            method_key: Optimization method key ('single', 'constrained', 'multi').
-            params: Optimization parameters dictionary.
-
-        Returns:
-            str: JSON file path if successful, None if failed.
-        """
-        try:
-            self.app.log_message(f"Saving consolidated results from {len(all_route_results)} route(s)...")
-            
-            save_name = self.app.custom_save_name.get()
-            output_path = self._prepare_save_filename(save_name)
-
-            # User may cancel overwrite prompt or provide invalid name
-            if not output_path:
-                self.app.log_message("Save cancelled - no output path selected")
-                return None
-            
-            if output_path.endswith('.csv'):
-                json_path = output_path.replace('.csv', '.json')
-            elif output_path.endswith('.json'):
-                json_path = output_path
-            else:
-                json_path = f"{output_path}.json"
-            
-            from extensible_results_manager import ExtensibleJsonResultsManager
-            from analysis.base import AnalysisResult
-
-            # Use the live GUI values rather than whatever was cached in params.
-            actual_x_column = self.app.x_column.get()
-            actual_y_column = self.app.y_column.get()
-            actual_route_column = self.app.route_column.get() if hasattr(self.app, 'route_column') else None
-            actual_data_file = self.app.file_manager.get_data_file_path()
-            
-            analysis_results = []
-
-            method_config = get_optimization_method(method_key)
-            if not method_config:
-                raise ValueError(f"Unknown optimization method: {method_key}")
-
-            method_display_name = method_config.display_name
-            analysis_method = method_config.method_key
-            
-            for route_result in all_route_results:
-                # For multi-objective, ensure we preserve the full Pareto front
-                if method_key == 'multi' and route_result.get('all_solutions'):
-                    all_solutions = []
-                    for sol in (route_result.get('all_solutions') or []):
-                        if isinstance(sol, dict):
-                            sol_copy = dict(sol)
-                            if 'chromosome' in sol_copy:
-                                sol_copy.pop('segmentation', None)
-                            all_solutions.append(sol_copy)
-                        else:
-                            all_solutions.append(sol)
-                else:
-                    all_solutions = [{
-                        'chromosome': route_result.get('best_chromosome', []),
-                        'fitness': route_result.get('best_fitness'),
-                        'segments': route_result.get('segments_data', []),
-                        'total_length': route_result.get('total_length', 0)
-                    }]
-                
-                result = AnalysisResult(
-                    method_name=method_display_name,
-                    method_key=analysis_method,
-                    route_id=route_result.get('route_id', 'unknown'),
-                    processing_time=route_result.get('execution_time', route_result.get('processing_time', 0)),
-                    timestamp=route_result.get('timestamp', datetime.now().strftime("%Y-%m-%dT%H:%M:%S")),
-                    analysis_version="1.95.2",
-                    
-                    all_solutions=all_solutions,
-                    optimization_stats=route_result.get('optimization_stats', {}) or {
-                        'best_fitness': route_result.get('best_fitness'),
-                        'generations_run': route_result.get('generations_run', 0),
-                        'population_size': route_result.get('population_size', 0),
-                        'final_generation': route_result.get('generations_run', 0),
-                        'pareto_front_size': route_result.get('pareto_front_size', 0),
-                        'best_deviation_fitness': route_result.get('best_deviation_fitness'),
-                        'best_segment_count': route_result.get('best_segment_count')
-                    },
-                    
-                    mandatory_breakpoints=route_result.get('mandatory_breakpoints', []),
-                    input_parameters=route_result.get('input_parameters', {}),
-                    data_summary=route_result.get('data_summary', {
-                        'total_data_points': route_result.get('num_data_points', 0)
-                    }),
-                    
-                    # Include preprocessing results
-                    preprocessing_metadata=route_result.get('preprocessing_metadata', []),
-                    preprocessing_summary=route_result.get('preprocessing_summary', []),
-                    preprocessing_modification_log=route_result.get('preprocessing_modification_log', [])
-                )
-                analysis_results.append(result)
-            
-            manager = ExtensibleJsonResultsManager()
-
-            from pathlib import Path
-            data_file_path = Path(actual_data_file) if actual_data_file else None
-            
-            # Determine a route column that actually exists in the in-memory data.
-            # The UI selection can change after load; keep saving resilient.
-            in_memory_columns = []
-            if hasattr(self.app, 'data') and hasattr(self.app.data, 'route_data'):
-                try:
-                    in_memory_columns = list(self.app.data.route_data.columns)
-                except Exception:
-                    in_memory_columns = []
-
-            route_col_requested = actual_route_column
-            if route_col_requested == ROUTE_COLUMN_NONE_SENTINEL:
-                route_col_requested = None
-
-            if route_col_requested and route_col_requested in in_memory_columns:
-                route_col_used = route_col_requested
-            elif 'route' in in_memory_columns:
-                # Synthetic single-route column created at load time
-                route_col_used = 'route'
-            else:
-                route_col_used = None
-                if hasattr(self.app, 'log_message'):
-                    self.app.log_message(
-                        f"Warning: Selected route column '{actual_route_column}' not present in loaded data; "
-                        f"saving will omit route_column metadata"
-                    )
-
-            input_file_info = {
-                'data_file_path': str(data_file_path) if data_file_path else 'unknown.csv',
-                'data_file_name': data_file_path.name if data_file_path else 'unknown.csv',
-                'data_file_size_bytes': data_file_path.stat().st_size if data_file_path and data_file_path.exists() else None,
-                'total_data_rows': len(self.app.data.route_data) if hasattr(self.app.data, 'route_data') else None,
-                'total_routes_available': (
-                    len(self.app.data.route_data[route_col_used].unique())
-                    if (hasattr(self.app.data, 'route_data') and route_col_used)
-                    else 1
-                ),
-                'column_info': {
-                    'total_columns': len(self.app.data.route_data.columns) if hasattr(self.app.data, 'route_data') else None,
-                    'x_column': actual_x_column,
-                    'y_column': actual_y_column,
-                    'route_column': (
-                        route_col_requested
-                        if (route_col_requested and route_col_requested in in_memory_columns and route_col_requested != 'route')
-                        else None
-                    )
-                }
-            }
-            
-            route_processing_config = {
-                'route_mode': 'multi_route' if len(all_route_results) > 1 else 'single_route',
-                'selected_routes': [result.get('route_id') for result in all_route_results],
-                'x_column': actual_x_column,
-                'y_column': actual_y_column,
-                'route_column': (
-                    route_col_requested
-                    if (route_col_requested and route_col_requested in in_memory_columns and route_col_requested != 'route')
-                    else None
-                ),
-                'route_filtering_applied': len(all_route_results) > 1,
-                'total_routes_in_source': len(all_route_results),
-                'total_routes_processed': len(all_route_results),
-                'custom_save_name': params.get('custom_save_name')
-            }
-            
-            # Add attribute break columns if configured
-            must_break_cols = getattr(self.app, 'must_break_columns', None)
-            if must_break_cols and isinstance(must_break_cols, list) and any(must_break_cols):
-                route_processing_config['must_break_columns'] = [str(c).strip() for c in must_break_cols if str(c).strip()]
-            
-            secondary_break_cols = getattr(self.app, 'secondary_break_columns', None)
-            if secondary_break_cols and isinstance(secondary_break_cols, list) and any(secondary_break_cols):
-                route_processing_config['secondary_break_columns'] = [str(c).strip() for c in secondary_break_cols if str(c).strip()]
-            
-            json_output_path = manager.save_analysis_results(
-                analysis_results,
-                json_path,
-                input_file_info=input_file_info,
-                route_processing_info=route_processing_config,
-                original_data_by_route=self._build_data_by_route_for_export(analysis_results)
-            )
-            
-            self.app.log_message(f"Results saved: {json_output_path}")
-
-            # Populate Results Files tab with summary extracted from JSON
-            if hasattr(self.app, 'file_manager') and hasattr(self.app, 'root'):
-                try:
-                    self.app.root.after(0, lambda p=json_output_path: self.app.file_manager.display_json_summary(p))
-                except Exception as e:
-                    # Non-fatal UI update failure; keep optimization results saved.
-                    if hasattr(self.app, 'handle_error'):
-                        self.app.handle_error("Could not update Results Files tab", e, severity="warning", show_messagebox=False)
-                    elif hasattr(self.app, 'log_message'):
-                        self.app.log_message(f"Warning: Could not update Results Files tab: {e}")
-            return json_output_path
-            
-        except Exception as e:
-            if hasattr(self.app, 'handle_error'):
-                self.app.handle_error("Error saving consolidated results", e, severity="error", show_messagebox=False)
-            else:
-                self.app.log_message(f"❌ Error saving consolidated results: {e}")
-            return None
-    
-    def _build_data_by_route_for_export(self, analysis_results):
-        """Build data dictionary by route ID for segment statistics calculation.
-        
-        Uses preprocessed data if available (when preprocessing was applied),
-        otherwise falls back to original CSV data. This ensures segment statistics
-        match the data that the GA actually optimized against.
-        
-        Args:
-            analysis_results: List of AnalysisResult objects
-            
-        Returns:
-            Dict[str, DataFrame]: Preprocessed (if available) or original CSV data by route ID
-        """
-        if not analysis_results:
-            return {}
-        
-        try:
-            # Prefer preprocessed data if available (from recent optimization with preprocessing)
-            if self.preprocessed_data_by_route:
-                self.app.log_message(f"Using preprocessed data for {len(self.preprocessed_data_by_route)} route(s) segment statistics")
-                return self.preprocessed_data_by_route.copy()
-            
-            # Fallback to original CSV data if no preprocessing was applied
-            if not self.app.data:
-                return {}
-            
-            original_data_by_route = {}
-            route_column = normalize_route_column_selection(
-                self.app.route_column.get() if hasattr(self.app, 'route_column') else None
-            )
-            
-            for result in analysis_results:
-                route_id = result.route_id
-                
-                try:
-                    if route_column is not None:
-                        route_df = filter_data_by_route(self.app.data.route_data, route_column, route_id)
-                    else:
-                        route_df = self.app.data.route_data.copy()
-                    
-                    if not route_df.empty:
-                        original_data_by_route[route_id] = route_df
-                    
-                except Exception as e:
-                    self.app.log_message(f"Warning: Could not extract data for route {route_id}: {e}")
-                    continue
-            
-            self.app.log_message(f"Using original CSV data for {len(original_data_by_route)} route(s) segment statistics")
-            return original_data_by_route
-            
-        except Exception as e:
-            self.app.log_message(f"Warning: Could not build original data by route: {e}")
-            return {}
     
     def is_optimization_running(self):
         """Return ``True`` only when both the running flag is set and the thread is alive.
@@ -1022,116 +624,6 @@ class OptimizationController:
         except Exception as e:
             self.app.log_message(f"[ERROR] Error showing multi-route visualization: {str(e)}")
 
-    def _prepare_multi_route_analyses(self, original_data, route_column, selected_routes, x_column, y_column, gap_threshold=0.5, is_single_route_mode=False, preprocessing_config=None):
-        """Filter and gap-analyse each selected route, returning ready-to-optimize objects.
-
-        Separating this step from optimization allows early detection of per-route
-        data problems (too few points, bad column values) before any expensive GA
-        work starts, and gives cleaner progress logging.
-
-        Routes with fewer than 3 data points are skipped with a warning. Failures
-        on individual routes are caught and logged so the remaining routes still run.
-
-        Args:
-            original_data: The application's loaded ``RouteAnalysis`` object whose
-                ``route_data`` DataFrame contains all routes combined.
-            route_column: Column name used to split routes, or ``None`` in
-                single-route mode.
-            selected_routes: Ordered list of route ID strings to process.
-            x_column: Column name for the x-axis (milepoint / distance).
-            y_column: Column name for the y-axis (condition value)
-            gap_threshold: Maximum gap size in ``x_column`` units. Larger gaps
-                triggers a mandatory segment break. Forwarded to ``analyze_route_gaps``.
-            is_single_route_mode: Boolean indicating if processing a single route
-            preprocessing_config: PreprocessingRunConfig with preprocessing methods and parameters
-            y_column: Column name for the y-axis (pavement metric).
-            gap_threshold: Minimum x-axis distance between consecutive points that
-                triggers a mandatory segment break. Forwarded to ``analyze_route_gaps``.
-            is_single_route_mode: When ``True``, the entire ``original_data.route_data``
-                DataFrame is used as-is (no per-route filtering).
-
-        Returns:
-            List of ``(route_id, RouteAnalysis)`` tuples in ``selected_routes`` order,
-            containing only the routes that were successfully prepared. Returns an
-            empty list if every route failed.
-        """
-        from data_loader import analyze_route_gaps, process_route_with_preprocessing
-        
-        # Check if preprocessing is configured
-        has_preprocessing = False
-        if preprocessing_config:
-            has_preprocessing = (
-                preprocessing_config.pre_gap_method or 
-                preprocessing_config.primary_method or 
-                preprocessing_config.secondary_method
-            )
-        
-        prepared_routes = []
-        self.app.log_message("Preparing route analyses...")
-        
-        for route_idx, route_id in enumerate(selected_routes, 1):
-            try:
-                self.app.log_message(f"Analyzing Route {route_id} ({route_idx}/{len(selected_routes)})...")
-                
-                if is_single_route_mode:
-                    route_data_df = original_data.route_data.copy()
-                else:
-                    route_data_df = filter_data_by_route(original_data.route_data, route_column, route_id)
-
-                if len(route_data_df) < 3:
-                    self.app.log_message(f"Warning: Route {route_id} has insufficient data ({len(route_data_df)} points), skipping...")
-                    continue
-                
-                # Sort within this route only — mixing rows across routes corrupts gap detection.
-                route_data_df = route_data_df.sort_values(x_column).reset_index(drop=True)
-
-                # Use preprocessing pipeline if configured, otherwise standard gap analysis
-                preprocessing_results = None
-                if has_preprocessing:
-                    route_analysis, preprocessing_results = process_route_with_preprocessing(
-                        route_data_df,
-                        x_column,
-                        y_column,
-                        route_id=route_id,
-                        gap_threshold=gap_threshold,
-                        preprocessing_config=preprocessing_config,
-                        first_attribute_columns=getattr(self.app, 'must_break_columns', None),
-                        second_attribute_columns=getattr(self.app, 'secondary_break_columns', None),
-                        log_callback=self.app.log_message
-                    )
-                else:
-                    route_analysis = analyze_route_gaps(
-                        route_data_df, 
-                        x_column, 
-                        y_column, 
-                        route_id=route_id,
-                        gap_threshold=gap_threshold,
-                        must_break_columns=getattr(self.app, 'must_break_columns', None),
-                        secondary_break_columns=getattr(self.app, 'secondary_break_columns', None),
-                    )
-                
-                self.app.log_message(f"Route {route_id}: {len(route_analysis.route_data)} points, "
-                                   f"{len(route_analysis.gap_segments)} gaps, "
-                                   f"{len(route_analysis.mandatory_breakpoints)} mandatory breakpoints")
-                
-                # Store preprocessed route data for accurate segment statistics calculation
-                self.preprocessed_data_by_route[route_id] = route_analysis.route_data.copy()
-                
-                # Store preprocessing_results along with route data for later attachment to AnalysisResult
-                prepared_routes.append((route_id, route_analysis, preprocessing_results))
-                
-            except Exception as e:
-                self.app.log_message(f"Error analyzing route {route_id}: {str(e)}")
-                # Continue with other routes instead of failing completely
-                continue
-        
-        if prepared_routes:
-            self.app.log_message(f"Route analysis completed: {len(prepared_routes)}/{len(selected_routes)} routes ready for optimization")
-        else:
-            self.app.log_message("ERROR: No routes could be analyzed successfully")
-        
-        return prepared_routes
-    
     def get_optimization_status(self):
         """Return a snapshot of the current optimization state.
 

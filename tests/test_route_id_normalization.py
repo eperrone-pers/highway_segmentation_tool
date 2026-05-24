@@ -7,6 +7,7 @@ import pandas as pd
 # Add src directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
+import route_utils
 from optimization_controller import OptimizationController
 
 
@@ -62,19 +63,18 @@ def test_numeric_route_ids_match_string_selection(monkeypatch):
 
     controller = OptimizationController(app)
 
-    def _fake_prepare_multi_route_analyses(
-        data,
+    def _fake_prepare_routes_for_optimization(
+        original_data,
         route_column,
-        routes_to_process,
+        selected_routes,
         x_column,
         y_column,
-        gap_threshold,
-        _is_single_route_mode,
+        **kwargs,
     ):
-        assert routes_to_process == ["268296608"]
-        return []  # Stop worker early (no heavy analysis)
+        assert selected_routes == ["268296608"]
+        return [], {}  # Stop worker early (no heavy analysis)
 
-    monkeypatch.setattr(controller, "_prepare_multi_route_analyses", _fake_prepare_multi_route_analyses)
+    monkeypatch.setattr(route_utils, "prepare_routes_for_optimization", _fake_prepare_routes_for_optimization)
 
     controller._run_optimization_worker()
 

@@ -70,8 +70,6 @@ class ParameterManager:
                 # Per our explicit gap-handling contract, this must be provided and > 0
                 if gap_threshold <= 0:
                     errors.append(f"Gap threshold must be > 0 (got {gap_threshold})")
-                elif gap_threshold > 5.0:
-                    errors.append("Gap threshold should not exceed 5.0")
 
             # Validate method-specific parameters using declarative config definitions
             for param_def in method_config.parameters:
@@ -179,7 +177,7 @@ class ParameterManager:
         if hasattr(self.app, 'gap_threshold'):
             try:
                 # Framework-level default (keep consistent with GUI initialization)
-                self.app.gap_threshold.set(0.5)
+                self.app.gap_threshold.set(10000)
             except tk.TclError:
                 pass
 
