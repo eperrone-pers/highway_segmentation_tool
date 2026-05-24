@@ -11,29 +11,21 @@ Date: March 2026
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Tuple, Any, List, Optional, Union, Type, TYPE_CHECKING
-from abc import ABC, abstractmethod
+from typing import Dict, Any, List, Optional, Type
 import importlib
-
-import math
-
-from value_parsing import parse_optional_float, parse_optional_int
-
-if TYPE_CHECKING:
-    import tkinter as tk
 
 
 # ===== PARAMETER DEFINITION CLASSES FOR EXTENSIBLE FRAMEWORK =====
 # Moved to parameter_definitions.py; re-exported here for backward compatibility.
 from parameter_definitions import (  # noqa: E402
-    ParameterDefinition,
-    NumericParameter,
-    OptionalNumericParameter,
-    SelectParameter,
-    ColumnSelectParameter,
-    MultiColumnSelectParameter,
-    BoolParameter,
-    TextParameter,
+    ParameterDefinition,  # noqa: F401
+    NumericParameter,  # noqa: F401
+    OptionalNumericParameter,  # noqa: F401
+    SelectParameter,  # noqa: F401
+    ColumnSelectParameter,  # noqa: F401
+    MultiColumnSelectParameter,  # noqa: F401
+    BoolParameter,  # noqa: F401
+    TextParameter,  # noqa: F401
 )
 
 
@@ -481,20 +473,20 @@ PELT_SEGMENTATION_PARAMETERS = [
 # ===== ALGORITHM AND UI CONSTANTS =====
 # Moved to app_constants.py; re-exported here for backward compatibility.
 from app_constants import (  # noqa: E402
-    AlgorithmConstants,
-    UIConfig,
-    PlottingConfig,
-    ConstraintConfig,
-    CacheConfig,
-    ConstrainedOptimizationConfig,
-    ValidationConfig,
-    optimization_config,
-    ui_config,
-    plotting_config,
-    constraint_config,
-    cache_config,
-    constrained_optimization_config,
-    validation_config,
+    AlgorithmConstants,  # noqa: F401
+    UIConfig,  # noqa: F401
+    PlottingConfig,  # noqa: F401
+    ConstraintConfig,  # noqa: F401
+    CacheConfig,  # noqa: F401
+    ConstrainedOptimizationConfig,  # noqa: F401
+    ValidationConfig,  # noqa: F401
+    optimization_config,  # noqa: F401
+    ui_config,  # noqa: F401
+    plotting_config,  # noqa: F401
+    constraint_config,  # noqa: F401
+    cache_config,  # noqa: F401
+    constrained_optimization_config,  # noqa: F401
+    validation_config,  # noqa: F401
 )
 
 

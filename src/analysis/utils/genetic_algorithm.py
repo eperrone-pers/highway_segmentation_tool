@@ -557,7 +557,7 @@ class HighwaySegmentGA:
                         splittable_length,
                     )
 
-                    if self.validate_chromosome(candidate, suppress_warnings=True):
+                    if self.validate_chromosome(candidate):
                         chromosome = candidate
                         break
 
@@ -567,7 +567,7 @@ class HighwaySegmentGA:
                         last_error = "irreparable_max_length_violation"
                         continue
 
-                    if self.validate_chromosome(repaired, suppress_warnings=True):
+                    if self.validate_chromosome(repaired):
                         chromosome = repaired
                         break
 
@@ -708,26 +708,26 @@ class HighwaySegmentGA:
                     target = random.randint(min_segments, max_segments)
                 
                 chromosome = self.generate_chromosome_with_target_segments(target)
-                if not self.validate_chromosome(chromosome, suppress_warnings=True):
+                if not self.validate_chromosome(chromosome):
                     chromosome = self._enforce_constraints(chromosome)
                 population.append(chromosome)
                 segment_counts.append(len(chromosome) - 1)
-        
+
         # Fill remaining slots with random generation (with retries)
         while len(population) < self.population_size:
             self._generation_stats['total_attempts'] += 1
             chromosome = None
-            
+
             # Try to generate a valid chromosome with retries
             for attempt in range(10):  # max_retries = 10
                 chrom = self.generate_chromosome()
-                if self.validate_chromosome(chrom, suppress_warnings=True):
+                if self.validate_chromosome(chrom):
                     chromosome = chrom
                     break
                 else:
                     # Try to fix it while preserving mandatory breakpoints
                     chrom = self._enforce_constraints(chrom)
-                    if self.validate_chromosome(chrom, suppress_warnings=True):
+                    if self.validate_chromosome(chrom):
                         chromosome = chrom
                         break
             
@@ -1735,15 +1735,8 @@ class HighwaySegmentGA:
         
         return clean
 
-    def validate_chromosome(self, chromosome, suppress_warnings=False):
-        """Validate that a chromosome respects all constraints and includes mandatory breakpoints
-        
-        Args:
-            chromosome: The chromosome to validate
-            suppress_warnings: If True, don't log mandatory segment violation warnings
-        """
-        # TODO: Honor suppress_warnings by gating any mandatory-segment warning logs in this method.
-        # Call sites already pass suppress_warnings=True in hot loops to avoid log spam.
+    def validate_chromosome(self, chromosome):
+        """Validate that a chromosome respects all constraints and includes mandatory breakpoints."""
         if len(chromosome) < 2:
             return False
 

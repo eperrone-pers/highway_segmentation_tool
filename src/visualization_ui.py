@@ -8,12 +8,9 @@ Supports interactive route selection, JSON-driven results, and optional original
 """
 
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox, colorchooser
+from tkinter import filedialog, messagebox, colorchooser
 import pandas as pd
 import numpy as np
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
-from matplotlib.figure import Figure
-from matplotlib.widgets import SpanSelector
 import logging
 import json
 import os
