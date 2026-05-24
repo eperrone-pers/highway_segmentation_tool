@@ -184,6 +184,10 @@ The application is split into:
      - Method dispatch is already fully config-driven.
      - Any new `method_key` should be considered valid as long as it exists in `OPTIMIZATION_METHODS`.
          Avoid hard-coded method-key lists in UI logic.
+     - After `run_analysis()` returns an `AnalysisResult`, the controller calls
+         `analysis_result.to_route_result_dict()` to produce the flat result dict.
+         **No controller code changes are needed for new methods** — all method-specific
+         serialization is handled by `AnalysisResult.to_route_result_dict()` in `src/analysis/base.py`.
 
 4. **Results export**
    - JSON schema output is written by `ExtensibleJsonResultsManager`.
@@ -842,6 +846,22 @@ Output contract:
 
 - Each solution must include breakpoint locations in `'chromosome'` (sorted list of milepoints including start and end).
 - Include `input_parameters` for reproducibility.
+
+**How the controller reads your result:**
+
+After `run_analysis()` returns, the controller calls `analysis_result.to_route_result_dict()`
+(`src/analysis/base.py`) to produce the flat dict used for JSON export and visualization.
+You do **not** need to modify the controller for a new method. The serialization logic in
+`to_route_result_dict()` automatically adds:
+
+- Base keys for all methods (route_id, best_fitness, chromosome, segments, etc.)
+- Pareto front keys when `is_multi_objective()` returns `True`
+- Constraint keys (`best_unconstrained_fitness`, `length_deviation`) when present in `best_solution`
+- AASHTO statistical keys when `method_key == 'aashto_cda'`
+- Convergence history when present in `optimization_stats`
+
+If your method produces output that doesn't fit any of these patterns, add the new keys to
+`to_route_result_dict()` in `src/analysis/base.py` — not to the controller.
 
 ---
 

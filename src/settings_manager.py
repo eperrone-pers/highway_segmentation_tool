@@ -66,7 +66,7 @@ class SettingsManager:
                 'x_column': '',
                 'y_column': '',
                 'route_column': '',
-                'gap_threshold': 0.5,
+                'gap_threshold': 10000,
                 # Multi-select list of input columns that force mandatory breakpoints
                 # whenever their value changes (attribute-based must-break).
                 'must_break_columns': [],

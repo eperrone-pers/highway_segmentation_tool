@@ -19,16 +19,12 @@ current_file_dir = os.path.dirname(__file__)  # tests/integration
 tests_dir = os.path.dirname(current_file_dir)  # tests
 project_root = os.path.dirname(tests_dir)  # highway-segmentation-ga
 src_path = os.path.join(project_root, 'src')
-docs_path = os.path.join(project_root, 'docs')
 
-# Add to path if not already present
 if src_path not in sys.path:
     sys.path.insert(0, src_path)
-if docs_path not in sys.path:
-    sys.path.insert(0, docs_path)
 
 try:
-    from optimization_controller import OptimizationController
+    from optimization_results_saver import OptimizationResultsSaver
     from validate_json_schema import validate_single_file
 except ImportError as e:
     pytest.skip(f"Required modules not available: {e}", allow_module_level=True)
@@ -96,17 +92,14 @@ class TestJsonValidationWorkflow:
     
     def test_single_objective_json_generation_and_validation(self, mock_gui_app, results_dir):
         """Test single-objective analysis generates valid, schema-compliant JSON."""
-        
-        # Setup controller with mocked GUI
-        controller = OptimizationController(mock_gui_app)
-        
+
         # Mock analysis result
         mock_result = Mock()
         mock_result.get_segments.return_value = [
             {'start': 0.0, 'end': 1.0, 'route': 'Route1'},
             {'start': 1.0, 'end': 2.0, 'route': 'Route1'}
         ]
-        
+
         # Mock route results structure
         all_route_results = [
             {
@@ -115,17 +108,18 @@ class TestJsonValidationWorkflow:
                 'processing_time': 5.0
             }
         ]
-        
+
         # Mock parameters
         mock_params = {
             'population_size': 100,
             'num_generations': 200,
             'mutation_rate': 0.05
         }
-        
-        # Generate test JSON 
-        json_path = controller._save_consolidated_results(
-            all_route_results, 
+
+        # Generate test JSON
+        saver = OptimizationResultsSaver(mock_gui_app)
+        json_path = saver.save(
+            all_route_results,
             method_key="single",
             params=mock_params
         )
@@ -162,10 +156,7 @@ class TestJsonValidationWorkflow:
     
     def test_multi_objective_json_generation_and_validation(self, mock_gui_app, results_dir):
         """Test multi-objective analysis generates valid, schema-compliant JSON."""
-        
-        # Setup controller with mocked GUI
-        controller = OptimizationController(mock_gui_app)
-        
+
         # Mock analysis result with pareto solutions
         mock_result = Mock()
         mock_result.get_pareto_solutions.return_value = [
@@ -173,7 +164,7 @@ class TestJsonValidationWorkflow:
                 {'start': 0.0, 'end': 1.0, 'route': 'Route1'}
             ]))
         ]
-        
+
         # Mock route results structure
         all_route_results = [
             {
@@ -182,17 +173,18 @@ class TestJsonValidationWorkflow:
                 'processing_time': 8.0
             }
         ]
-        
+
         # Mock parameters
         mock_params = {
             'population_size': 100,
             'num_generations': 200,
             'mutation_rate': 0.05
         }
-        
-        # Generate test JSON 
-        json_path = controller._save_consolidated_results(
-            all_route_results, 
+
+        # Generate test JSON
+        saver = OptimizationResultsSaver(mock_gui_app)
+        json_path = saver.save(
+            all_route_results,
             method_key="multi",
             params=mock_params
         )
@@ -229,13 +221,11 @@ class TestJsonValidationWorkflow:
     
     def test_column_info_structure_completeness(self, mock_gui_app):
         """Test that column_info contains all required field mappings."""
-        
-        controller = OptimizationController(mock_gui_app)
-        
+
         # Mock result
         mock_result = Mock()
         mock_result.get_segments.return_value = []
-        
+
         # Mock route results structure
         all_route_results = [
             {
@@ -244,14 +234,15 @@ class TestJsonValidationWorkflow:
                 'processing_time': 3.0
             }
         ]
-        
+
         # Mock parameters
         mock_params = {'population_size': 100}
-        
+
         # Generate JSON
-        json_path = controller._save_consolidated_results(
-            all_route_results, 
-            method_key="single",  
+        saver = OptimizationResultsSaver(mock_gui_app)
+        json_path = saver.save(
+            all_route_results,
+            method_key="single",
             params=mock_params
         )
         
@@ -277,11 +268,10 @@ class TestJsonValidationWorkflow:
     def test_json_validation_performance(self, mock_gui_app):
         """Test JSON validation doesn't significantly impact performance."""
         import time
-        
-        controller = OptimizationController(mock_gui_app)
+
         mock_result = Mock()
         mock_result.get_segments.return_value = []
-        
+
         # Mock route results structure
         all_route_results = [
             {
@@ -290,13 +280,14 @@ class TestJsonValidationWorkflow:
                 'processing_time': 1.0
             }
         ]
-        
+
         # Mock parameters
         mock_params = {'population_size': 50}
-        
+
+        saver = OptimizationResultsSaver(mock_gui_app)
         start_time = time.time()
-        json_path = controller._save_consolidated_results(
-            all_route_results, 
+        json_path = saver.save(
+            all_route_results,
             method_key="single_objective",
             params=mock_params
         )

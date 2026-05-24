@@ -20,6 +20,7 @@ from route_utils import ROUTE_COLUMN_NONE_SENTINEL
 
 logger = logging.getLogger(__name__)
 from parameter_tree_view import ParameterTreeView, DEFAULT_TREEVIEW_HEIGHT
+from tooltip import ParameterTreeTooltip, attach_tooltip
 
 ui_config = UIConfig()
 
@@ -472,7 +473,13 @@ class UIBuilder:
         ttk.Label(gap_frame, text=" 2. Gap Analysis - Gap Threshold (in x units):").grid(row=0, column=0, sticky="w")
         self.app.gap_threshold_entry = ttk.Entry(gap_frame, textvariable=self.app.gap_threshold, width=20)
         self.app.gap_threshold_entry.grid(row=0, column=1, sticky="w", padx=ui_config.standard_padding_x)
-        
+        attach_tooltip(
+            self.app.gap_threshold_entry,
+            "Minimum gap between consecutive x-axis measurements that forces a segment boundary.\n"
+            "Default (10000) effectively disables gap detection. Lower values (e.g. 1.0) split\n"
+            "segments wherever the data has a physical gap larger than that distance.",
+        )
+
         return row + 1
     
     def create_primary_attribute_breaks_section(self, parent, row):
@@ -598,6 +605,7 @@ class UIBuilder:
 
         tree.bind("<Double-1>", self._on_dynamic_param_double_click)
         tree.bind("<Button-1>", self._on_dynamic_param_single_click)
+        ParameterTreeTooltip(tree, lambda: self.app.dynamic_params_defs)
         
         # Fix mousewheel scrolling to work within treeview instead of parent
         def on_mousewheel(event):
