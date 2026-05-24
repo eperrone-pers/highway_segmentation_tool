@@ -1238,6 +1238,9 @@ def main():
         style.theme_use("winnative")
     elif sys.platform == "darwin" and "aqua" in theme_names:
         style.theme_use("aqua")
+        # The aqua theme renders LabelFrame titles in a small secondary system
+        # font. Override to match body text so section headers are readable.
+        style.configure("TLabelframe.Label", font="TkDefaultFont")
     elif "clam" in theme_names:
         style.theme_use("clam")
     
