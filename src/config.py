@@ -38,13 +38,13 @@ SINGLE_OBJECTIVE_GA_PARAMETERS = [
     NumericParameter(
         name="min_length", display_name="Min Segment Length", 
         description="Minimum allowed segment length in miles",
-        group="segment_constraints", order=1, default_value=0.5,
+        group="04_segment_constraints", order=1, default_value=0.5,
         min_value=0.01, max_value=100.0, decimal_places=2
     ),
     NumericParameter(
         name="max_length", display_name="Max Segment Length",
         description="Maximum allowed segment length in miles", 
-        group="segment_constraints", order=2, default_value=10.0,
+        group="04_segment_constraints", order=2, default_value=10.0,
         min_value=0.01, max_value=100.0, decimal_places=2
     ),
     
@@ -52,31 +52,31 @@ SINGLE_OBJECTIVE_GA_PARAMETERS = [
     NumericParameter(
         name="population_size", display_name="Population Size",
         description="Number of individuals in each generation",
-        group="genetic_algorithm", order=1, default_value=100,
+        group="05_genetic_algorithm", order=1, default_value=100,
         min_value=10, max_value=1000, decimal_places=0
     ),
     NumericParameter(
         name="num_generations", display_name="Generations", 
         description="Number of evolutionary generations to run",
-        group="genetic_algorithm", order=2, default_value=200,  # Single-objective default
+        group="05_genetic_algorithm", order=2, default_value=200,  # Single-objective default
         min_value=1, max_value=10000, decimal_places=0
     ),
     NumericParameter(
         name="crossover_rate", display_name="Crossover Rate",
         description="Probability of crossover operations (0.0-1.0)",
-        group="genetic_algorithm", order=3, default_value=0.8,
+        group="05_genetic_algorithm", order=3, default_value=0.8,
         min_value=0.1, max_value=1.0, decimal_places=3
     ),
     NumericParameter(
         name="mutation_rate", display_name="Mutation Rate", 
         description="Probability of mutation operations (0.0-1.0)",
-        group="genetic_algorithm", order=4, default_value=0.05,
+        group="05_genetic_algorithm", order=4, default_value=0.05,
         min_value=0.001, max_value=0.5, decimal_places=3
     ),
     NumericParameter(
         name="elite_ratio", display_name="Elite Ratio",
         description="Proportion of best individuals preserved each generation",
-        group="genetic_algorithm", order=5, default_value=0.05,
+        group="05_genetic_algorithm", order=5, default_value=0.05,
         min_value=0.01, max_value=0.20, decimal_places=3
     ),
     
@@ -84,13 +84,13 @@ SINGLE_OBJECTIVE_GA_PARAMETERS = [
     NumericParameter(
         name="cache_clear_interval", display_name="Cache Clear Interval",
         description="Number of generations between cache clears",
-        group="performance", order=1, default_value=50,
+        group="08_performance", order=1, default_value=50,
         min_value=1, max_value=1000, decimal_places=0
     ),
     BoolParameter(
         name="enable_performance_stats", display_name="Performance Statistics",
         description="Enable detailed performance tracking and reporting",
-        group="performance", order=2, default_value=True
+        group="08_performance", order=2, default_value=True
 
     )
 ]
@@ -100,13 +100,13 @@ MULTI_OBJECTIVE_NSGA2_PARAMETERS = [
     NumericParameter(
         name="min_length", display_name="Min Segment Length",
         description="Minimum allowed segment length in miles", 
-        group="segment_constraints", order=1, default_value=0.5,
+        group="04_segment_constraints", order=1, default_value=0.5,
         min_value=0.01, max_value=100.0, decimal_places=2
     ),
     NumericParameter(
         name="max_length", display_name="Max Segment Length",
         description="Maximum allowed segment length in miles",
-        group="segment_constraints", order=2, default_value=10.0,
+        group="04_segment_constraints", order=2, default_value=10.0,
         min_value=0.01, max_value=100.0, decimal_places=2
     ),
     
@@ -114,25 +114,25 @@ MULTI_OBJECTIVE_NSGA2_PARAMETERS = [
     NumericParameter(
         name="population_size", display_name="Population Size",
         description="Number of individuals in each generation",
-        group="genetic_algorithm", order=1, default_value=100,
+        group="05_genetic_algorithm", order=1, default_value=100,
         min_value=10, max_value=1000, decimal_places=0
     ),
     NumericParameter(
         name="num_generations", display_name="Generations",
         description="Number of evolutionary generations to run", 
-        group="genetic_algorithm", order=2, default_value=100,  # Multi-objective default (different!)
+        group="05_genetic_algorithm", order=2, default_value=100,  # Multi-objective default (different!)
         min_value=1, max_value=10000, decimal_places=0
     ),
     NumericParameter(
         name="crossover_rate", display_name="Crossover Rate",
         description="Probability of crossover operations (0.0-1.0)",
-        group="genetic_algorithm", order=3, default_value=0.8,
+        group="05_genetic_algorithm", order=3, default_value=0.8,
         min_value=0.1, max_value=1.0, decimal_places=3
     ),
     NumericParameter(
         name="mutation_rate", display_name="Mutation Rate",
         description="Probability of mutation operations (0.0-1.0)",
-        group="genetic_algorithm", order=4, default_value=0.05,
+        group="05_genetic_algorithm", order=4, default_value=0.05,
         min_value=0.001, max_value=0.5, decimal_places=3
     ),
     
@@ -140,13 +140,13 @@ MULTI_OBJECTIVE_NSGA2_PARAMETERS = [
     NumericParameter(
         name="cache_clear_interval", display_name="Cache Clear Interval",
         description="Number of generations between cache clears",
-        group="performance", order=1, default_value=50,
+        group="08_performance", order=1, default_value=50,
         min_value=1, max_value=1000, decimal_places=0
     ),
     BoolParameter(
         name="enable_performance_stats", display_name="Performance Statistics", 
         description="Enable detailed performance tracking and reporting",
-        group="performance", order=2, default_value=True
+        group="08_performance", order=2, default_value=True
     )
 ]
 
@@ -155,13 +155,13 @@ CONSTRAINED_SINGLE_OBJECTIVE_PARAMETERS = [
     NumericParameter(
         name="min_length", display_name="Min Segment Length",
         description="Minimum allowed segment length in miles",
-        group="segment_constraints", order=1, default_value=0.5,
+        group="04_segment_constraints", order=1, default_value=0.5,
         min_value=0.01, max_value=100.0, decimal_places=2
     ),
     NumericParameter(
         name="max_length", display_name="Max Segment Length", 
         description="Maximum allowed segment length in miles",
-        group="segment_constraints", order=2, default_value=10.0,
+        group="04_segment_constraints", order=2, default_value=10.0,
         min_value=0.01, max_value=100.0, decimal_places=2
     ),
     
@@ -169,31 +169,31 @@ CONSTRAINED_SINGLE_OBJECTIVE_PARAMETERS = [
     NumericParameter(
         name="population_size", display_name="Population Size",
         description="Number of individuals in each generation", 
-        group="genetic_algorithm", order=1, default_value=100,
+        group="05_genetic_algorithm", order=1, default_value=100,
         min_value=10, max_value=1000, decimal_places=0
     ),
     NumericParameter(
         name="num_generations", display_name="Generations",
         description="Number of evolutionary generations to run",
-        group="genetic_algorithm", order=2, default_value=150,  # Constrained default (different!)
+        group="05_genetic_algorithm", order=2, default_value=150,  # Constrained default (different!)
         min_value=1, max_value=10000, decimal_places=0
     ),
     NumericParameter(
         name="crossover_rate", display_name="Crossover Rate",
         description="Probability of crossover operations (0.0-1.0)",
-        group="genetic_algorithm", order=3, default_value=0.8,
+        group="05_genetic_algorithm", order=3, default_value=0.8,
         min_value=0.1, max_value=1.0, decimal_places=3
     ),
     NumericParameter(
         name="mutation_rate", display_name="Mutation Rate",
         description="Probability of mutation operations (0.0-1.0)",
-        group="genetic_algorithm", order=4, default_value=0.05,
+        group="05_genetic_algorithm", order=4, default_value=0.05,
         min_value=0.001, max_value=0.5, decimal_places=3
     ),
     NumericParameter(
         name="elite_ratio", display_name="Elite Ratio", 
         description="Proportion of best individuals preserved each generation",
-        group="genetic_algorithm", order=5, default_value=0.05,
+        group="05_genetic_algorithm", order=5, default_value=0.05,
         min_value=0.01, max_value=0.20, decimal_places=3
     ),
     
@@ -201,19 +201,19 @@ CONSTRAINED_SINGLE_OBJECTIVE_PARAMETERS = [
     NumericParameter(
         name="target_avg_length", display_name="Target Avg Length",
         description="Target average segment length in miles",
-        group="constraints", order=1, default_value=2.0,
+        group="06_constraints", order=1, default_value=2.0,
         min_value=0.01, max_value=50.0, decimal_places=2
     ),
     NumericParameter(
         name="penalty_weight", display_name="Penalty Weight",
         description="Weight applied to constraint violation penalties",
-        group="constraints", order=2, default_value=1000.0,
+        group="06_constraints", order=2, default_value=1000.0,
         min_value=0.0, max_value=100000.0, decimal_places=1
     ),
     NumericParameter(
         name="length_tolerance", display_name="Length Tolerance",
         description="Acceptable tolerance around target length",
-        group="constraints", order=3, default_value=0.2,
+        group="06_constraints", order=3, default_value=0.2,
         min_value=0.01, max_value=1.0, decimal_places=3
     ),
     
@@ -221,13 +221,13 @@ CONSTRAINED_SINGLE_OBJECTIVE_PARAMETERS = [
     NumericParameter(
         name="cache_clear_interval", display_name="Cache Clear Interval", 
         description="Number of generations between cache clears",
-        group="performance", order=1, default_value=50,
+        group="08_performance", order=1, default_value=50,
         min_value=1, max_value=1000, decimal_places=0
     ),
     BoolParameter(
         name="enable_performance_stats", display_name="Performance Statistics",
         description="Enable detailed performance tracking and reporting",
-        group="performance", order=2, default_value=True
+        group="08_performance", order=2, default_value=True
     )
 ]
 
@@ -236,13 +236,13 @@ DEB_FEASIBILITY_CONSTRAINED_PARAMETERS = [
     NumericParameter(
         name="min_length", display_name="Min Segment Length",
         description="Minimum allowed segment length in miles",
-        group="segment_constraints", order=1, default_value=0.5,
+        group="04_segment_constraints", order=1, default_value=0.5,
         min_value=0.01, max_value=100.0, decimal_places=2
     ),
     NumericParameter(
         name="max_length", display_name="Max Segment Length",
         description="Maximum allowed segment length in miles",
-        group="segment_constraints", order=2, default_value=10.0,
+        group="04_segment_constraints", order=2, default_value=10.0,
         min_value=0.01, max_value=100.0, decimal_places=2
     ),
 
@@ -250,31 +250,31 @@ DEB_FEASIBILITY_CONSTRAINED_PARAMETERS = [
     NumericParameter(
         name="population_size", display_name="Population Size",
         description="Number of individuals in each generation",
-        group="genetic_algorithm", order=1, default_value=100,
+        group="05_genetic_algorithm", order=1, default_value=100,
         min_value=10, max_value=1000, decimal_places=0
     ),
     NumericParameter(
         name="num_generations", display_name="Generations",
         description="Number of evolutionary generations to run",
-        group="genetic_algorithm", order=2, default_value=150,
+        group="05_genetic_algorithm", order=2, default_value=150,
         min_value=1, max_value=10000, decimal_places=0
     ),
     NumericParameter(
         name="crossover_rate", display_name="Crossover Rate",
         description="Probability of crossover operations (0.0-1.0)",
-        group="genetic_algorithm", order=3, default_value=0.8,
+        group="05_genetic_algorithm", order=3, default_value=0.8,
         min_value=0.1, max_value=1.0, decimal_places=3
     ),
     NumericParameter(
         name="mutation_rate", display_name="Mutation Rate",
         description="Probability of mutation operations (0.0-1.0)",
-        group="genetic_algorithm", order=4, default_value=0.05,
+        group="05_genetic_algorithm", order=4, default_value=0.05,
         min_value=0.001, max_value=0.5, decimal_places=3
     ),
     NumericParameter(
         name="elite_ratio", display_name="Elite Ratio",
         description="Proportion of best individuals preserved each generation",
-        group="genetic_algorithm", order=5, default_value=0.05,
+        group="05_genetic_algorithm", order=5, default_value=0.05,
         min_value=0.01, max_value=0.20, decimal_places=3
     ),
 
@@ -282,13 +282,13 @@ DEB_FEASIBILITY_CONSTRAINED_PARAMETERS = [
     NumericParameter(
         name="target_avg_length", display_name="Target Avg Length",
         description="Target average segment length in miles",
-        group="constraints", order=1, default_value=2.0,
+        group="06_constraints", order=1, default_value=2.0,
         min_value=0.01, max_value=50.0, decimal_places=2
     ),
     NumericParameter(
         name="length_tolerance", display_name="Length Tolerance",
         description="Acceptable tolerance around target length (Deb feasibility band)",
-        group="constraints", order=2, default_value=0.2,
+        group="06_constraints", order=2, default_value=0.2,
         min_value=0.01, max_value=1.0, decimal_places=3
     ),
 
@@ -296,13 +296,13 @@ DEB_FEASIBILITY_CONSTRAINED_PARAMETERS = [
     NumericParameter(
         name="cache_clear_interval", display_name="Cache Clear Interval",
         description="Number of generations between cache clears",
-        group="performance", order=1, default_value=50,
+        group="08_performance", order=1, default_value=50,
         min_value=1, max_value=1000, decimal_places=0
     ),
     BoolParameter(
         name="enable_performance_stats", display_name="Performance Statistics",
         description="Enable detailed performance tracking and reporting",
-        group="performance", order=2, default_value=True
+        group="08_performance", order=2, default_value=True
     )
 ]
 
@@ -311,13 +311,13 @@ AASHTO_CDA_PARAMETERS = [
     NumericParameter(
         name="alpha", display_name="Significance Level",
         description="Statistical significance level for change point detection (lower = more conservative)",
-        group="statistical_analysis", order=1, default_value=0.05,
+        group="01_statistical_analysis", order=1, default_value=0.05,
         min_value=0.001, max_value=0.49, decimal_places=3
     ),
     SelectParameter(
         name="method", display_name="Error Estimation Method", 
         description="Method for estimating standard deviation of measurement error",
-        group="statistical_analysis", order=2, default_value=2,
+        group="01_statistical_analysis", order=2, default_value=2,
         options=[
             ("MAD with Normal Distribution", 1),
             ("Std Dev of Differences (Recommended)", 2), 
@@ -327,26 +327,26 @@ AASHTO_CDA_PARAMETERS = [
     BoolParameter(
         name="use_segment_length", display_name="Use Segment-Specific Length",
         description="Use individual segment lengths (recommended) vs. total data length in statistical calculations", 
-        group="statistical_analysis", order=3, default_value=True  # GlobalLocal=1 in MATLAB (recommended)
+        group="01_statistical_analysis", order=3, default_value=True  # GlobalLocal=1 in MATLAB (recommended)
     ),
     
     # Segmentation Constraints
     NumericParameter(
         name="min_segment_datapoints", display_name="Min Segment Datapoints",
         description="Minimum number of datapoints required per segment",
-        group="segment_constraints", order=1, default_value=3,
+        group="04_segment_constraints", order=1, default_value=3,
         min_value=3, max_value=1000, decimal_places=0
     ),
     OptionalNumericParameter(
         name="max_segments", display_name="Max Segments", 
         description="Maximum number of segments allowed (None=no limit, algorithm may find fewer)",
-        group="segment_constraints", order=2, default_value=None,
+        group="04_segment_constraints", order=2, default_value=None,
         min_value=2, max_value=10000, decimal_places=0
     ),
     NumericParameter(
         name="min_section_difference", display_name="Min Section Difference",
         description="Minimum difference in average values between adjacent segments (0=disabled)",
-        group="segment_constraints", order=3, default_value=0.0,
+        group="04_segment_constraints", order=3, default_value=0.0,
         min_value=0.0, max_value=None, decimal_places=3
     ),
     
@@ -354,7 +354,7 @@ AASHTO_CDA_PARAMETERS = [
     BoolParameter(
         name="enable_diagnostic_output", display_name="Diagnostic Output",
         description="Enable detailed diagnostic information during processing",
-        group="processing", order=1, default_value=False
+        group="07_processing", order=1, default_value=False
     )
 ]
 
@@ -365,7 +365,7 @@ PELT_SEGMENTATION_PARAMETERS = [
         name="model",
         display_name="Cost Model",
         description="Cost function used by PELT (l2=mean shifts, l1=robust mean shifts, rbf=kernel).",
-        group="change_point_detection",
+        group="02_change_point_detection",
         order=1,
         default_value="l2",
         options=[
@@ -382,7 +382,7 @@ PELT_SEGMENTATION_PARAMETERS = [
             "Try a small grid like 6, 10, 14, 18 and pick the smallest penalty "
             "that avoids chattering."
         ),
-        group="change_point_detection",
+        group="02_change_point_detection",
         order=2,
         default_value=12.0,
         min_value=0.1,
@@ -393,7 +393,7 @@ PELT_SEGMENTATION_PARAMETERS = [
         name="jump",
         display_name="Jump",
         description="Subsample candidate change point locations (1=all points; higher=coarser/faster).",
-        group="change_point_detection",
+        group="02_change_point_detection",
         order=3,
         default_value=1,
         min_value=1,
@@ -409,7 +409,7 @@ PELT_SEGMENTATION_PARAMETERS = [
             "Optional smoothing window length in miles (None=off). "
             "For 0.1-mile spacing, 0.3–1.0 miles is a typical starting range."
         ),
-        group="smoothing",
+        group="03_smoothing",
         order=1,
         default_value=None,
         min_value=0.0,
@@ -420,7 +420,7 @@ PELT_SEGMENTATION_PARAMETERS = [
         name="smoothing_method",
         display_name="Smoothing Method",
         description="Smoothing statistic (only used when smoothing window is enabled).",
-        group="smoothing",
+        group="03_smoothing",
         order=2,
         default_value="mean",
         options=[
@@ -436,7 +436,7 @@ PELT_SEGMENTATION_PARAMETERS = [
         description=(
             "Minimum segment length in miles. Also enforces a minimum of 2 samples per segment internally."
         ),
-        group="segment_constraints",
+        group="04_segment_constraints",
         order=1,
         default_value=0.5,
         min_value=0.0,
@@ -450,7 +450,7 @@ PELT_SEGMENTATION_PARAMETERS = [
             "Maximum segment length in miles. PELT does not natively enforce a maximum; "
             "we post-process and split any overlong data segments while preserving gap segments."
         ),
-        group="segment_constraints",
+        group="04_segment_constraints",
         order=2,
         default_value=5.0,
         min_value=0.0,
@@ -463,7 +463,7 @@ PELT_SEGMENTATION_PARAMETERS = [
         name="enable_diagnostic_output",
         display_name="Diagnostic Output",
         description="Include additional per-section diagnostics in results (useful for debugging/tuning).",
-        group="processing",
+        group="07_processing",
         order=1,
         default_value=False,
     ),
@@ -791,7 +791,7 @@ PREPROCESSING_METHODS: List[PreprocessingMethodConfig] = [
                 name="k_factor",
                 display_name="K Factor",
                 description="IQR multiplier for fence bounds (1.5=mild outliers, 3.0=extreme outliers)",
-                group="detection",
+                group="01_detection",
                 order=1,
                 default_value=1.5,
                 min_value=0.5,
@@ -803,7 +803,7 @@ PREPROCESSING_METHODS: List[PreprocessingMethodConfig] = [
                 name="action",
                 display_name="Outlier Action",
                 description="How to handle detected outliers",
-                group="handling",
+                group="02_handling",
                 order=2,
                 default_value="remove",
                 options=[

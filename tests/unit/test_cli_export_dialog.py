@@ -20,6 +20,11 @@ from cli_export_dialog import CLIExportDialog
 pytestmark = pytest.mark.ui
 
 
+def _slash(path: str) -> str:
+    """Normalize path separators for stable assertions across OSes."""
+    return path.replace("\\", "/")
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -66,7 +71,7 @@ def dialog(tk_root, base_state):
 
 @pytest.mark.unit
 def test_spec_path_default_derives_from_output_json(dialog):
-    assert dialog._spec_path_var.get() == "Results/my_roads.run_spec.json"
+    assert _slash(dialog._spec_path_var.get()) == "Results/my_roads.run_spec.json"
 
 
 @pytest.mark.unit
@@ -92,7 +97,7 @@ def test_mode_defaults_to_single_file(dialog):
 def test_preview_contains_spec_path_on_init(dialog):
     preview = dialog.get_preview_text()
     assert "run" in preview
-    assert "Results/my_roads.run_spec.json" in preview
+    assert "Results/my_roads.run_spec.json" in _slash(preview)
 
 
 @pytest.mark.unit
@@ -266,17 +271,17 @@ def test_batch_continue_on_error_default_is_true(dialog):
 
 @pytest.mark.unit
 def test_batch_output_dir_default_derives_from_state(dialog):
-    assert dialog._batch_output_dir_var.get() == "Results/my_roads_batch"
+    assert _slash(dialog._batch_output_dir_var.get()) == "Results/my_roads_batch"
 
 
 @pytest.mark.unit
 def test_batch_manifest_default_derives_from_state(dialog):
-    assert dialog._batch_manifest_var.get() == "Results/my_roads.batch_manifest.json"
+    assert _slash(dialog._batch_manifest_var.get()) == "Results/my_roads.batch_manifest.json"
 
 
 @pytest.mark.unit
 def test_batch_summary_default_derives_from_output_dir(dialog):
-    assert dialog._batch_summary_var.get() == "Results/my_roads_batch/batch_summary.json"
+    assert _slash(dialog._batch_summary_var.get()) == "Results/my_roads_batch/batch_summary.json"
 
 
 # ===========================================================================

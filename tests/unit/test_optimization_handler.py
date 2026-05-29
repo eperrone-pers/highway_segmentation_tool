@@ -6,7 +6,6 @@ Verifies that:
 - State flags (is_running, stop_requested) are set correctly before/after hooks.
 """
 
-import threading
 from unittest.mock import MagicMock, patch
 
 import pytest

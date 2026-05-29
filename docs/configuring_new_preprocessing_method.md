@@ -12,7 +12,7 @@ This document describes **how to connect a new preprocessing method to the syste
 - it respects mandatory breakpoint constraints,
 - it displays correctly in the visualization overlay.
 
-We use **Tukey Fences IQR outlier detection** as the concrete example of a preprocessing method.
+We use **Tukey Fences outlier detection** as the concrete example of a preprocessing method.
 
 ---
 
@@ -22,25 +22,13 @@ Highway data collection often produces measurements with **anomalies, outliers, 
 
 The preprocessing framework supports **optional, transparent data quality improvements** that are fully logged and visualized, allowing you to understand exactly what modifications were applied and evaluate their impact on the final segmentation results.
 
-**When can preprocessing occur?** The framework provides **three independent phases** where preprocessing can be applied, with important timing distinctions relative to attribute-based segmentation:
+**When can preprocessing occur?** The framework provides **three independent phases** where preprocessing can be applied:
 
 1. **Pre-gap preprocessing** (before gap analysis): Rare use case for data cleaning that might affect gap detection itself, such as filling small measurement gaps or correcting timestamps.
+2. **Primary preprocessing** (after gap analysis and initial mandatory-boundary setup): **Most common phase** for data quality improvements. Primary preprocessing operates within framework-provided mandatory boundaries, and this is the recommended phase for most outlier detection and smoothing work.
+3. **Secondary preprocessing** (after additional mandatory-boundary updates): Final polishing phase for conservative adjustments after later route-processing steps. Use this phase for light smoothing or normalization on already constrained data.
 
-2. **Primary preprocessing** (after gaps and **early attribute breaks**): **Most common phase** for data quality improvements.
-   - **Early attribute breaks** are applied **first** to create segments based on **structural characteristics** (e.g., Pavement_Type, Functional_Class, Lanes) that affect data distributions
-   - Primary preprocessing then operates **within** these well-defined segments, enabling accurate per-segment statistics for outlier detection and smoothing
-   - This sequencing ensures preprocessing respects structural boundaries where data characteristics genuinely differ
-
-3. **Secondary preprocessing** (after **late attribute breaks**): Final polishing phase for conservative adjustments after all mandatory boundaries are established.
-   - **Late attribute breaks** are applied **after** primary preprocessing to create **administrative boundaries** (e.g., County, District, Maintenance_Zone) for final reporting
-   - These boundaries don't affect preprocessing statistics since they're organizational rather than structural
-   - Secondary preprocessing applies light smoothing or normalization to fully segmented data
-
-**Early vs Late attribute breaks:**
-
-- **Early breaks** → Define preprocessing segments (structural boundaries where data characteristics differ)
-- **Late breaks** → Define analysis segments (administrative boundaries for reporting)
-- This two-stage approach ensures **statistical accuracy** (preprocessing per structure type) while supporting **administrative segmentation** (final reporting boundaries)
+For preprocessing method authors, the practical rule is unchanged across phases: consume `route_analysis.mandatory_breakpoints` as immutable constraints, regardless of how they were produced upstream.
 
 Each preprocessing phase is optional and independent—you can use one, multiple, or none depending on your data quality needs. Most preprocessing methods target the **primary phase**, where structural segment boundaries are clearly defined but administrative segmentation and final analysis haven't begun.
 
@@ -109,7 +97,7 @@ The preprocessing framework provides **three independent phases** where preproce
                      │
                      ▼
 ┌───────────────────────────────────────────────────────────────────────┐
-│ 5. EARLY ATTRIBUTE BREAKS                                             │
+│ 5. EARLY ATTRIBUTE BREAKS (optional)                                  │
 │    Configuration: input.early_attribute_columns                       │
 │    - Early set of attribute-based breakpoints                         │
 │    - Examples: Pavement_Type, Functional_Class, Lanes                 │
@@ -133,7 +121,7 @@ The preprocessing framework provides **three independent phases** where preproce
                      │
                      ▼
 ┌───────────────────────────────────────────────────────────────────────┐
-│ 7. LATE ATTRIBUTE BREAKS                                              │
+│ 7. LATE ATTRIBUTE BREAKS (optional)                                   │
 │    Configuration: input.late_attribute_columns                        │
 │    - Late set of attribute-based breakpoints                          │
 │    - Examples: County, District, Maintenance_Zone                     │
@@ -192,18 +180,14 @@ Each preprocessing method returns a `PreprocessingResult` containing:
 ```python
 @dataclass
 class PreprocessingResult:
-    method_name: str                          # User-facing display name
-    method_key: str                           # Internal identifier
-    route_id: str                             # Which route was processed
-    modifications_applied: List[DataModification]  # Complete modification log
-    input_parameters: Dict[str, Any]          # Configuration used
-    statistics: Dict[str, Any]                # Summary metrics
-    processed_route_analysis: RouteAnalysis   # Modified RouteAnalysis object
-    processing_time: Optional[float] = None   # Seconds elapsed
-    warnings: Optional[List[str]] = None      # Any issues encountered
+  processed_route_analysis: RouteAnalysis      # Modified RouteAnalysis object
+  modification_log: List[DataModification]     # Complete modification log
+  preprocessing_metadata: Dict[str, Any]       # Parameters, stats, summary details
+  original_y_values: List[float]               # Original Y values for comparison
+  modifications_summary: str                   # Human-readable one-line summary
 ```
 
-**The modification log** (`modifications_applied`) contains every data change:
+**The modification log** (`modification_log`) contains every data change:
 
 ```python
 @dataclass
@@ -267,7 +251,7 @@ Individual preprocessing methods decide **how to use these API operations**:
 2. Method calls API methods: `ctx.remove_point(...)`, `ctx.modify_y_value(...)`
 3. Context automatically creates `DataModification` entries with timestamp
 4. Method retrieves log: `ctx.get_modification_log()`
-5. Method includes log in `PreprocessingResult.modifications_applied`
+5. Method includes log in `PreprocessingResult.modification_log`
 
 **Developer benefit:** You focus on algorithm logic; logging happens automatically.
 
@@ -288,25 +272,20 @@ The preprocessing system follows the same architecture as the analysis method fr
 
 ```mermaid
 flowchart TD
-    GUI[GUI preprocessing dropdown] -->|method_key| PM[ParameterManager / UIBuilder]
-    PM -->|method_config.parameters| UI[Dynamic parameter widgets + validation]
-
-    GUI -->|Start Analysis| OC[OptimizationController]
-    OC -->|preprocessing_config| PP[Preprocessing Pipeline]
-    
-    PP -->|for each phase| CFG[config: PREPROCESSING_METHODS]
-    CFG -->|method_class_path| IMPORT[import + instantiate method]
-    IMPORT --> CALL[method.process]
-    
-    CALL --> CTX[DataModificationContext]
-    CTX -->|automatic logging| MOD[Modification Log]
-    
-    CALL --> PR[PreprocessingResult]
-    PR --> RA[Modified RouteAnalysis]
-    
-    RA --> ANALYSIS[Analysis Method Execution]
-    ANALYSIS --> JSON[JSON Export with preprocessing metadata]
-    JSON --> VIZ[Visualization Overlay]
+  GUI["GUI preprocessing dropdown"] --> PM["ParameterManager and UIBuilder"];
+  PM --> UI["Dynamic parameter widgets and validation"];
+  GUI --> OC["OptimizationController"];
+  OC --> PP["Preprocessing pipeline"];
+  PP --> CFG["config PREPROCESSING_METHODS"];
+  CFG --> IMPORT["Import and instantiate method"];
+  IMPORT --> CALL["method process"];
+  CALL --> CTX["DataModificationContext"];
+  CTX --> MOD["Modification log"];
+  CALL --> PR["PreprocessingResult"];
+  PR --> RA["Modified RouteAnalysis"];
+  RA --> ANALYSIS["Analysis method execution"];
+  ANALYSIS --> JSON["JSON export with preprocessing metadata"];
+  JSON --> VIZ["Visualization overlay"];
 ```
 
 **Config-driven dispatch:**
@@ -320,39 +299,21 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    START[Route Data Loaded] --> PREGAP{Pre-gap preprocessing?}
-    PREGAP -->|No| GAP[Gap Analysis]
-    PREGAP -->|Yes| PREGAP_PROC[Pre-gap Method]
-    PREGAP_PROC --> GAP
-    
-    GAP --> ATTR1[Early Attribute Breaks]
-    ATTR1 --> PRIMARY{Primary preprocessing?}
-    
-    PRIMARY -->|Yes - Tukey Fences| TF[TukeyFencesPreprocessor]
-    PRIMARY -->|No| ATTR2
-    
-    TF --> CTX[DataModificationContext<br/>with mandatory_breakpoints]
-    CTX --> SEGMENTS[Iterate through segments<br/>defined by mandatory breaks]
-    
-    SEGMENTS --> STATS[Calculate per-segment<br/>Q1, Q3, IQR]
-    STATS --> OUTLIERS[Identify outliers<br/>beyond k*IQR fences]
-    
-    OUTLIERS --> ACTION{Action parameter}
-    ACTION -->|remove| REMOVE[ctx.remove_point]
-    ACTION -->|cap| CAP[ctx.modify_y_value<br/>modification_type='y_value_capped']
-    ACTION -->|interpolate| INTERP[ctx.modify_y_value<br/>modification_type='point_interpolated']
-    
-    REMOVE --> RESULT[PreprocessingResult]
-    CAP --> RESULT
-    INTERP --> RESULT
-    
-    RESULT --> ATTR2[Late Attribute Breaks]
-    ATTR2 --> SECONDARY{Secondary preprocessing?}
-    SECONDARY -->|No| FINAL[Finalized RouteAnalysis]
-    SECONDARY -->|Yes| SECONDARY_PROC[Secondary Method]
-    SECONDARY_PROC --> FINAL
-    
-    FINAL --> ANALYSIS[Analysis Method]
+  START["Route data loaded"] --> PREGAP["Pre gap preprocessing"];
+  PREGAP --> GAP["Gap analysis"];
+  GAP --> ATTR1["Early attribute breaks optional"];
+  ATTR1 --> PRIMARY["Primary preprocessing"];
+  PRIMARY --> TF["TukeyFencesPreprocessor"];
+  TF --> CTX["DataModificationContext with mandatory breakpoints"];
+  CTX --> SEGMENTS["Iterate through segments"];
+  SEGMENTS --> STATS["Calculate Q1 Q3 and IQR per segment"];
+  STATS --> OUTLIERS["Identify outliers beyond k times IQR"];
+  OUTLIERS --> ACTION["Action parameter remove cap interpolate"];
+  ACTION --> RESULT["PreprocessingResult"];
+  RESULT --> ATTR2["Late attribute breaks optional"];
+  ATTR2 --> SECONDARY["Secondary preprocessing"];
+  SECONDARY --> FINAL["Finalized RouteAnalysis"];
+  FINAL --> ANALYSIS["Analysis method"];
 ```
 
 **Key points:**
@@ -418,51 +379,15 @@ flowchart TD
 
 **Example:** After aggressive outlier removal (primary), apply light smoothing (secondary) to reduce noise.
 
-### 2.4 Two-stage attribute breaks
+### 2.4 Mandatory breakpoint handling (developer view)
 
-The system supports **two independent sets** of attribute-based mandatory breakpoints:
+Preprocessing methods should be implemented against a single contract:
 
-#### Early attribute breaks (Step 5) - Before primary preprocessing
+- `route_analysis.mandatory_breakpoints` already contains all mandatory boundaries known at that phase.
+- Your method must preserve them (do not move/remove them).
+- Your method does not need to distinguish whether a breakpoint originated from gaps, route edges, or prior route-processing/preprocessing steps.
 
-**Configuration:** `input.early_attribute_columns` (list of column names)  
-**Examples:** `["Pavement_Type", "Functional_Class", "Lanes"]`  
-
-**Purpose:** Separate data by **structural characteristics** that affect data distributions
-
-**Why before primary preprocessing:**
-
-- Different structures (concrete vs asphalt) have different IRI distributions
-- Computing global statistics across different pavement types is statistically invalid
-- Primary preprocessing (outlier detection) needs per-segment statistics
-
-**When change is detected:**
-
-1. Add mandatory breakpoint at x-value where attribute changes
-2. Prevents analysis from spanning across change
-3. Primary preprocessing operates within each segment independently
-
-#### Late attribute breaks (Step 7) - After primary preprocessing
-
-**Configuration:** `input.late_attribute_columns` (list of column names)  
-**Examples:** `["County", "District", "Maintenance_Zone"]`  
-
-**Purpose:** Final segmentation by **administrative or management boundaries**
-
-**Why after primary preprocessing:**
-
-- These boundaries don't affect data quality statistics
-- Applied after statistical outlier detection
-- Creates final analysis segments
-
-**Example workflow:**
-
-1. Gaps detected (no data collection periods)
-2. Early attribute breaks: Pavement_Type changes (concrete → asphalt)
-3. Primary preprocessing: Remove outliers per pavement type
-4. Late attribute breaks: County boundaries
-5. Analysis: Optimize breakpoints within final segments
-
-This two-stage approach ensures **statistical accuracy** (preprocessing per structure type) while supporting **administrative segmentation** (final reporting boundaries).
+If you need provenance details for diagnostics or reporting, refer to the developer guide and JSON schema documentation.
 
 ---
 
@@ -485,7 +410,7 @@ When you add a new preprocessing method, the system expects you to provide **fou
 
 3. **Method implementation** deriving from `PreprocessingMethodBase`
    - Located in `src/preprocessing/methods/<your_method>.py`
-   - Implements required interface: `method_name`, `method_key`, `process()`
+   - Implements required interface: `preprocess_name`, `preprocess_key`, `process()`
    - Uses `DataModificationContext` for all data changes
    - Returns `PreprocessingResult`
 
@@ -630,26 +555,26 @@ All preprocessing parameters use the same parameter system as analysis methods:
 TUKEY_FENCES_PARAMETERS = [
     NumericParameter(
         name="k_factor",
-        display_name="IQR Multiplier (k)",
-        description="Multiplier for IQR to define fences. Lower values (e.g., 1.5) are more aggressive, higher values (e.g., 3.0) are more conservative.",
-        group="outlier_detection",
+        display_name="K Factor",
+        description="IQR multiplier for fence bounds (1.5=mild outliers, 3.0=extreme outliers)",
+      group="01_detection",
         order=1,
         default_value=1.5,
-        min_value=0.1,
+        min_value=0.5,
         max_value=5.0,
         decimal_places=1
     ),
     SelectParameter(
         name="action",
         display_name="Outlier Action",
-        description="How to handle detected outliers: remove points, cap to fence boundaries, or interpolate from neighbors.",
-        group="outlier_detection",
+        description="How to handle detected outliers",
+      group="02_handling",
         order=2,
         default_value="remove",
         options=[
-            ("Remove outlier points", "remove"),
-            ("Cap to fence boundary", "cap"),
-            ("Interpolate from neighbors", "interpolate")
+          ("Remove", "remove"),
+          ("Cap to Fence", "cap"),
+          ("Interpolate", "interpolate")
         ]
     )
 ]
@@ -684,7 +609,7 @@ Parameters support **logical grouping** for UI organization:
 ```python
 NumericParameter(
     name="k_factor",
-    group="outlier_detection",  # ← Logical group
+  group="01_detection",       # ← Logical group key (sorted alphabetically)
     order=1,                     # ← Display order within group
     # ...
 )
@@ -697,11 +622,11 @@ NumericParameter(
 - Professional appearance
 - Consistent with analysis method UI
 
-**UI rendering:**
+**UI rendering (treeview table):**
 
-- Parameters with same `group` are displayed in a section
-- Within each group, parameters sorted by `order`
-- Group names become section headers
+- Parameters are sorted by `group` first (alphabetical)
+- Within each group, parameters are sorted by `order`
+- If you want groups to appear in a specific sequence, use sortable prefixes in group names (for example: `01_detection`, `02_handling`, `03_output`)
 
 ### Step 3 — Register your method in the config registry
 
@@ -717,8 +642,8 @@ TUKEY_FENCES_PARAMETERS = [...]
 PREPROCESSING_METHODS = [
     PreprocessingMethodConfig(
         method_key="tukey_fences",
-        display_name="Tukey Fences IQR Outlier Detection",
-        description="Detects and handles outliers using Interquartile Range (IQR) method with Tukey fences. Operates per-segment for heterogeneous routes.",
+      display_name="Tukey Fences Outlier Detection",
+      description="IQR-based outlier detection with configurable thresholds and actions",
         parameters=TUKEY_FENCES_PARAMETERS,
         method_class_path="preprocessing.methods.tukey_fences.TukeyFencesPreprocessor"
     ),
@@ -742,11 +667,11 @@ PREPROCESSING_METHODS = [
 
 **How it works:**
 
-1. User selects "Tukey Fences IQR Outlier Detection" in GUI
+1. User selects "Tukey Fences Outlier Detection" in GUI
 2. Controller retrieves config entry by `method_key="tukey_fences"`
 3. Controller dynamically imports class from `method_class_path`
 4. Controller instantiates: `TukeyFencesPreprocessor()`
-5. Controller calls: `instance.process(route_analysis, x_column, y_column, parameters)`
+5. Controller calls: `instance.process(route_analysis, x_column, y_column, log_callback=log_callback, **parameters)`
 
 **No controller changes needed** - dispatch is 100% config-driven.
 
@@ -794,12 +719,12 @@ from preprocessing.base import PreprocessingMethodBase, PreprocessingResult
 
 class TukeyFencesPreprocessor(PreprocessingMethodBase):
     @property
-    def method_name(self) -> str:
+  def preprocess_name(self) -> str:
         """User-facing display name"""
-        return "Tukey Fences IQR Outlier Detection"
+    return "Tukey Fences Outlier Detection"
   
     @property
-    def method_key(self) -> str:
+  def preprocess_key(self) -> str:
         """Internal identifier - must match config registry"""
         return "tukey_fences"
   
@@ -832,8 +757,8 @@ class TukeyFencesPreprocessor(PreprocessingMethodBase):
 
 **Key points:**
 
-- **`method_name`**: Must be user-friendly (used in UI/reports)
-- **`method_key`**: Must exactly match config registry entry
+- **`preprocess_name`**: Must be user-friendly (used in UI/reports)
+- **`preprocess_key`**: Must exactly match config registry entry
 - **`process()` signature**: Standardized across all methods
   - Takes full `RouteAnalysis` (not just DataFrame)
   - Receives gap segments, mandatory breakpoints, etc.
@@ -1168,54 +1093,44 @@ def process(self, route_analysis, x_column, y_column, log_callback=None, **param
     )
   
     # Build complete result
+    modification_log = ctx.get_modification_log()
+    stats = {
+      'total_modifications': len(modification_log),
+      'points_removed': sum(1 for m in modification_log if m.modification_type == 'point_removed'),
+      'points_modified': sum(
+        1 for m in modification_log if m.modification_type in ['y_value_capped', 'point_interpolated']
+      ),
+      'outlier_count': total_outlier_count,
+      'segments_processed': len(mandatory_bps) - 1,
+    }
+
     return PreprocessingResult(
-        method_name=self.method_name,
-        method_key=self.method_key,
-        route_id=route_analysis.route_id,
-  
-        # Modification log (automatic from context)
-        modifications_applied=ctx.get_modification_log(),
-  
-        # Input parameters (reproducibility)
-        input_parameters={
-            'k_factor': k_factor,
-            'action': action,
-            'gap_threshold': route_analysis.gap_threshold,
+      processed_route_analysis=processed_route_analysis,
+      modification_log=modification_log,
+      preprocessing_metadata={
+        'method_key': self.preprocess_key,
+        'method_name': self.preprocess_name,
+        'input_parameters': {
+          'k_factor': k_factor,
+          'action': action,
+          'gap_threshold': route_analysis.gap_threshold,
         },
-  
-        # Summary statistics
-        statistics={
-            'total_modifications': len(ctx.get_modification_log()),
-            'points_removed': sum(1 for m in ctx.get_modification_log()
-                                 if m.modification_type == 'point_removed'),
-            'points_modified': sum(1 for m in ctx.get_modification_log()
-                                  if m.modification_type in ['y_value_capped', 'point_interpolated']),
-            'outlier_count': total_outlier_count,
-            'segments_processed': len(mandatory_bps) - 1,
-        },
-  
-        # Modified RouteAnalysis
-        processed_route_analysis=processed_route_analysis,
-  
-        # Optional metadata
-        processing_time=time.time() - start_time,
-        warnings=warnings if warnings else None
+        'statistics': stats,
+        'processing_time': time.time() - start_time,
+        'warnings': warnings,
+      },
+      original_y_values=route_analysis.route_data[y_column].astype(float).tolist(),
+      modifications_summary=f"Modified {len(modification_log)} point(s)",
     )
 ```
 
 **Required fields:**
 
-- **`method_name`, `method_key`**: Identity (used in results/UI)
-- **`route_id`**: Which route was processed
-- **`modifications_applied`**: Complete log from context
-- **`input_parameters`**: Configuration used (for reproducibility)
-- **`statistics`**: Summary metrics (counts, totals, etc.)
 - **`processed_route_analysis`**: Modified RouteAnalysis object
-
-**Optional fields:**
-
-- **`processing_time`**: Performance tracking
-- **`warnings`**: Any issues encountered (e.g., "Could not interpolate 3 boundary outliers")
+- **`modification_log`**: Complete log from context
+- **`preprocessing_metadata`**: Method metadata, parameters, and summary stats
+- **`original_y_values`**: Original y-series for comparison/overlay
+- **`modifications_summary`**: Human-readable summary line
 
 **Best practices:**
 
@@ -1312,25 +1227,25 @@ IRI vs Milepoint (with preprocessing overlay)
 
 #### 5.2 Overlay uses modification logs
 
-The visualization reads `PreprocessingResult.modifications_applied` to build the overlay:
+The visualization reads `preprocessing_modification_log` from route results JSON to build the overlay:
 
 ```python
 # Pseudocode from visualization_ui.py
 
-for modification in preprocessing_result.modifications_applied:
-    if modification.modification_type == 'point_removed':
+for modification in route_results.get('preprocessing_modification_log', []):
+  if modification.get('modification_type') == 'point_removed':
         # Plot red point at original location
-        ax.scatter(modification.x_value,
-                  modification.original_y_value,
+    ax.scatter(modification.get('x_value'),
+          modification.get('original_y_value'),
                   color='red', marker='o', label='Removed outlier')
   
-    elif modification.modification_type in ['y_value_capped', 'point_interpolated']:
+  elif modification.get('modification_type') in ['y_value_capped', 'point_interpolated']:
         # Plot red point (original) and cyan point (corrected)
-        ax.scatter(modification.x_value,
-                  modification.original_y_value,
+    ax.scatter(modification.get('x_value'),
+          modification.get('original_y_value'),
                   color='red', marker='o', label='Original outlier')
-        ax.scatter(modification.x_value,
-                  modification.new_y_value,
+    ax.scatter(modification.get('x_value'),
+          modification.get('new_y_value'),
                   color='cyan', marker='D', label='Corrected value')
 ```
 
@@ -1402,12 +1317,11 @@ Copy this checklist when implementing a new preprocessing method:
   - [ ] Handle edge cases (segments with insufficient data)
 
 - [ ] **Return PreprocessingResult**
-  - [ ] Include `method_name`, `method_key`, `route_id`
-  - [ ] Include complete `modifications_applied` log
-  - [ ] Include `input_parameters` (all configuration used)
-  - [ ] Include `statistics` (summary metrics)
   - [ ] Include `processed_route_analysis` (use helper function)
-  - [ ] Optionally include `processing_time` and `warnings`
+  - [ ] Include complete `modification_log`
+  - [ ] Include `preprocessing_metadata` with `method_key`, `method_name`, parameters, and stats
+  - [ ] Include `original_y_values` for overlay/comparison
+  - [ ] Include concise `modifications_summary`
 
 ### Testing
 
@@ -1839,6 +1753,10 @@ if len(seg_y_values) < MIN_POINTS_FOR_IQR:
 
 ## 7) Appendix A — Preprocessing Method Template
 
+AI usage note:
+
+- If you use this template as an AI prompt, ask the model to preserve the `process(...)` signature and the `PreprocessingResult` field names exactly, and only replace placeholders/algorithm steps.
+
 Complete starter code for implementing a new preprocessing method:
 
 ```python
@@ -1886,12 +1804,12 @@ class YourMethodPreprocessor(PreprocessingMethodBase):
     """
   
     @property
-    def method_name(self) -> str:
+    def preprocess_name(self) -> str:
         """User-facing display name"""
         return "<Your Method Name>"
   
     @property
-    def method_key(self) -> str:
+    def preprocess_key(self) -> str:
         """Internal identifier - must match config registry"""
         return "your_method_key"
   
@@ -2000,40 +1918,33 @@ class YourMethodPreprocessor(PreprocessingMethodBase):
         )
   
         # 7. Build result with complete metadata
+        stats = {
+          'total_modifications': total_modifications,
+          'points_removed': sum(1 for m in modification_log if m.modification_type == 'point_removed'),
+          'points_modified': sum(
+            1 for m in modification_log if m.modification_type in ['y_value_capped', 'point_interpolated']
+          ),
+          'segments_processed': len(mandatory_bps) - 1,
+          'segments_skipped': len([w for w in warnings if 'skipped' in w]),
+        }
+
         return PreprocessingResult(
-            method_name=self.method_name,
-            method_key=self.method_key,
-            route_id=route_analysis.route_id,
-  
-            # Modification log (automatic from context)
-            modifications_applied=modification_log,
-  
-            # Input parameters (for reproducibility)
-            input_parameters={
-                'param1': param1,
-                'param2': param2,
-                'gap_threshold': route_analysis.gap_threshold,
-                # Include all relevant configuration
+          processed_route_analysis=processed_route_analysis,
+          modification_log=modification_log,
+          preprocessing_metadata={
+            'method_key': self.preprocess_key,
+            'method_name': self.preprocess_name,
+            'input_parameters': {
+              'param1': param1,
+              'param2': param2,
+              'gap_threshold': route_analysis.gap_threshold,
             },
-  
-            # Summary statistics
-            statistics={
-                'total_modifications': total_modifications,
-                'points_removed': sum(1 for m in modification_log
-                                     if m.modification_type == 'point_removed'),
-                'points_modified': sum(1 for m in modification_log
-                                      if m.modification_type in ['y_value_capped', 'point_interpolated']),
-                'segments_processed': len(mandatory_bps) - 1,
-                'segments_skipped': len([w for w in warnings if 'skipped' in w]),
-                # Add your own statistics
-            },
-  
-            # Modified RouteAnalysis
-            processed_route_analysis=processed_route_analysis,
-  
-            # Optional metadata
-            processing_time=time.time() - start_time,
-            warnings=warnings if warnings else None
+            'statistics': stats,
+            'processing_time': time.time() - start_time,
+            'warnings': warnings,
+          },
+          original_y_values=route_analysis.route_data[y_column].astype(float).tolist(),
+          modifications_summary=f"Modified {total_modifications} point(s)",
         )
 ```
 
@@ -2055,7 +1966,7 @@ YOUR_METHOD_PARAMETERS = [
         name="param1",
         display_name="Parameter 1",
         description="Description of what this parameter controls",
-        group="algorithm_settings",
+      group="01_algorithm_settings",
         order=1,
         default_value=1.0,
         min_value=0.0,
@@ -2066,7 +1977,7 @@ YOUR_METHOD_PARAMETERS = [
         name="param2",
         display_name="Parameter 2",
         description="Choose processing mode",
-        group="algorithm_settings",
+      group="01_algorithm_settings",
         order=2,
         default_value="mode_a",
         options=[
@@ -2152,9 +2063,9 @@ def test_basic_preprocessing():
     )
   
     # Assertions
-    assert result.method_key == "your_method_key"
-    assert len(result.modifications_applied) > 0
-    assert result.statistics['total_modifications'] > 0
+    assert result.preprocessing_metadata['method_key'] == "your_method_key"
+    assert len(result.modification_log) > 0
+    assert result.preprocessing_metadata['statistics']['total_modifications'] > 0
 
 def test_parameter_validation():
     """Test that parameters are correctly applied"""
@@ -2445,57 +2356,34 @@ DataModification(
 
 ---
 
-#### `cap_y_value(x_value: float, bound_value: float, bound_type: str)`
+#### Capping values (use `modify_y_value`)
 
-**Purpose:** Convenience method for capping to boundary
-
-**Parameters:**
-
-- `x_value`: X-coordinate of point to cap
-- `bound_value`: The boundary value to cap to
-- `bound_type`: `"upper"` or `"lower"`
-
-**Behavior:**
-
-- Calls `modify_y_value` internally
-- Automatically generates descriptive reason
-- Sets `modification_type="y_value_capped"`
-
-**Example:**
+`DataModificationContext` does not provide a dedicated `cap_y_value` helper.
+Use `modify_y_value` with an explicit reason and modification type.
 
 ```python
-ctx.cap_y_value(12.5, 161.0, "upper")
-# Equivalent to:
-# ctx.modify_y_value(12.5, 161.0,
-#                    reason="capped to upper fence (161.0)",
-#                    modification_type="y_value_capped")
+ctx.modify_y_value(
+  12.5,
+  161.0,
+  reason="capped to upper fence (161.0)",
+  modification_type="y_value_capped",
+)
 ```
 
 ---
 
-#### `interpolate_y_value(x_value: float, interpolated_value: float)`
+#### Interpolating values (use `modify_y_value`)
 
-**Purpose:** Convenience method for interpolation
-
-**Parameters:**
-
-- `x_value`: X-coordinate of point to interpolate
-- `interpolated_value`: New interpolated y-value
-
-**Behavior:**
-
-- Calls `modify_y_value` internally
-- Automatically sets reason: `"interpolated from neighbors"`
-- Sets `modification_type="point_interpolated"`
-
-**Example:**
+`DataModificationContext` does not provide a dedicated `interpolate_y_value` helper.
+Use `modify_y_value` and mark interpolation explicitly.
 
 ```python
-ctx.interpolate_y_value(12.5, 130.5)
-# Equivalent to:
-# ctx.modify_y_value(12.5, 130.5,
-#                    reason="interpolated from neighbors",
-#                    modification_type="point_interpolated")
+ctx.modify_y_value(
+  12.5,
+  130.5,
+  reason="interpolated from neighbors",
+  modification_type="point_interpolated",
+)
 ```
 
 ### C.3 Retrieval methods
@@ -2543,7 +2431,7 @@ for mod in log:
 ```python
 return PreprocessingResult(
     # ...
-    modifications_applied=ctx.get_modification_log(),
+  modification_log=ctx.get_modification_log(),
     # ...
 )
 ```
@@ -2613,7 +2501,7 @@ Mandatory breakpoints must be preserved for segmentation.
 # Check if point is mandatory before deciding action
 if x_val in route_analysis.mandatory_breakpoints:
     # Can't remove - use alternative
-    ctx.cap_y_value(x_val, fence_value, "upper")
+  ctx.modify_y_value(x_val, fence_value, reason="capped to upper bound", modification_type="y_value_capped")
 else:
     # Safe to remove
     ctx.remove_point(x_val, reason="outlier")
@@ -2628,59 +2516,35 @@ else:
 ```python
 @dataclass
 class PreprocessingResult:
-    method_name: str                          # User-facing name
-    method_key: str                           # Internal identifier
-    route_id: str                             # Which route was processed
-    modifications_applied: List[DataModification]  # Complete modification log
-    input_parameters: Dict[str, Any]          # Configuration used
-    statistics: Dict[str, Any]                # Summary metrics
-    processed_route_analysis: RouteAnalysis   # Modified RouteAnalysis object
-    processing_time: Optional[float] = None   # Seconds elapsed
-    warnings: Optional[List[str]] = None      # Any issues encountered
+  processed_route_analysis: RouteAnalysis      # Modified RouteAnalysis object
+  modification_log: List[DataModification]     # Complete modification log
+  preprocessing_metadata: Dict[str, Any]       # Parameters, stats, summary details
+  original_y_values: List[float]               # Original Y values for comparison
+  modifications_summary: str                   # Human-readable one-line summary
 ```
 
 **Field descriptions:**
 
-- **`method_name`**: User-facing display name (shown in results/UI)
-- **`method_key`**: Must match config registry entry
-- **`route_id`**: Identifies which route was processed (from `route_analysis.route_id`)
-- **`modifications_applied`**: Complete log from `ctx.get_modification_log()`
-- **`input_parameters`**: All configuration used (for reproducibility)
-- **`statistics`**: Summary metrics (counts, totals, rates, etc.)
 - **`processed_route_analysis`**: Modified `RouteAnalysis` object with updated data
-- **`processing_time`**: Optional performance metric (seconds)
-- **`warnings`**: Optional list of warnings/issues (e.g., "3 segments skipped")
+- **`modification_log`**: Complete log from `ctx.get_modification_log()`
+- **`preprocessing_metadata`**: Method metadata including key/name, input parameters, and statistics
+- **`original_y_values`**: Original y-values used for before/after comparison
+- **`modifications_summary`**: Human-readable summary (shown in logs/UI)
 
-### D.2 Optional fields
+### D.2 Where to put optional details
 
-**`processing_time: Optional[float]`**
-
-Performance tracking - recommended for optimization analysis.
-
-```python
-import time
-
-start_time = time.time()
-# ... processing ...
-processing_time = time.time() - start_time
-
-return PreprocessingResult(..., processing_time=processing_time)
-```
-
-**`warnings: Optional[List[str]]`**
-
-Non-fatal issues encountered during processing.
+The dataclass has no optional top-level fields. Put optional information under
+`preprocessing_metadata`.
 
 ```python
-warnings = []
-
-if insufficient_data_segments > 0:
-    warnings.append(f"{insufficient_data_segments} segments skipped: insufficient data")
-
-if boundary_outliers_skipped > 0:
-    warnings.append(f"{boundary_outliers_skipped} boundary outliers not interpolated")
-
-return PreprocessingResult(..., warnings=warnings if warnings else None)
+preprocessing_metadata = {
+  'method_key': self.preprocess_key,
+  'method_name': self.preprocess_name,
+  'input_parameters': {...},
+  'statistics': {...},
+  'processing_time': processing_time,
+  'warnings': warnings,
+}
 ```
 
 ### D.3 DataModification structure
@@ -2776,7 +2640,7 @@ processed_route_analysis = create_processed_route_analysis(
       "preprocessing_results": [
         {
           "phase": "primary",
-          "method_name": "Tukey Fences IQR Outlier Detection",
+          "method_name": "Tukey Fences Outlier Detection",
           "method_key": "tukey_fences",
           "input_parameters": {
             "k_factor": 1.5,

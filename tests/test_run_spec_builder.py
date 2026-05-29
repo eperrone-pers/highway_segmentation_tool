@@ -193,7 +193,7 @@ def test_build_command_for_batch_run_contains_required_args() -> None:
 @pytest.mark.unit
 def test_build_command_for_batch_run_defaults_summary_json() -> None:
     cmd = build_command_for_batch_run("s.json", "d", "Results/out")
-    assert '"Results/out/batch_summary.json"' in cmd
+    assert '"Results/out/batch_summary.json"' in cmd.replace("\\", "/")
 
 
 @pytest.mark.unit

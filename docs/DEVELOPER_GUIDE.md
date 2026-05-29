@@ -14,7 +14,7 @@ The system is designed around three extensibility principles:
 
 - **Config-driven dispatch** — new methods and preprocessing steps are registered in `src/config.py` and imported at runtime. No controller code changes required.
 - **Declarative parameters** — `ParameterDefinition` classes drive both GUI widget rendering and parameter validation from a single declaration.
-- **Standardized result contract** — all analysis methods return `AnalysisResult`; serialization is handled by `AnalysisResult.to_route_result_dict()`, not the caller.
+- **Standardized method contracts** — analysis methods return `AnalysisResult` and preprocessing methods return `PreprocessingResult`, giving both pipelines a consistent handoff contract.
 
 ---
 
@@ -99,20 +99,13 @@ User clicks Start
             │     For each selected route:
             │       1. filter_data_by_route()
             │       2. sort by x_column
-            │
-            │       3a. [preprocessing configured] process_route_with_preprocessing()
-            │             Phase 1 [optional]: pre-gap method applied to raw DataFrame
-            │             Phase 2 [always]:   analyze_route_gaps()
-            │                                   + must_break_columns [optional]
-            │             Phase 3 [optional]: primary method applied to RouteAnalysis
-            │             Phase 4 [optional]: secondary_break_columns applied
-            │             Phase 5 [optional]: secondary method applied to RouteAnalysis
-            │             → (RouteAnalysis, preprocessing_results)
-            │
-            │       3b. [no preprocessing] analyze_route_gaps()
-            │             + must_break_columns      [optional]
-            │             + secondary_break_columns [optional]
-            │             → RouteAnalysis
+            │       3. [optional] pre-gap preprocessing method applied to raw DataFrame
+            │       4. analyze_route_gaps()
+            │            + must_break_columns (UI: Early Attribute Breaks)      [optional]
+            │            + secondary_break_columns (UI: Late Attribute Breaks)   [optional]
+            │       5. [optional] primary preprocessing method applied to RouteAnalysis
+            │       6. [optional] secondary_break_columns (Late Attribute Breaks) applied
+            │       7. [optional] secondary preprocessing method applied to RouteAnalysis
             │
             │       RouteAnalysis carries: route_data, gap_segments, mandatory_breakpoints
             │       → yields (route_id, RouteAnalysis, preprocessing_results)
@@ -190,11 +183,19 @@ route_result = analysis_result.to_route_result_dict()
 
 **Consequence:** new methods that produce output matching an existing shape (single-objective, multi-objective, constrained) need no changes to `to_route_result_dict()`. New output shapes require adding a block there — not in the controller.
 
-### 4.3 Declarative parameters
+### 4.3 PreprocessingResult as the preprocessing contract
+
+All preprocessing methods return `PreprocessingResult` (defined in `preprocessing/base.py`).
+
+This object carries the modified `RouteAnalysis` plus modification traceability data (modification log, metadata, original values, summary). Route preparation collects these per-phase results and passes them forward with each prepared route.
+
+**Consequence:** preprocessing extensions follow one return shape regardless of algorithm internals. Downstream consumers can rely on a stable structure for auditability and visualization support.
+
+### 4.4 Declarative parameters
 
 Method parameters are declared as `ParameterDefinition` instances in `src/config.py`. The same list drives:
 
-- **GUI widget rendering** — `UIBuilder` creates widgets dynamically from the definition (type, bounds, grouping, ordering)
+- **GUI widget rendering** — `UIBuilder` creates widgets dynamically from the definition (type, bounds, table sort metadata). Parameters are shown sorted by `group` (alphabetical), then `order`.
 - **Parameter validation** — `ParameterManager` validates values using the same definition
 - **CLI run spec parsing** — `cli_runner.py` reads and validates run-spec parameters against the same definition
 - **Default values** — methods read defaults from config rather than hardcoding them
@@ -206,22 +207,24 @@ param_defaults = {p.name: p.default_value for p in method_config.parameters}
 alpha = kwargs.get("alpha", param_defaults["alpha"])
 ```
 
-### 4.4 Route preparation ownership
+### 4.5 Route preparation ownership
 
-All route data preparation (gap detection, attribute break analysis, preprocessing pipeline) lives in `route_utils.prepare_routes_for_optimization()`, which calls into `data_loader`. The controller only iterates the returned list:
+All route data preparation (gap detection, attribute break analysis, preprocessing pipeline) lives in `route_utils.prepare_routes_for_optimization()`, which calls into `data_loader`. Naming note: `must_break_columns` corresponds to UI "Early Attribute Breaks" and `secondary_break_columns` corresponds to UI "Late Attribute Breaks". The controller only iterates the returned list:
 
 ```python
 prepared_routes, preprocessed_data = prepare_routes_for_optimization(
     app.data, route_column, selected_routes, x_column, y_column,
     gap_threshold=gap_threshold, preprocessing_config=preprocessing_config,
-    must_break_columns=..., log_callback=app.log_message,
+  must_break_columns=...,           # UI: Early Attribute Breaks
+  secondary_break_columns=...,      # UI: Late Attribute Breaks
+  log_callback=app.log_message,
 )
 
 for route_id, route_analysis, preprocessing_results in prepared_routes:
     result = method.run_analysis(route_analysis, ...)
 ```
 
-### 4.5 Logging conventions
+### 4.6 Logging conventions
 
 | Context | Mechanism | Why |
 | --- | --- | --- |

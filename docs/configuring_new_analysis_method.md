@@ -73,7 +73,7 @@ Analysis methods operate on **preprocessed, segmented route data** and produce o
                      │
                      ▼
 ┌───────────────────────────────────────────────────────────────────────┐
-│ 5. EARLY ATTRIBUTE BREAKS                                             │
+│ 5. EARLY ATTRIBUTE BREAKS (optional)                                  │
 │    Configuration: input.early_attribute_columns                       │
 │    - Early set of attribute-based breakpoints                         │
 │    - Examples: Pavement_Type, Functional_Class, Lanes                 │
@@ -93,7 +93,7 @@ Analysis methods operate on **preprocessed, segmented route data** and produce o
                      │
                      ▼
 ┌───────────────────────────────────────────────────────────────────────┐
-│ 7. LATE ATTRIBUTE BREAKS                                              │
+│ 7. LATE ATTRIBUTE BREAKS (optional)                                   │
 │    Configuration: input.late_attribute_columns                        │
 │    - Late set of attribute-based breakpoints                          │
 │    - Examples: County, District, Maintenance_Zone                     │
@@ -141,21 +141,14 @@ Analysis methods operate on **preprocessed, segmented route data** and produce o
 
 - **Your method receives a `RouteAnalysis` object** that contains:
   - `route_data`: DataFrame with preprocessed data (if preprocessing was enabled)
-  - `mandatory_breakpoints`: Set of x-values where breakpoints are required (gaps, route edges, attribute changes)
+  - `mandatory_breakpoints`: Set of x-values where breakpoints are required
   - `valid_x_values`: List of all valid x-coordinates where breakpoints can be placed
   - `gap_segments`: List of data gaps (periods with no measurements)
   - `preprocessing_results`: List of preprocessing operations applied (if any)
 
-- **Mandatory breakpoints are non-negotiable**: Your method must include these in any solution. They represent:
-  - Gap boundaries (no data collection periods)
-  - Route edges (start and end)
-  - Early attribute change points (structural boundaries like pavement type changes)
-  - Late attribute change points (administrative boundaries like county lines)
+- **Mandatory breakpoints are non-negotiable**: Your method must include these in any solution and must not move or remove them.
 
-- **Understanding Early vs Late attribute breaks**:
-  - **Early attribute breaks** (Step 3 in the UI) are applied **before primary preprocessing** to create segments based on **structural characteristics** like `Pavement_Type`, `Functional_Class`, or `Lanes`. These define the segments within which preprocessing operates, ensuring that outlier detection and data cleaning are performed separately for each structural type (preventing inappropriate statistical mixing across different pavement types, lane configurations, etc.).
-  - **Late attribute breaks** (Step 5 in the UI) are applied **after primary preprocessing** to create **administrative boundaries** like `County`, `District`, or `Maintenance_Zone`. These define the final segment boundaries for analysis and reporting purposes, not for preprocessing statistics.
-  - **Why this matters for your method**: The `mandatory_breakpoints` you receive include both types. Early breaks ensure data within each segment is statistically homogeneous (same structural characteristics), while late breaks ensure your segmentation respects administrative reporting boundaries. Your analysis method optimizes breakpoint placement within these constraints.
+- **Practical rule for method developers**: Treat `mandatory_breakpoints` as immutable framework constraints. They may have been produced by prior gap analysis and/or preprocessing pipeline steps, but your analysis implementation does not need to distinguish their origin.
 
 - **Data is already cleaned**: If preprocessing was configured, outliers may have been removed, values capped, or data smoothed. Your method works with the final processed data.
 
@@ -207,20 +200,17 @@ The application is split into:
 
 ```mermaid
 flowchart TD
-  GUI[GUI method dropdown] -->|method_key| PM[ParameterManager / UIBuilder]
-  PM -->|method_config.parameters| UI[Dynamic parameter widgets + validation]
-
-  GUI -->|Start| OC[OptimizationController]
-    OC -->|method_key| CFG[config: OPTIMIZATION_METHODS]
-    CFG -->|method_class_path| IMPORT[import + instantiate method]
-    IMPORT --> CALL[method.run_analysis]
-    CALL --> AR[AnalysisResult]
-
-  AR --> J[ExtensibleJsonResultsManager.save_analysis_results]
-  J --> JSON[Schema JSON file]
-
-  JSON --> VIZ[Enhanced visualization]
-    VIZ -->|is_multi_objective_method| LAYOUT[layout: pareto + segmentation OR segmentation only]
+    GUI["GUI method dropdown"] --> PM["ParameterManager and UIBuilder"];
+    PM --> UI["Dynamic parameter widgets and validation"];
+    GUI --> OC["OptimizationController"];
+    OC --> CFG["config OPTIMIZATION_METHODS"];
+    CFG --> IMPORT["Import and instantiate method"];
+    IMPORT --> CALL["method run_analysis"];
+    CALL --> AR["AnalysisResult"];
+    AR --> J["ExtensibleJsonResultsManager save analysis results"];
+    J --> JSON["Schema JSON file"];
+    JSON --> VIZ["Enhanced visualization"];
+    VIZ --> LAYOUT["Pareto and segmentation or segmentation only"];
 ```
 
 ---
@@ -231,18 +221,15 @@ This diagram focuses on the **AASHTO CDA** method and the configuration points i
 
 ```mermaid
 flowchart TD
-    CFG[src/config.py] -->|AASHTO_CDA_PARAMETERS| PARAMS[AASHTO_CDA_PARAMETERS]
-    CFG -->|OPTIMIZATION_METHODS entry| REG[OptimizationMethodConfig:<br/>method_key=aashto_cda<br/>return_type=single_objective<br/>method_class_path set]
-
-    GUI[GUI dropdown] -->|method_key=aashto_cda| OC[OptimizationController]
-    OC -->|resolve method_class_path| CALL[AashtoCdaMethod.run_analysis]
-
-    CALL -->|reads defaults from config| DEFAULTS[get_optimization_method aashto_cda<br/>param_defaults]
-    CALL --> AR[AnalysisResult:<br/>all_solutions=list]
-
-    AR --> JSON[ExtensibleJsonResultsManager.save_analysis_results]
-    JSON --> VIZ[Enhanced visualization]
-    VIZ -->|return_type=single_objective| LAYOUT[segmentation view only]
+    CFG["src config py"] --> PARAMS["AASHTO CDA parameters"];
+    CFG --> REG["OptimizationMethodConfig method key aashto cda"];
+    GUI["GUI dropdown"] --> OC["OptimizationController"];
+    OC --> CALL["AashtoCdaMethod run analysis"];
+    CALL --> DEFAULTS["get optimization method defaults"];
+    CALL --> AR["AnalysisResult all solutions list"];
+    AR --> JSON["ExtensibleJsonResultsManager save analysis results"];
+    JSON --> VIZ["Enhanced visualization"];
+    VIZ --> LAYOUT["Segmentation view only"];
 ```
 
 ---
@@ -314,7 +301,7 @@ Each method registered in `OPTIMIZATION_METHODS` is an `OptimizationMethodConfig
 
 Design note (core extensibility principle):
 
-- Parameter definitions are intended to be primarily **declarative** (name, defaults, validation rules, UI grouping).
+- Parameter definitions are intended to be primarily **declarative** (name, defaults, validation rules, table sorting metadata).
 - The GUI renders and edits parameters dynamically using `UIBuilder`/`ParameterManager` based on the parameter list.
 - The `config.py` module is kept safe to import in non-GUI contexts (tests/headless) by avoiding importing `tkinter` at import time. Any widget helper methods on parameter definitions perform `tkinter` imports lazily when called.
 
@@ -323,7 +310,8 @@ All method parameters are declared using `ParameterDefinition` subclasses. Commo
 - `name` (str): Key used in parameter dicts and passed into methods (e.g., `"alpha"`, `"population_size"`).
 - `display_name` (str): UI label text.
 - `description` (str): Help text.
-- `group` (str): Logical group name used to organize dynamic UI sections.
+- `group` (str): Group key used as the first table sort key (alphabetical).
+  - If you want specific groups to appear first, use sortable prefixes (for example: `01_statistical_analysis`, `04_segment_constraints`, `07_processing`).
 - `order` (int): Sort order within a group.
 - `default_value` (Any): Default used for UI initialization and fallback.
 - `required` (bool): Whether the parameter must be present.
@@ -346,8 +334,8 @@ Parameter types available in `src/config.py`:
 - `NumericParameter`
   - Additional fields: `min_value`, `max_value`, `decimal_places`, `widget_width`.
   - Validation behavior:
-    - Enforces bounds if `min_value`/`max_value` are set.
-    - If `decimal_places == 0`, the value must be an integer.
+  - Enforces bounds if `min_value`/`max_value` are set.
+  - If `decimal_places == 0`, the value must be an integer.
   - **Example:**
 
     ```python
@@ -355,7 +343,7 @@ Parameter types available in `src/config.py`:
         name="threshold",
         display_name="Detection Threshold",
         description="Sensitivity for change detection (0.0-1.0)",
-        group="detection",
+        group="01_detection",
         order=1,
         default_value=0.5,
         min_value=0.0,
@@ -368,8 +356,8 @@ Parameter types available in `src/config.py`:
   - Like `NumericParameter`, but also accepts `None`.
   - Additional fields: `none_text` (what the UI shows for `None`).
   - Validation behavior:
-    - `None` is always valid.
-    - Otherwise, bounds and integer-ness rules apply.
+  - `None` is always valid.
+  - Otherwise, bounds and integer-ness rules apply.
   - **Example:**
 
     ```python
@@ -377,7 +365,7 @@ Parameter types available in `src/config.py`:
         name="max_segments",
         display_name="Max Segments",
         description="Maximum number of segments (None=unlimited)",
-        group="constraints",
+        group="06_constraints",
         order=2,
         default_value=None,
         min_value=2,
@@ -390,7 +378,7 @@ Parameter types available in `src/config.py`:
 - `SelectParameter`
   - Additional field: `options: List[Tuple[str, Any]]` where each tuple is `(display_text, value)`.
   - Validation behavior:
-    - The value must match one of the `value` entries in `options`.
+  - The value must match one of the `value` entries in `options`.
   - **Example:**
 
     ```python
@@ -398,7 +386,7 @@ Parameter types available in `src/config.py`:
         name="error_method",
         display_name="Error Estimation Method",
         description="Statistical method for estimating error",
-        group="statistical",
+        group="01_statistical_analysis",
         order=1,
         default_value="mad",
         options=[
@@ -413,12 +401,12 @@ Parameter types available in `src/config.py`:
   - Use when a method needs the user to pick an additional input column (beyond `route`, `x`, and `y`).
   - Stored value is the selected column *header name* (string), not the data.
   - UI behavior:
-    - The widget is rendered as a dropdown populated from the currently loaded CSV headers (same source as the X/Y dropdowns).
-    - If the user loads a different file, the available header list changes accordingly.
+  - The widget is rendered as a dropdown populated from the currently loaded CSV headers (same source as the X/Y dropdowns).
+  - If the user loads a different file, the available header list changes accordingly.
   - Validation behavior:
-    - Basic required/non-empty validation is declarative.
-    - When CSV headers are available, the app additionally validates that the selected name exists in the loaded file.
-    - Any deeper validation (numeric vs categorical, missing values, domain rules) should be performed by the method implementation.
+  - Basic required/non-empty validation is declarative.
+  - When CSV headers are available, the app additionally validates that the selected name exists in the loaded file.
+  - Any deeper validation (numeric vs categorical, missing values, domain rules) should be performed by the method implementation.
   - **Example:**
 
     ```python
@@ -426,7 +414,7 @@ Parameter types available in `src/config.py`:
         name="weight_column",
         display_name="Weight Column",
         description="Column containing segment weights (optional)",
-        group="data_columns",
+        group="03_data_columns",
         order=3,
         default_value="",
         required=False
@@ -436,7 +424,7 @@ Parameter types available in `src/config.py`:
 - `BoolParameter`
   - Checkbox-style boolean parameter.
   - Validation behavior:
-    - Must be a Python `bool`.
+  - Must be a Python `bool`.
   - **Example:**
 
     ```python
@@ -444,7 +432,7 @@ Parameter types available in `src/config.py`:
         name="enable_diagnostics",
         display_name="Enable Diagnostic Output",
         description="Show detailed processing information",
-        group="processing",
+        group="07_processing",
         order=10,
         default_value=False
     )
@@ -454,18 +442,18 @@ Parameter types available in `src/config.py`:
   - String parameter for text input (single-line or multi-line).
   - Additional fields: `min_length`, `max_length`, `allowed_chars` (regex pattern), `multiline`, `placeholder`.
   - Validation behavior:
-    - If `required=True`, validates non-empty after stripping whitespace.
-    - If `min_length` is set, validates string length is >= `min_length`.
-    - If `max_length` is set, validates string length is <= `max_length`.
-    - If `allowed_chars` is set (regex pattern string), validates the entire string matches the pattern.
+  - If `required=True`, validates non-empty after stripping whitespace.
+  - If `min_length` is set, validates string length is >= `min_length`.
+  - If `max_length` is set, validates string length is <= `max_length`.
+  - If `allowed_chars` is set (regex pattern string), validates the entire string matches the pattern.
   - UI behavior:
-    - Renders as single-line `Entry` widget if `multiline=False` (default).
-    - Renders as multi-line `Text` widget if `multiline=True`.
-    - Displays `placeholder` text when empty (if provided).
+  - Renders as single-line `Entry` widget if `multiline=False` (default).
+  - Renders as multi-line `Text` widget if `multiline=True`.
+  - Displays `placeholder` text when empty (if provided).
   - **Example use cases:**
-    - Custom identifiers or labels that must follow naming conventions (`allowed_chars`)
-    - Comments or descriptions requiring multiple lines (`multiline=True`)
-    - Analysis notes or metadata fields
+  - Custom identifiers or labels that must follow naming conventions (`allowed_chars`)
+  - Comments or descriptions requiring multiple lines (`multiline=True`)
+  - Analysis notes or metadata fields
   - **Example:**
 
     ```python
@@ -473,7 +461,7 @@ Parameter types available in `src/config.py`:
         name="analysis_label",
         display_name="Analysis Label",
         description="Custom identifier for this analysis run (alphanumeric, underscore, hyphen only)",
-        group="metadata",
+        group="09_metadata",
         order=1,
         default_value="baseline_analysis",
         min_length=3,
@@ -544,53 +532,19 @@ else:
     weights = None
 ```
 
-### 3.1.2 Framework-level must-break columns (attribute-driven mandatory breakpoints)
+### 3.1.2 Framework-level mandatory breakpoint inputs
 
-Separately from *method parameters*, the application supports a framework-level setting that forces mandatory breakpoints whenever selected attribute values change.
+Some mandatory breakpoints can be generated by framework-level route-processing settings (for example, prior gap/attribute processing) outside your method's parameter list.
 
-- **Concept**: `must_break_columns` is a list of input column headers (strings).
-- **Behavior**: when the value in any of these columns changes along the x-axis, the framework inserts a **mandatory breakpoint** (the analysis cannot span across that change).
-- **Where it is configured**:
-  - **GUI**: the user selects Must-Break Columns in the main app.
-  - **CLI run spec**: `input.must_break_columns` (optional array of strings).
-- **Where it appears in results JSON** (when set):
-  - `input_parameters.route_processing.must_break_columns` (only present when configured)
-  - `route_results[*].input_data_analysis.attribute_break_analysis` (per-route analysis/diagnostics)
+For analysis method authors, the rule stays simple:
 
-**Example output** (when `must_break_columns=["LANE_COUNT", "SURFACE_TYPE"]` is configured):
+- do not model these as method parameters,
+- consume `RouteAnalysis.mandatory_breakpoints` as provided, and
+- optimize only within those fixed boundaries.
 
-```json
-{
-  "input_parameters": {
-    "route_processing": {
-      "must_break_columns": ["LANE_COUNT", "SURFACE_TYPE"]
-    }
-  },
-  "route_results": [
-    {
-      "route_id": "I-40",
-      "input_data_analysis": {
-        "attribute_break_analysis": {
-          "detected_breaks": [1.5, 3.2, 5.8],
-          "break_reasons": {
-            "1.5": ["LANE_COUNT: 2 -> 4"],
-            "3.2": ["SURFACE_TYPE: 'Asphalt' -> 'Concrete'"],
-            "5.8": ["LANE_COUNT: 4 -> 2", "SURFACE_TYPE: 'Concrete' -> 'Asphalt'"]
-          },
-          "total_attribute_breaks": 3
-        }
-      }
-    }
-  ]
-}
-```
+Detailed breakpoint provenance and reporting fields are covered in the developer guide.
 
-Design note:
-
-- This is intentionally **not** a `ParameterDefinition` in a method’s parameter list.
-- Methods receive a `RouteAnalysis` that already includes mandatory breakpoints; methods should treat these as non-negotiable route boundaries.
-
-#### `ObjectivePlotConfig` (multi-objective plotting)
+### 3.1.3 ObjectivePlotConfig (multi-objective plotting)
 
 For multi-objective methods, `objective_plot_configs` can define how each objective is displayed in the Pareto plot.
 
@@ -653,13 +607,13 @@ AASHTO_CDA_PARAMETERS = [
     NumericParameter(
         name="alpha", display_name="Significance Level",
         description="Statistical significance level for change point detection (lower = more conservative)",
-        group="statistical_analysis", order=1, default_value=0.05,
+        group="01_statistical_analysis", order=1, default_value=0.05,
         min_value=0.001, max_value=0.49, decimal_places=3
     ),
     SelectParameter(
         name="method", display_name="Error Estimation Method",
         description="Method for estimating standard deviation of measurement error",
-        group="statistical_analysis", order=2, default_value=2,
+        group="01_statistical_analysis", order=2, default_value=2,
         options=[
             ("MAD with Normal Distribution", 1),
             ("Std Dev of Differences (Recommended)", 2),
@@ -669,30 +623,30 @@ AASHTO_CDA_PARAMETERS = [
     BoolParameter(
         name="use_segment_length", display_name="Use Segment-Specific Length",
         description="Use individual segment lengths (recommended) vs. total data length in statistical calculations",
-        group="statistical_analysis", order=3, default_value=True
+        group="01_statistical_analysis", order=3, default_value=True
     ),
     NumericParameter(
         name="min_segment_datapoints", display_name="Min Segment Datapoints",
         description="Minimum number of datapoints required per segment",
-        group="segment_constraints", order=1, default_value=3,
+        group="04_segment_constraints", order=1, default_value=3,
         min_value=3, max_value=1000, decimal_places=0
     ),
     OptionalNumericParameter(
         name="max_segments", display_name="Max Segments",
         description="Maximum number of segments allowed (None=no limit, algorithm may find fewer)",
-        group="segment_constraints", order=2, default_value=None,
+        group="04_segment_constraints", order=2, default_value=None,
         min_value=2, max_value=10000, decimal_places=0
     ),
     NumericParameter(
         name="min_section_difference", display_name="Min Section Difference",
         description="Minimum difference in average values between adjacent segments (0=disabled)",
-        group="segment_constraints", order=3, default_value=0.0,
-        min_value=0.0, max_value=10.0, decimal_places=3
+        group="04_segment_constraints", order=3, default_value=0.0,
+        min_value=0.0, max_value=None, decimal_places=3
     ),
     BoolParameter(
         name="enable_diagnostic_output", display_name="Diagnostic Output",
         description="Enable detailed diagnostic information during processing",
-        group="processing", order=1, default_value=False
+        group="07_processing", order=1, default_value=False
     )
 ]
 ```
@@ -712,7 +666,7 @@ Parameter meaning (AASHTO CDA):
 
 What this configuration buys you:
 
-- GUI can render parameter widgets dynamically (grouped + ordered)
+- GUI can render parameter widgets dynamically (sorted by `group`, then `order`)
 - validation is declarative (`param_def.validate_value(...)`)
 - methods can obtain defaults from config consistently (single source of truth)
 
@@ -1063,8 +1017,10 @@ Multi-objective methods in this repo call shared utility modules for common oper
 ```python
 # src/analysis/methods/multi_objective.py
 from ..utils.ga_utilities import (
-    nsga2_tournament_selection, fast_non_dominated_sort, calculate_crowding_distance,
-    crossover_with_retries, mutation_with_retries, analyze_population_diversity
+    nsga2_tournament_selection,
+    crossover_with_retries,
+    mutation_with_retries,
+    analyze_population_diversity
 )
 ```
 
@@ -1084,7 +1040,7 @@ The heavy lifting (data prep, constraints, caching, and fitness evaluation) live
 from analysis.utils.genetic_algorithm import HighwaySegmentGA
 
 ga = HighwaySegmentGA(
-    actual_data, x_column, y_column,
+    data, x_column, y_column,
     min_length=min_length, max_length=max_length,
     population_size=population_size,
     crossover_rate=crossover_rate,
@@ -1101,6 +1057,10 @@ How to apply this pattern to your own new method:
 ---
 
 ## Appendix A — Single Objective output Template
+
+AI usage note:
+
+- If you feed this template to an AI assistant, ask it to keep the method signature and `AnalysisResult` fields unchanged, and only replace placeholder names/algorithm internals.
 
 Copy/paste starter for a new *single-objective (single-result)* method implementation.
 
@@ -1262,6 +1222,10 @@ class <NewMethodClass>(AnalysisMethodBase):
 ---
 
 ## Appendix B — Multi-Objective Output Template
+
+AI usage note:
+
+- If you feed this template to an AI assistant, require it to preserve `all_solutions` structure (`chromosome`, `objective_values`, `fitness`) and only customize objective logic.
 
 Copy/paste starter for a new *multi-objective (Pareto front)* method implementation.
 
@@ -1529,8 +1493,8 @@ If your method fails regression tests, typical causes are:
 - **Schema failures**
   - Your `AnalysisResult` output is missing required structure.
   - Fix: always return `AnalysisResult(all_solutions=[...])` and include a solution with at least:
-    - `chromosome` (sorted breakpoints)
-    - `fitness` / `objective_values` (even if placeholders for deterministic methods)
+  - `chromosome` (sorted breakpoints)
+  - `fitness` / `objective_values` (even if placeholders for deterministic methods)
 
 - **CLI vs GUI structural differences**
   - This usually means the CLI and GUI pipelines are feeding different-shaped solution dicts into the results writer.

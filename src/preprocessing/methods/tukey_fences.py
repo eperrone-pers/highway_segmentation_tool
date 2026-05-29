@@ -107,6 +107,12 @@ class TukeyFencesPreprocessor(PreprocessingMethodBase):
         if not mandatory_bps:
             # No segments defined - fall back to global processing
             mandatory_bps = [float(df[x_column].min()), float(df[x_column].max())]
+
+        log(
+            f"Tukey Fences start for route {route_analysis.route_id}: "
+            f"k_factor={k_factor}, action={action}, points={len(df)}, "
+            f"segments={len(mandatory_bps) - 1}"
+        )
         
         total_outlier_count = 0
         
@@ -227,6 +233,12 @@ class TukeyFencesPreprocessor(PreprocessingMethodBase):
         
         # Human-readable summary
         summary = f"Tukey Fences (k={k_factor}): {action} {total_outlier_count} outlier{'s' if total_outlier_count != 1 else ''} across {len(mandatory_bps) - 1} segment{'s' if len(mandatory_bps) - 1 != 1 else ''}"
+
+        log(
+            f"Tukey Fences complete for route {route_analysis.route_id}: "
+            f"modified={len(modifications)}, outliers_handled={total_outlier_count}, "
+            f"points_before={len(route_analysis.route_data)}, points_after={len(df_processed)}"
+        )
         
         # Return complete result
         return PreprocessingResult(

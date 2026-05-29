@@ -17,10 +17,10 @@ from config import (
 )
 from value_parsing import parse_optional_float, parse_optional_int
 from route_utils import ROUTE_COLUMN_NONE_SENTINEL
-
-logger = logging.getLogger(__name__)
 from parameter_tree_view import ParameterTreeView, DEFAULT_TREEVIEW_HEIGHT
 from tooltip import ParameterTreeTooltip, attach_tooltip
+
+logger = logging.getLogger(__name__)
 
 ui_config = UIConfig()
 

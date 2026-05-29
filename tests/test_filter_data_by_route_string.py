@@ -6,7 +6,7 @@ import pandas as pd
 # Add src directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from data_loader import filter_data_by_route
+from route_utils import filter_data_by_route
 
 
 def test_filter_data_by_route_treats_route_as_string():

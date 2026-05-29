@@ -89,15 +89,6 @@ This tool works with any numeric pavement condition index:
 6. **Treatment Effectiveness**: Evaluate rehabilitation performance in homogeneous test sections
 7. **Pavement Management Systems**: Define analysis sections for optimal resource allocation
 
-### Segmentation vs. Engineering Judgment
-
-**Automated segmentation complements, not replaces, engineering judgment:**
-
-- ✅ **Advantages**: Objective, repeatable, statistically justified, processes large datasets efficiently
-- ✅ **Best for**: Initial screening, validating existing sections, large-scale network analysis
-- ⚠️ **Limitations**: Cannot account for all local knowledge, upcoming projects, or political boundaries
-- 🔧 **Best Practice**: Use algorithms to identify candidate breakpoints, then validate with field knowledge and agency constraints
-
 ---
 
 ## Getting Started
@@ -120,7 +111,7 @@ This tool works with any numeric pavement condition index:
 4. In **Step 2: Gap Analysis**, set **Gap Threshold** (controls where mandatory breakpoints are inserted at data gaps)
 5. Leave preprocessing steps (1, 4, 6) set to "None" (collapsed panels)
 6. In **Step 7: Analysis Method**, select your method and configure parameters (expand the panel)
-7. Under **Results File (Required):** type a base name and click **Browse...** to choose an output folder
+7. Under **Results File (Required):** either type a base name in the left field, or click **Browse...** to select the full output path and filename
 8. Click **🚀 Start** and monitor progress in the **Optimization Log** tab
 9. When complete, the enhanced visualization window will open automatically
 
@@ -145,34 +136,20 @@ The left panel guides you through a **7-step pipeline** that prepares your data 
 
 ```mermaid
 flowchart TD
-    Start([Load CSV Data File]) --> Step1{Step 1: Pre-Gap<br/>Preprocessing<br/><i>optional</i>}
-    Step1 -->|Clean raw data<br/>if needed| Step2[Step 2: Gap Analysis<br/>Detect data gaps<br/>Create gap breakpoints]
-    
-    Step2 --> Step3{Step 3: Early Attribute<br/>Break Columns<br/><i>optional</i>}
-    Step3 -->|Structural boundaries<br/>Pavement type, lanes, etc.| Step4{Step 4: Primary<br/>Preprocessing<br/><i>optional</i>}
-    
-    Step4 -->|Clean data within<br/>each segment| Step5{Step 5: Late Attribute<br/>Break Columns<br/><i>optional</i>}
-    Step5 -->|Administrative boundaries<br/>County, district, etc.| Step6{Step 6: Postprocessing<br/><i>optional</i>}
-    
-    Step6 -->|Final preparation| Step7[Step 7: Analysis Method<br/>Find optimal segments<br/><b>required</b>]
-    
-    Step7 --> Results([Segmentation Results<br/>JSON + Visualization])
-    
-    style Start fill:#e1f5ff
-    style Step2 fill:#fff4e1
-    style Step7 fill:#fff4e1
-    style Results fill:#e1ffe1
-    style Step1 fill:#f0f0f0
-    style Step3 fill:#f0f0f0
-    style Step4 fill:#f0f0f0
-    style Step5 fill:#f0f0f0
-    style Step6 fill:#f0f0f0
+  Start["Load CSV Data File"] --> Step1["Step 1 Pre Gap Preprocessing (optional)"];
+  Step1 --> Step2["Step 2 Gap Analysis detect gaps and create breakpoints"];
+  Step2 --> Step3["Step 3 Early Attribute Break Columns (optional)"];
+  Step3 --> Step4["Step 4 Primary Preprocessing (optional)"];
+  Step4 --> Step5["Step 5 Late Attribute Break Columns (optional)"];
+  Step5 --> Step6["Step 6 Postprocessing (optional)"];
+  Step6 --> Step7["Step 7 Analysis Method find optimal segments required"];
+  Step7 --> Results["Segmentation Results JSON and Visualization"];
 ```
 
 **Key Concepts:**
 
-- **Optional Steps** (gray): Skip by selecting "None" - use when you don't need that processing stage
-- **Required Steps** (yellow): Must be configured - Gap Analysis and Analysis Method are always performed
+- **Optional Steps** (`(optional)` in the diagram): Skip by selecting "None" when that processing stage is not needed
+- **Required Steps** (no `(optional)` label): Must be configured; Gap Analysis and Analysis Method are always performed
 - **Early vs Late Attributes**: Early breaks define preprocessing segments (structural boundaries), late breaks define analysis segments (administrative boundaries)
 - **Data Flow**: Each step refines the data or adds constraints, leading to the final segmentation
 
@@ -191,78 +168,68 @@ The left panel follows the 7-step processing pipeline shown in the diagram above
     If all rows are missing/invalid for the selected route column, the run is blocked with an error.
 - **Results File (Required)**:
   - Left field sets the base results filename.
-  - **Browse...** chooses the output folder (recommended). If you don't choose a folder, results may save into the current working directory.
+  - **Browse...** opens a save dialog to set both output folder and filename (`.json`).
+  - If you only set a base name and do not browse, output may save to the current working directory.
 
 #### **7-Step Processing Pipeline** (Below File Operations)
 
 #### Step 1: Pre-Gap Preprocessing (optional)
 
 - **Panel Title**: "1. Pre-Gap Preprocessing (optional)"
-- **Control**: Collapsible panel with method selection dropdown
-- **Purpose**: Applied to raw data **before** gap detection (rare use case)
-- **When to use**: Data validation or initial cleaning before gap analysis
-- **Default**: "None" (collapsed)
-- **Available methods**: Currently none defined; reserved for future use
+- **What you do**: Expand this panel only if you need preprocessing before gap detection.
+- **What it affects**: Runs on raw data before Step 2.
+- **Typical use**: Most users leave this at "None".
+- **Current options**: Uses the same preprocessing method list as other preprocessing panels (for example, Tukey Fences Outlier Detection).
 
 #### Step 2: Gap Analysis
 
 - **Panel Title**: "2. Gap Analysis - Gap Threshold (in x units)"
-- **Control**: Entry field for threshold value
-- **Purpose**: Framework parameter used by all methods; gaps larger than this force mandatory breakpoints
-- **What it does**: Gaps in data create natural segment boundaries that analysis methods must respect
-- **Typical values**: 0.05-0.15 miles for pavement data (see [Parameter Guidance](#pavement-specific-parameter-guidance))
+- **What you do**: Enter the gap threshold value.
+- **What it affects**: Any gap larger than this value creates a required breakpoint.
+- **Why it matters**: All analysis methods use these required breakpoints.
+- **Note**: If you do not want gap-detection breakpoints, set this value larger than the largest route length in your data.
 
 #### Step 3: Early Attribute Break Columns (optional)
 
 - **Panel Title**: "3. Early Attribute Break Columns (optional)"
-- **Control**: Summary label + **Select...** button opens multi-select dialog
-- **Purpose**: Value changes in selected columns create **mandatory breakpoints** applied **before primary preprocessing**
-- **When to use**: Structural boundaries where data should be preprocessed separately
+- **What you do**: Click **Select...** and choose columns where value changes should force breaks.
+- **What it affects**: Breaks are applied before Step 4 preprocessing.
+- **When to use**: Structural boundaries where preprocessing should run separately by section.
 - **Examples**: `PAVEMENT_TYPE`, `FUNCTIONAL_CLASS`, `LANES`, `BASE_TYPE`
-- **Why "early"**: Ensures preprocessing operates within structurally homogeneous segments (e.g., don't compute outlier thresholds mixing asphalt and concrete data)
-- **Default**: None selected
-- **Display**: Shows "None selected" or "N selected" where N is the count
+- **Default**: None selected.
 
 #### Step 4: Primary Preprocessing (optional)
 
 - **Panel Title**: "4. Primary Preprocessing (optional)"
-- **Control**: Collapsible panel with method selection dropdown
-- **Purpose**: Applied **after gaps and early attribute breaks**, operates **within** segments defined by Steps 1-3
-- **When to use**: Clean data within each structural segment (outlier detection, smoothing, interpolation)
-- **Available methods**: Tukey Fences Outlier Detection
-- **Default**: "None" (collapsed)
-- **Parameters**: Each method has its own configurable parameters (shown when panel is expanded)
-- **How to configure**: Expand panel, select method from dropdown, configure parameters in grid
+- **What you do**: Expand the panel, choose a preprocessing method, then set its parameters.
+- **What it affects**: Runs after Steps 1-3 and operates within those boundaries.
+- **When to use**: Outlier handling or other data cleaning before final segmentation.
+- **Default**: "None" (collapsed).
 
 #### Step 5: Late Attribute Break Columns (optional)
 
 - **Panel Title**: "5. Late Attribute Break Columns (optional)"
-- **Control**: Summary label + **Select...** button opens multi-select dialog
-- **Purpose**: Value changes in selected columns create **mandatory breakpoints** applied **after primary preprocessing**
-- **When to use**: Administrative/reporting boundaries (not statistical)
+- **What you do**: Click **Select...** and choose columns where value changes should force breaks.
+- **What it affects**: Breaks are applied after Step 4 preprocessing.
+- **When to use**: Reporting or administrative boundaries you want final segments to respect.
 - **Examples**: `COUNTY`, `DISTRICT`, `MAINTENANCE_ZONE`, `JURISDICTION`
-- **Why "late"**: These define analysis segment boundaries but don't affect preprocessing statistics
-- **Default**: None selected
-- **Display**: Shows "None" or "N selected" where N is the count
+- **Default**: None selected.
 
 #### Step 6: Postprocessing (optional)
 
 - **Panel Title**: "6. Postprocessing (optional)"
-- **Control**: Collapsible panel with method selection dropdown
-- **Purpose**: Applied **after all attribute breaks** for final data preparation before analysis
-- **When to use**: Rare; final transformations after segmentation is established
-- **Default**: "None" (collapsed)
-- **Available methods**: Currently none defined; reserved for future use
+- **What you do**: Expand this panel only if you need a final preprocessing step before analysis.
+- **What it affects**: Runs after late attribute-breaks setup and before Step 7.
+- **Typical use**: Most users leave this at "None".
+- **Current options**: Uses the same preprocessing method list as other preprocessing panels (for example, Tukey Fences Outlier Detection).
 
 #### Step 7: Analysis Method
 
 - **Panel Title**: "7. Analysis Method"
-- **Control**: Collapsible panel with method selection dropdown
-- **Purpose**: **Required** - Determines which analysis algorithm finds optimal segments
-- **Available methods**: Single-Objective GA, Multi-Objective NSGA-II, Constrained Single-Objective, Constrained GA (Deb Feasibility), AASHTO CDA, PELT Segmentation
-- **Default**: Expanded with first method selected
-- **Parameters**: Each method has its own configurable parameters (shown when panel is expanded)
-- **How to configure**: Expand panel (if collapsed), select method from dropdown, configure parameters in grid
+- **What you do**: Select the analysis method, then set that method's parameters.
+- **What it affects**: This required step controls how final segment boundaries are found.
+- **Available methods**: Single-Objective GA, Multi-Objective NSGA-II, Constrained Single-Objective, Constrained GA (Deb Feasibility), AASHTO CDA, PELT Segmentation.
+- **Default**: Expanded with the first method selected.
 - **See**: [Analysis Methods](#analysis-methods) section for detailed descriptions
 
 #### **Early vs. Late Attribute Breaks - Key Distinction**
@@ -299,7 +266,7 @@ Buttons are arranged in two rows:
 **Row 2 (secondary actions):**
 
 - **❓ Help**: Opens a Documentation dialog with buttons to open the User Guide and any available method-specific docs in your browser.
-- **📋 Create Batch Command**: Creates a run spec JSON and copies a runnable `highway-seg run` CLI command to your clipboard.
+- **📋 Create Batch Command**: Saves your current run settings to a file and copies a terminal command you can use to run one or many input files in a single batch run.
 - **❌ Exit**: Exits the application (saving settings).
 
 #### 🗂️ **Results Tabs**
@@ -313,8 +280,8 @@ When you load results (or when a run completes), the enhanced visualization wind
 
 - A **Route** selector for multi-route results
 - A segmentation plot (right pane)
-- A Pareto front plot (left pane) for multi-objective methods
-- A **Break Attributes Diagram** (optional): a compact lane view that shows the values of the selected attribute break columns (early and/or late) along the x-axis
+- A Pareto front plot (left pane) will be visible for multi-objective methods
+- A **Break Attributes Diagram** (optional): a compact lane view that shows the values of the selected attribute break columns (early and/or late) along the x-axis at the top of the segmentation graph.
 - **📊 Export to Excel** to export the loaded results
 
 ---
@@ -328,26 +295,17 @@ When you load results (or when a run completes), the enhanced visualization wind
 3. Optional: for multi-route datasets, choose a **Route Column (Optional)** and click **Filter** to select routes
 4. In **Step 2: Gap Analysis**, set **Gap Threshold** (controls where mandatory breakpoints are inserted at data gaps)
 5. Optional: Configure preprocessing and attribute breaks (see tasks below)
-6. Choose where results will save:
-   - Enter a base name under **Results File (Required)**
-   - Click **Browse...** to pick an output folder
+6. Choose where results will save: enter a base name under **Results File (Required)**, or click **Browse...** to choose the full output path and filename.
+
 7. In **Step 7: Analysis Method**, select your method and configure its parameters (expand the panel if collapsed)
-8. Click **🚀 Start**
-   - If you click **⏹ Stop** before completion, the run may stop without saving a consolidated results file.
-   - If an output file already exists, you'll be prompted to overwrite.
-9. After completion, review:
-   - **Results Files** tab (summary)
-   - The enhanced visualization window (opens automatically)
-   - Use **📊 Load & Plot Results** to reopen results later
+8. Click **🚀 Start**. If you click **⏹ Stop** before completion, the run may stop without saving a consolidated results file. If an output file already exists, you'll be prompted to overwrite.
+9. After completion, review the **Results Files** tab (summary), then review the enhanced visualization window (opens automatically). Use **📊 Load & Plot Results** to reopen results later.
 
 ### To configure preprocessing
 
-1. In **Step 3: Early Attribute Break Columns**, click **Select...** if you want structural boundaries (e.g., `PAVEMENT_TYPE`, `LANES`)
-   - These create segments where preprocessing operates independently
-   - Skip if you don't need preprocessing or all data is structurally similar
-2. In **Step 4: Primary Preprocessing**, expand the panel and select a method (e.g., **Tukey Fences Outlier Detection**)
-   - Configure parameters (k_multiplier, action)
-   - This is where outlier detection/data cleaning happens
+1. In **Step 3: Early Attribute Break Columns**, click **Select...** if you want structural boundaries (e.g., `PAVEMENT_TYPE`, `LANES`). These create segments where preprocessing operates independently. Skip this if you don't need preprocessing or all data is structurally similar.
+2. In **Step 4: Primary Preprocessing**, expand the panel and select a method (e.g., **Tukey Fences Outlier Detection**). Configure parameters (k_factor, action); this is where outlier detection/data cleaning happens.
+
 3. See [Preprocessing Framework](#preprocessing-framework) for detailed guidance
 
 ### To set up attribute breaks without preprocessing
@@ -431,19 +389,9 @@ The preprocessing framework provides optional data cleaning and outlier detectio
 
 The framework provides three optional preprocessing phases:
 
-1. **Pre-Gap Preprocessing** (Step 1 - rare): Applied to raw data before gap detection
-   - Use case: Initial data validation or format conversion
-   - Currently: No methods defined (reserved for future use)
-
-2. **Primary Preprocessing** (Step 4 - most common): Applied after gaps and early attribute breaks
-   - Use case: Outlier detection, noise reduction, data cleaning
-   - Applied **within** segments defined by structural boundaries
-   - Available method: Tukey Fences Outlier Detection
-   - This is the main preprocessing phase most users will configure
-
-3. **Postprocessing** (Step 6 - rare): Applied after all attribute breaks
-   - Use case: Final transformations before analysis
-   - Currently: No methods defined (reserved for future use)
+1. **Pre-Gap Preprocessing** (Step 1 - rare): Applied to raw data before gap detection. Use case: initial data validation or format conversion. Method selection uses the same preprocessing method list as Steps 4 and 6.
+2. **Primary Preprocessing** (Step 4 - most common): Applied after gaps and early attribute breaks. Use case: outlier detection, noise reduction, and data cleaning. It operates **within** segments defined by structural boundaries. Available method: Tukey Fences Outlier Detection. This is the main preprocessing phase most users will configure.
+3. **Postprocessing** (Step 6 - rare): Applied after all attribute breaks. Use case: final transformations before analysis. Method selection uses the same preprocessing method list as Steps 1 and 4.
 
 ### Early vs. Late Attribute Breaks for Preprocessing
 
@@ -511,7 +459,7 @@ The two-stage attribute break system is crucial for proper preprocessing:
 ```text
 Step 3: Early Attribute Break Columns = ["PAVEMENT_TYPE"]
 Step 4: Primary Preprocessing = Tukey Fences
-  - k_multiplier = 1.5
+  - k_factor = 1.5
   - action = interpolate
 ```
 
@@ -523,16 +471,9 @@ Step 4: Primary Preprocessing = Tukey Fences
 
 1. **Leave Step 1 as "None"** (pre-gap preprocessing rarely needed)
 
-2. **Configure Step 3 - Early Attribute Breaks** (if needed for preprocessing):
-   - Click **Select...** button
-   - Choose structural columns: `PAVEMENT_TYPE`, `LANES`, `FUNCTIONAL_CLASS`, etc.
-   - These create segments where preprocessing will be applied independently
+2. **Configure Step 3 - Early Attribute Breaks** (if needed for preprocessing): click **Select...**, choose structural columns such as `PAVEMENT_TYPE`, `LANES`, and `FUNCTIONAL_CLASS`, then apply them so preprocessing runs independently within those segments.
 
-3. **Configure Step 4 - Primary Preprocessing**:
-   - Expand the collapsible panel
-   - Select **Tukey Fences Outlier Detection** from dropdown
-   - Configure parameters (k_multiplier, action)
-   - Panel shows parameter grid when expanded
+3. **Configure Step 4 - Primary Preprocessing**: expand the collapsible panel, select **Tukey Fences Outlier Detection** from the dropdown, and configure parameters (`k_factor`, `action`) in the parameter grid.
 
 4. **Leave Step 6 as "None"** (postprocessing rarely needed)
 
@@ -544,8 +485,8 @@ Step 4: Primary Preprocessing = Tukey Fences
 **To preview preprocessing effects**:
 
 - Run analysis with preprocessing enabled
-- Check the JSON results file for `preprocessing_results` section
-- Look for `modifications_applied` count and details
+- Check the JSON results file for `preprocessing_summary` and `preprocessing_modification_log`
+- Look for total modifications and per-point modification details
 - Visualization shows which points were modified (if available)
 
 ### Preprocessing Scenarios for Pavement Data
@@ -588,10 +529,10 @@ Step 4: Primary Preprocessing = Tukey Fences
 
 ### Preprocessing Output and Verification
 
-**Results metadata**: The JSON output includes a `preprocessing_results` section for each route showing:
+**Results metadata**: The JSON output includes `preprocessing_summary` and `preprocessing_modification_log` for each route showing:
 
 - Method used (e.g., "tukey_fences")
-- Parameters applied (k_multiplier, action)
+- Parameters applied (k_factor, action)
 - Number of modifications made
 - Details of each modification (x location, old value, new value, reason)
 
@@ -604,9 +545,9 @@ Step 4: Primary Preprocessing = Tukey Fences
 
 **Common issues**:
 
-- ⚠️ Too many modifications (> 10% of data): k_multiplier may be too aggressive (increase k)
-- ⚠️ No modifications when expected: k_multiplier may be too conservative (decrease k)
-- ⚠️ Wrong sections grouped: Check early attribute break configuration
+- ⚠️ Too many modifications (> 10% of data): k_factor may be too aggressive (increase k)
+- ⚠️ No modifications when expected: k_factor may be too conservative (decrease k)
+- ⚠️ Unexpected sections grouped: Check early attribute break configuration
 
 ### When NOT to Use Preprocessing
 
@@ -641,30 +582,30 @@ Step 4: Primary Preprocessing = Tukey Fences
 
 ## Analysis Methods
 
-This section is a user-facing overview of each method. Method parameters are shown directly in the UI under **🔬 Optimization Method** and are saved into the results JSON as part of the run metadata.
+This section is a user-facing overview of each method. Method parameters are shown directly in the UI under **Analysis Method** and are saved into the results JSON as part of the run metadata.
 
 Method documentation: each method can provide a dedicated doc at `src/analysis/methods/docs/<method_key>/README.md`. This guide links to those docs and keeps only high-level “which method should I use?” guidance.
 
 ### Single-Objective Genetic Algorithm
 
-**🎯 Purpose**: Find the single best segmentation minimizing within-segment variation.
+**Purpose**: Find the single best segmentation minimizing within-segment variation.
 
 Method docs: [src/analysis/methods/docs/single/README.md](src/analysis/methods/docs/single/README.md)
 
-**🔧 Best Used For**:
+**Best Used For**:
 
 - Standard segmentation tasks where homogeneity is the primary goal
 - When you need one clear segmentation recommendation
 - Baseline comparisons with other methods
 - Quick analysis of data characteristics
 
-**📊 Results**:
+**Results**:
 
 - One optimal segmentation solution
 - Clear visualization with color-coded segments
 - Detailed fitness and segment length information
 
-**🛣️ Pavement Applications**:
+**Pavement Applications**:
 
 - **Network screening**: Rapidly identify sections needing immediate attention for budget prioritization
 - **Maintenance planning**: Group similar condition sections for efficient treatment scheduling
@@ -672,7 +613,7 @@ Method docs: [src/analysis/methods/docs/single/README.md](src/analysis/methods/d
 - **Quality assurance**: Validate consistency of data collection equipment and procedures
 - **Baseline analysis**: Establish reference segmentation for comparing with other methods
 
-**📊 Typical Pavement Parameters**:
+**Typical Pavement Parameters**:
 
 For **IRI segmentation** on a typical highway corridor:
 
@@ -694,45 +635,45 @@ For **IRI segmentation** on a typical highway corridor:
 
 ### Multi-Objective NSGA-II Optimization
 
-**🎯 Purpose**: Discover the complete range of optimal tradeoffs between segment homogeneity and segment length.
+**Purpose**: Discover the complete range of optimal tradeoffs between segment homogeneity and segment length.
 
 Method docs: [src/analysis/methods/docs/multi/README.md](src/analysis/methods/docs/multi/README.md)
 
-**🔧 Best Used For**:
+**Best Used For**:
 
 - Exploring multiple segmentation possibilities
 - Understanding quality vs. practicality tradeoffs
 - When segment count preferences vary among stakeholders
 - Research and comparative analysis
 
-**📊 Results**:
+**Results**:
 
 - **Pareto Front Plot**: Shows all optimal solution tradeoffs
 - **Interactive Exploration**: Click any point to see detailed segmentation
 - **Solution Comparison**: Easily switch between different optimal solutions
 - **Export Flexibility**: Save any selected solution from the front
 
-**🎨 Navigation**:
+**Navigation**:
 
 - **Left Plot**: Pareto front (Total Deviation vs. Average Segment Length)
 - **Right Plot**: Detailed view of selected solution with segment visualization
 - **Point Selection**: Click any Pareto front point to examine that solution
 - **Multiple Solutions**: Each point represents a different optimal balance
 
-**📈 Interpretation**:
+**Interpretation**:
 
 - **Lower-left points**: Better homogeneity, more segments, shorter lengths
 - **Upper-right points**: Fewer segments, longer lengths, more variation
 - **Front shape**: Reveals data characteristics and optimization constraints
 
-**🛣️ Pavement Applications**:
+**Pavement Applications**:
 
 - **Project alternatives analysis**: Present multiple options to decision-makers showing cost vs. quality tradeoffs
 - **Budget scenario planning**: Explore "what-if" scenarios for different funding levels
 - **Stakeholder engagement**: Show range of possibilities when preferences vary among management, engineering, and operations
 - **Treatment strategy evaluation**: Compare fine-grained maintenance vs. major rehabilitation approaches
 
-**📊 Typical Pavement Parameters**:
+**Typical Pavement Parameters**:
 
 For **PCI segmentation** on arterial network:
 
@@ -756,44 +697,44 @@ On a Pareto front for PCI data:
 
 ### Constrained Single-Objective Optimization
 
-**🎯 Purpose**: Find the best segmentation while targeting a specific average segment length.
+**Purpose**: Find the best segmentation while targeting a specific average segment length.
 
 Method docs: [src/analysis/methods/docs/constrained/README.md](src/analysis/methods/docs/constrained/README.md)
 
-**🔧 Best Used For**:
+**Best Used For**:
 
 - Meeting regulatory requirements for segment lengths
 - Standardizing analysis across multiple highway sections
 - Balancing analysis quality with operational constraints
 - When segment length consistency is important
 
-**⚙️ Configuration**:
+**Configuration**:
 
 - **Target Avg Length**: Your desired average (e.g., 2.0 miles)
 - **Length Tolerance**: Acceptable deviation (e.g., ±0.2 miles)  
 - **Penalty Weight**: Enforcement strength (higher = stricter, range: 1-1000)
 
-**📊 Results**:
+**Results**:
 
 - Optimal segmentation respecting your length constraint
 - **Constraint Satisfaction Report**: Clear YES/NO constraint achievement
 - **Achievement Analysis**: Target vs. achieved average length comparison
 - **Penalty Impact**: Shows how constraint affected the optimization
 
-**✅ Success Indicators**:
+**Success Indicators**:
 
 - "Constraint satisfied: YES" in results summary
 - Achieved average within your specified tolerance
 - Reasonable fitness value considering the constraint
 
-**🛣️ Pavement Applications**:
+**Pavement Applications**:
 
 - **Regulatory compliance**: Meet DOT requirements for standard segment lengths in reporting systems
 - **Standardized analysis**: Ensure consistency across multiple districts or highway sections
 - **Contractor coordination**: Match typical construction project sizes for bidding efficiency
 - **Pavement management systems**: Align with existing PMS section definitions
 
-**📊 Typical Pavement Parameters**:
+**Typical Pavement Parameters**:
 
 For **meeting 1-mile agency standard** with IRI data:
 
@@ -811,13 +752,77 @@ For **meeting 1-mile agency standard** with IRI data:
 
 ---
 
+### Constrained GA (Deb Feasibility)
+
+**Purpose**: Find homogeneous segments while enforcing target-length feasibility using Deb feasibility rules (constraint-domination) instead of a penalty weight.
+
+Method docs: [src/analysis/methods/docs/constrained_deb/README.md](src/analysis/methods/docs/constrained_deb/README.md)
+
+**Best Used For**:
+
+- Constraint-focused studies where feasibility should dominate objective tradeoffs
+- Cases where penalty tuning is difficult or unstable
+- Reproducible operations where users want explicit feasible/infeasible ranking behavior
+
+**Configuration**:
+
+- **Target Avg Length**: Desired average segment length
+- **Length Tolerance**: Feasible band around the target average
+- **Population / Generations**: Exploration depth for the GA search
+
+**Results**:
+
+- Best feasible segmentation found under Deb rules
+- Clear feasible/infeasible outcome behavior based on tolerance band
+- Segment statistics comparable to other GA methods
+
+**Pavement Applications**:
+
+- Agency programs with strict section-length standards
+- Batch studies where consistent feasibility logic is needed across many routes
+- Workflows where penalty-weight calibration overhead is undesirable
+
+---
+
+### PELT Segmentation
+
+**Purpose**: Fast deterministic change-point detection using PELT for users who want a non-evolutionary segmentation approach.
+
+Method docs: [src/analysis/methods/docs/pelt_segmentation/README.md](src/analysis/methods/docs/pelt_segmentation/README.md)
+
+**Best Used For**:
+
+- Rapid first-pass segmentation on large datasets
+- Deterministic reruns with identical inputs
+- Sensitivity studies where penalty and smoothing are easier to tune than GA controls
+
+**Configuration**:
+
+- **Penalty**: Main control for breakpoint sensitivity
+- **Cost Function**: Error model used by PELT
+- **Optional Smoothing / Min Length**: Stabilization and practical segment control
+
+**Results**:
+
+- Deterministic breakpoint set
+- Runtime typically lower than GA methods on long series
+- Output structure compatible with the same reporting workflow
+
+**Pavement Applications**:
+
+- Corridor screening before deeper GA or CDA studies
+- Operational reruns where deterministic behavior is preferred
+- Large-network analysis under tighter runtime constraints
+
+---
+
 ### AASHTO Enhanced CDA Statistical Analysis
 
-**🎯 Purpose**: Statistically-justified, deterministic segmentation using change point detection theory.
+**Purpose**: Statistically-justified, deterministic segmentation using change point detection theory.
 
 Method docs: [src/analysis/methods/docs/aashto_cda/README.md](src/analysis/methods/docs/aashto_cda/README.md)
 
-**🔧 Best Used For**:
+**Best Used For**:
 
 - Research requiring statistical validation of breakpoints
 - Regulatory compliance needing documented methodology
@@ -825,19 +830,19 @@ Method docs: [src/analysis/methods/docs/aashto_cda/README.md](src/analysis/metho
 - When deterministic (non-random) results are required
 - Validation of genetic algorithm results
 
-**📊 Statistical Approach**:
+**Statistical Approach**:
 
 - **Change Point Detection**: Identifies statistically significant breakpoints
 - **Segmented Processing**: Analyzes sections between mandatory breakpoints independently
 - **Deterministic Results**: Same input always produces same output (no randomness)
 
-**📚 Reference**:
+**Reference**:
 
 This implementation is based on the AASHTO CDA research code. If you use AASHTO CDA results from this tool, cite:
 
 - Katicha, S., Flintsch, G. (2025). *Enhanced AASHTO Cumulative Difference Approach (CDA) for Pavement Data Segmentation*. Transportation Research Record (accepted).
 
-**⚙️ Key Parameters**:
+**Key Parameters**:
 
 **Alpha (α) - Statistical Significance**:
 
@@ -877,14 +882,14 @@ Note: Methods 1 and 2 both work on `diff(y)` and divide by $\sqrt{2}$ to convert
 - **Enabled**: Prints verbose step-by-step diagnostics to the console and adds extra diagnostic fields into the results JSON (under the run statistics/diagnostics section).
 - **Disabled**: Runs without the extra diagnostic logging.
 
-**📊 Results**:
+**Results**:
 
 - **Deterministic Segmentation**: Statistically-justified breakpoint locations
 - **Statistical Validation**: Each breakpoint supported by significance testing
 - **Section-by-Section Analysis**: Detailed processing information per data section
 - **Comprehensive Diagnostics**: Algorithm parameters, processing summary, section details
 
-**🎨 Diagnostic Information (when enabled)**:
+**Diagnostic Information (when enabled)**:
 
 ```text
 === AASHTO CDA Analysis: Route_Name ===
@@ -897,22 +902,22 @@ Section 1: [196.853 to 198.104] - length: 1.251 miles, points: 65
 Final result: 49 segments from 49 breakpoints
 ```
 
-**📄 Enhanced JSON Export**:
+**Enhanced JSON Export**:
 
 - Algorithm metadata and parameters
 - Processing summary with section-by-section details
 - Statistical validation information
 - Diagnostic data for method verification
 
-**🔬 When to Use AASHTO CDA**:
+**When to Use AASHTO CDA**:
 
-- ✅ Research requiring statistical justification
-- ✅ Regulatory submissions needing documented methodology  
-- ✅ Validation of other segmentation approaches
-- ✅ When reproducibility is critical
-- ✅ Comparison with published AASHTO procedures
+- Research requiring statistical justification
+- Regulatory submissions needing documented methodology
+- Validation of other segmentation approaches
+- Workflows where reproducibility is critical
+- Comparison with published AASHTO procedures
 
-**🛣️ Pavement Applications**:
+**Pavement Applications**:
 
 - **Research publications**: Defensible methodology for peer-reviewed journals
 - **Legal/regulatory compliance**: Statistically justified breakpoints for contested decisions
@@ -920,7 +925,7 @@ Final result: 49 segments from 49 breakpoints
 - **Validation studies**: Compare with engineering judgment or existing segmentation schemes
 - **Contract disputes**: Objective evidence of pavement condition transitions
 
-**📊 Typical Pavement Parameters**:
+**Typical Pavement Parameters**:
 
 For **IRI analysis** requiring statistical justification:
 
@@ -971,7 +976,7 @@ This section provides step-by-step guidance for typical pavement engineering app
    - **Step 5 - Late Attribute Break Columns**: None needed (or add ["COUNTY"] if required for reporting)
 3. **Optional Preprocessing** (recommended if data quality is uncertain):
    - **Step 4 - Primary Preprocessing**: Tukey Fences Outlier Detection
-     - k_multiplier: 1.5
+     - k_factor: 1.5
      - action: interpolate (preserve data points but fix sensor spikes)
      - Operates within each pavement type separately (due to early breaks)
 4. **Parameters**:
@@ -1070,7 +1075,7 @@ This section provides step-by-step guidance for typical pavement engineering app
 
 **Recommended Approach**:
 
-1. **Method**: Use **Constrained GA** with agency length requirement
+1. **Method**: Use **Constrained Single-Objective** with agency length requirement
 2. **Attribute Breaks Configuration**:
    - **Step 3 - Early Attribute Break Columns**: None (or minimal structural breaks if required)
      - For PMS compliance, typically avoid early breaks unless agency mandates them
@@ -1148,7 +1153,7 @@ This section provides step-by-step guidance for typical pavement engineering app
   - Route identifiers for multi-route analysis
   - Additional metadata (preserved in exports)
 
-**✅ Data Quality Checklist**:
+**Data Quality Checklist**:
 
 - ✦ Milepoints in ascending order within each route
 - ✦ No duplicate milepoint values
@@ -1162,8 +1167,8 @@ This section provides step-by-step guidance for typical pavement engineering app
 2. **Pick columns**: Select **X Column (Distance)** and **Y Column (Data Values)**
 3. **Optional (multi-route)**: Select **Route Column (Optional)** and click **Filter** to choose which routes to run
 4. **Set framework rules**: Set **Gap Threshold (miles)**
-5. **Choose output location/name**: Under **Results File (Required)**, enter a base name and click **Browse...** to choose an output folder
-6. **Choose method + parameters**: Select an **Optimization Method** and adjust its method-specific parameters
+5. **Choose output location/name**: Under **Results File (Required)**, enter a base name or click **Browse...** to choose the full output path and filename
+6. **Choose method + parameters**: Select an **Analysis Method** and adjust its method-specific parameters
 
 ### Step 3: Execute Analysis
 
@@ -1259,7 +1264,7 @@ This section provides step-by-step guidance for typical pavement engineering app
 
 ### Result Quality Assessment
 
-**✅ Good Segmentation Indicators**:
+**Good Segmentation Indicators**:
 
 - Breakpoints aligned with visible data changes
 - Reasonable segment lengths for your application
@@ -1267,7 +1272,7 @@ This section provides step-by-step guidance for typical pavement engineering app
 - Constraint satisfaction (if using constrained method)
 - Consistent segment statistics within acceptable ranges
 
-**⚠️ Potential Issues**:
+**Potential Issues**:
 
 - Extremely short segments (check min length setting)
 - Very long segments with high internal variation
@@ -1280,20 +1285,20 @@ This section provides step-by-step guidance for typical pavement engineering app
 
 ```text
 Segment 1: MP 10.0-12.5 (2.5 mi), Mean IRI = 85 in/mi, Std Dev = 8 in/mi
-  ✅ Interpretation: Good condition, excellent uniformity
+  Interpretation: Good condition, excellent uniformity
   → Treatment: Routine maintenance (crack sealing, joint repair)
   → Priority: Low (5-7 year timeframe)
   → Budget: ~$15K/mile preventive maintenance
 
 Segment 2: MP 12.5-14.8 (2.3 mi), Mean IRI = 145 in/mi, Std Dev = 22 in/mi
-  ⚠️ Interpretation: Fair condition, moderate variability
+  Interpretation: Fair condition, moderate variability
   → Treatment: Consider mill & overlay (may have localized failures)
   → Priority: Medium (2-4 year timeframe)
   → Budget: ~$200K/mile rehabilitation
   → Note: Investigate high std dev - possible localized distress
 
 Segment 3: MP 14.8-16.2 (1.4 mi), Mean IRI = 195 in/mi, Std Dev = 35 in/mi
-  ❌ Interpretation: Poor condition, high variability
+  Interpretation: Poor condition, high variability
   → Treatment: Requires detailed investigation before design
   → Priority: High (immediate to 1 year)
   → Budget: $300-500K/mile (reconstruction possible)
@@ -1332,7 +1337,7 @@ Segment 3: MP 14.8-16.2 (1.4 mi), Mean IRI = 195 in/mi, Std Dev = 35 in/mi
 
 ### Validating Results Against Field Knowledge
 
-**✅ Cross-Check with Agency Records**:
+**Cross-Check with Agency Records**:
 
 - Maintenance history database (treatment dates and types)
 - Construction project locations and limits
@@ -1349,7 +1354,7 @@ Agency Records Check:
   - Construction database: Overlay project ended at MP 15.28 (2018)
   - Google Earth historical: Clear pavement color change at ~MP 15.3
   - Maintenance notes: "Transition from 2018 overlay to original 1998 pavement"
-  ✅ VALIDATED: Algorithm correctly identified treatment boundary
+  Validated: Algorithm correctly identified treatment boundary
   → Confidence: High - use this breakpoint in final segmentation
 
 Algorithm Result: Breakpoint at MP 23.67
@@ -1480,7 +1485,7 @@ With preprocessing:
 - Asphalt Arterial 2-lane: IQR = [95, 135], outlier thresholds = [75, 155]
 - Concrete Interstate 4-lane: IQR = [55, 75], outlier thresholds = [25, 105]
 
-Without early breaks (WRONG):
+Without early breaks (mixed statistics):
 - All mixed: IQR = [60, 120], outlier thresholds = [30, 150]
 → Problem: Concrete values treated as outliers, asphalt extremes accepted
 ```
@@ -1592,50 +1597,52 @@ Step 5: Late breaks = ["DISTRICT", "MAINT_ZONE", "COUNTY"]
 
 **Result**: Statistically appropriate preprocessing, operational boundaries for all levels
 
-#### Common Mistakes to Avoid
+#### Common Configuration Mistakes to Avoid
 
-#### ❌ DON'T: Use county as early break (unless data distribution actually differs by county)
+#### Avoid using county as an early break (unless data distribution actually differs by county)
 
 ```text
-Step 3: Early breaks = ["COUNTY"]  # WRONG - counties don't affect pavement physics
+Step 3: Early breaks = ["COUNTY"]
 ```
 
 **Problem**: Creates separate preprocessing zones artificially, reduces statistical power
 
-#### ✅ DO: Use county as late break
+#### Preferred approach: use county as a late break
 
 ```text
-Step 5: Late breaks = ["COUNTY"]  # CORRECT - operational boundary
+Step 5: Late breaks = ["COUNTY"]
 ```
 
-#### ❌ DON'T: Use pavement type as late break (it affects preprocessing)
+#### Avoid using pavement type as a late break (it affects preprocessing)
 
 ```text
-Step 5: Late breaks = ["PAVEMENT_TYPE"]  # WRONG - should be early
+Step 5: Late breaks = ["PAVEMENT_TYPE"]
 ```
 
 **Problem**: Preprocessing computed mixing asphalt/concrete, then breaks applied (too late!)
 
-#### ✅ DO: Use pavement type as early break
+#### Preferred approach: use pavement type as an early break
 
 ```text
-Step 3: Early breaks = ["PAVEMENT_TYPE"]  # CORRECT - structural boundary
+Step 3: Early breaks = ["PAVEMENT_TYPE"]
 ```
 
-#### ❌ DON'T: Overuse early breaks (reduces preprocessing segment size)
+#### Avoid overusing early breaks (can reduce preprocessing segment size)
 
 ```text
-Step 3: Early breaks = ["COUNTY", "DISTRICT", "MAINT_ZONE", "PAVEMENT_TYPE"]  # TOO MANY
+Step 3: Early breaks = ["COUNTY", "DISTRICT", "MAINT_ZONE", "PAVEMENT_TYPE"]
 ```
 
 **Problem**: Creates tiny preprocessing segments with insufficient data for statistics
 
-#### ✅ DO: Use only statistically necessary early breaks
+#### Preferred approach: use only statistically necessary early breaks
 
 ```text
 Step 3: Early breaks = ["PAVEMENT_TYPE", "FUNC_CLASS"]  # Sufficient
 Step 5: Late breaks = ["COUNTY", "DISTRICT", "MAINT_ZONE"]  # Add administrative here
 ```
+
+**Calibration note**: Numeric thresholds, segment lengths, and budget examples in this guide are starting ranges. Calibrate to local agency standards, data resolution, and project delivery constraints.
 
 ### Method Selection Guide for Pavement Applications
 
@@ -1643,14 +1650,14 @@ Step 5: Late breaks = ["COUNTY", "DISTRICT", "MAINT_ZONE"]  # Add administrative
 | -------- | -------------- | ----------- | --- |
 | **Network screening** (one answer needed) | Single-Objective GA | AASHTO CDA | Fast, clear priorities |
 | **Project alternatives** (show options) | Multi-Objective NSGA-II | - | Visualize tradeoffs |
-| **Meet standard lengths** | Constrained GA | - | Enforce requirements |
+| **Meet standard lengths** | Constrained Single-Objective | Constrained GA (Deb Feasibility) | Enforce requirements |
 | **Research/validation** | AASHTO CDA | - | Statistical justification |
 | **Compare to existing PMS** | AASHTO CDA | Single-Objective GA | Deterministic comparison |
 | **Quick analysis** | Single-Objective GA | - | Fastest to converge |
 | **High-detail urban** | Multi-Objective NSGA-II | Single-Objective GA | Explore fine segmentation |
-| **Rural Interstate** | Single-Objective GA | Constrained GA | Straightforward optimization |
+| **Rural Interstate** | Single-Objective GA | Constrained Single-Objective | Straightforward optimization |
 | **Grant applications** | AASHTO CDA | - | Defensible methodology |
-| **Asset management** | Constrained GA | Single-Objective GA | Standardized reporting |
+| **Asset management** | Constrained Single-Objective | Constrained GA (Deb Feasibility) | Standardized reporting |
 
 ---
 
@@ -1858,7 +1865,7 @@ If you need a simple CSV of breakpoints for GIS/tools, export to Excel or parse 
 
 ### Pavement Data Specific Issues
 
-**❌ "Segments Don't Match Field Observations"**:
+**"Segments Don't Match Field Observations"**:
 
 - **Diagnosis**: Algorithm breakpoints don't align with known pavement features
 - **Possible Causes**:
@@ -1873,7 +1880,7 @@ If you need a simple CSV of breakpoints for GIS/tools, export to Excel or parse 
   - Plot raw data - look for obvious outliers or equipment issues
   - Field visit to validate actual pavement condition
 
-**❌ "Too Many Short Segments on Good Pavement"**:
+**"Too Many Short Segments on Good Pavement"**:
 
 - **Diagnosis**: Algorithm creating micro-segments (< 0.3 mi) where pavement appears uniform
 - **Possible Causes**:
@@ -1887,7 +1894,7 @@ If you need a simple CSV of breakpoints for GIS/tools, export to Excel or parse 
   - Consider if micro-segments align with real features (patches, joints)
   - Review data collection report for equipment/procedure changes
 
-**❌ "Missing Known Treatment Boundaries"**:
+**"Missing Known Treatment Boundaries"**:
 
 - **Diagnosis**: Recent overlay limit not detected as breakpoint
 - **Possible Causes**:
@@ -1901,7 +1908,7 @@ If you need a simple CSV of breakpoints for GIS/tools, export to Excel or parse 
   - Use different index (IRI changes faster than cracking)
 - **Note**: Similar condition across treatment boundary is OK if treatments are performing well!
 
-**❌ "Breakpoint at Every Bridge"**:
+**"Breakpoint at Every Bridge"**:
 
 - **Diagnosis**: Algorithm placing breakpoints at each bridge approach
 - **Possible Causes**:
@@ -1915,7 +1922,7 @@ If you need a simple CSV of breakpoints for GIS/tools, export to Excel or parse 
   - Consider: May actually want breaks at major river crossings (different maintenance)
   - Decision: Small bridges - span them; major structures - break there
 
-**❌ "Results Vary Between Multiple Runs" (Genetic Algorithm methods)**:
+**"Results Vary Between Multiple Runs" (Genetic Algorithm methods)**:
 
 - **Diagnosis**: Running same data/parameters gives slightly different results
 - **Expected Behavior**: Genetic algorithms include randomness by design
@@ -1927,7 +1934,7 @@ If you need a simple CSV of breakpoints for GIS/tools, export to Excel or parse 
   - Accept minor variation - focus on major trends
 - **Best Practice**: Run multiple times, validate consistent breakpoints against field knowledge
 
-**❌ "IRI Shows Breakpoint, But Cracking Data Doesn't"**:
+**"IRI Shows Breakpoint, But Cracking Data Doesn't"**:
 
 - **Diagnosis**: Different indices showing different segmentation
 - **Explanation**: Normal! Different distress types progress differently
@@ -1944,49 +1951,49 @@ If you need a simple CSV of breakpoints for GIS/tools, export to Excel or parse 
 
 ### Common Data Issues
 
-**❌ "No data loaded" Error**:
+**"No data loaded" Error**:
 
 - **Check File Path**: Ensure CSV file exists and is accessible
 - **Verify File Format**: Headers required, check for encoding issues
 - **Column Selection**: Ensure **X Column (Distance)** and **Y Column (Data Values)** are selected
 - **Data Validation**: Ensure numeric data in measurement columns
 
-**❌ "Insufficient Data Points" Warning**:
+**"Insufficient Data Points" Warning**:
 
 - **Minimum Requirements**: At least 10 points per expected segment
 - **Gap Analysis**: Large gaps may fragment data into small sections
 - **Parameter Adjustment**: Reduce minimum segment length or increase gap threshold
 - **Data Quality**: Check for excessive missing values
 
-**❌ "No Valid Segments Found" Error**:
+**"No Valid Segments Found" Error**:
 
 - **Length Constraints**: Min/max length settings may be too restrictive
 - **Gap Threshold**: Too small values create excessive mandatory breakpoints
 - **Data Range**: Verify milepoint values span reasonable distance
 - **Parameter Relaxation**: Increase max length or decrease min length
 
-**❌ "No Valid Routes" / route column error**:
+**"No Valid Routes" / route column error**:
 
 - **Cause**: In multi-route mode, the selected route column contains only missing route IDs (blank/empty).
 - **Fix**: Choose a different route column, or select **None - treat as single route**.
 
 ### Analysis Problems
 
-**❌ Genetic Algorithm Not Converging**:
+**Genetic Algorithm Not Converging**:
 
 - **Increase Generations**: More iterations often improve results
 - **Adjust Population Size**: Larger populations explore solution space better
 - **Check Constraints**: Overly restrictive constraints may prevent convergence
 - **Parameter Tuning**: Try different mutation/crossover rates
 
-**❌ Constrained Method Not Satisfying Constraint**:
+**Constrained Method Not Satisfying Constraint**:
 
 - **Increase Penalty Weight**: Higher values enforce constraints more strongly
 - **Relax Tolerance**: Wider acceptable range may enable satisfaction
 - **Check Feasibility**: Ensure target length is achievable with your data
 - **Parameter Adjustment**: Modify min/max length constraints
 
-**❌ AASHTO CDA Finding No Breakpoints**:
+**AASHTO CDA Finding No Breakpoints**:
 
 - **Reduce Alpha**: More sensitive detection (try α = 0.10)
 - **Check Data Variation**: Uniform data may not have detectable change points
@@ -1995,21 +2002,21 @@ If you need a simple CSV of breakpoints for GIS/tools, export to Excel or parse 
 
 ### Runtime Issues
 
-**❌ Analysis Taking Too Long**:
+**Analysis Taking Too Long**:
 
 - **Reduce Population Size**: Linear impact on processing time
 - **Decrease Generations**: Stop when convergence achieved
 - **Simplify Data**: Consider data subsampling for initial analysis
-- **Optimization Method**: Use Single-Objective if you only need a single recommended solution
+- **Analysis Method**: Use Single-Objective if you only need a single recommended solution
 
-**❌ Memory Errors**:
+**Memory Errors**:
 
 - **Reduce Cache Clear Interval**: More frequent memory cleanup
 - **Smaller Population**: Linear impact on memory usage
 - **Data Segmentation**: Process large datasets in smaller sections
 - **System Resources**: Close other applications, increase virtual memory
 
-**❌ Results Not Saving**:
+**Results Not Saving**:
 
 - **File Permissions**: Ensure write access to save directory
 - **Disk Space**: Verify sufficient storage for result files
@@ -2018,21 +2025,21 @@ If you need a simple CSV of breakpoints for GIS/tools, export to Excel or parse 
 
 ### Interface Issues
 
-**❌ Help Window Not Opening**:
+**Help Window Not Opening**:
 
 - **File Location**: Ensure USER_GUIDE.md exists in project directory
 - **Encoding Issues**: Check file is UTF-8 encoded
 - **Markdown Support**: Install markdown package for enhanced display
 - **Fallback Display**: Plain text view should work without markdown
 
-**❌ Visualization Not Displaying**:
+**Visualization Not Displaying**:
 
 - **Matplotlib Installation**: Verify required plotting libraries
 - **Result Data**: Ensure analysis completed successfully
 - **Memory Issues**: Close other applications if visualization fails
 - **Export Alternative**: Save plots to files if display fails
 
-**❌ Settings Not Persisting**:
+**Settings Not Persisting**:
 
 - **Where settings are stored**: The app writes a local `app_settings.json` file next to the application code.
 - **File Permissions**: Ensure the application directory is writable (especially on macOS/Linux if installed under protected folders)
@@ -2042,14 +2049,14 @@ If you need a simple CSV of breakpoints for GIS/tools, export to Excel or parse 
 
 ### Getting Help
 
-**📚 Additional Resources**:
+**Additional Resources**:
 
 - **Technical Documentation**: Review architecture and extensibility sections
 - **Example Data**: Use provided test datasets to verify installation
 - **Parameter Guides**: Consult method-specific parameter recommendations
 - **Community Support**: Engage with other users for application tips
 
-**🐛 Reporting Issues**:
+**Reporting Issues**:
 
 - **Include Version Information**: Note software version and system details
 - **Provide Data Context**: Describe dataset characteristics and analysis goals
@@ -2057,7 +2064,7 @@ If you need a simple CSV of breakpoints for GIS/tools, export to Excel or parse 
 - **Error Messages**: Copy complete error text and diagnostic output
 - **Reproducible Examples**: Minimal test cases help diagnose problems
 
-**🔧 Advanced Troubleshooting**:
+**Advanced Troubleshooting**:
 
 - **Log Files**: Enable diagnostic output for detailed processing information
 - **Parameter Experimentation**: Systematic testing to isolate issues
@@ -2069,111 +2076,24 @@ If you need a simple CSV of breakpoints for GIS/tools, export to Excel or parse 
 
 ## Technical Reference
 
-### Algorithm Details
+This section intentionally stays brief in the user guide. For implementation details, data structures, and extension workflows, use the developer documentation.
 
-**Genetic Algorithm Implementation**:
-
-- **Selection**: Tournament selection with configurable pressure
-- **Crossover**: Uniform crossover with boundary constraints
-- **Mutation**: Gaussian perturbation with adaptive scaling
-- **Elite Preservation**: Top solutions maintained across generations
-- **Constraint Handling**: Penalty functions for length and feasibility constraints
-
-**NSGA-II Multi-Objective**:
-
-- **Dominance**: Pareto dominance with crowding distance calculation
-- **Diversity**: Crowding distance maintains solution spread
-- **Archive**: External archive for non-dominated solutions
-- **Objectives**: Total deviation vs. average segment length
-
-**AASHTO CDA Statistical Method**:
-
-- **Algorithm**: Enhanced Cumulative Difference Approach
-- **Change Point Detection**: Statistical significance testing for breakpoints
-- **Error Estimation**: Multiple methods for measurement error characterization
-- **Segmented Processing**: Independent analysis of data sections between gaps
-
-### Data Structures
-
-**RouteAnalysis Object**:
-
-- Standardized data container for all analysis methods
-- Automatic gap detection and mandatory breakpoint generation
-- Validation and quality checking functionality
-- Multi-route support with individual route processing
-
-**AnalysisResult Object**:
-
-- Universal result format across all analysis methods
-- Pareto front storage for multi-objective results
-- Statistical metadata and processing information
-- Extensible structure for new method integration
-
-### Configuration System
-
-**Parameter Definition Classes**:
-
-- **NumericParameter**: Standard numeric inputs with validation
-- **OptionalNumericParameter**: Nullable numeric values (e.g., unlimited max segments)
-- **SelectParameter**: Dropdown selections with predefined options
-- **BoolParameter**: Boolean checkboxes for feature toggles
-- **TextParameter**: String inputs with validation rules
-
-**Dynamic UI Generation**:
-
-- Automatic widget creation from parameter definitions
-- Method-specific parameter visibility and organization
-- Real-time validation and error messaging
-- Persistent settings with automatic save/restore
-
-### Extension Architecture
-
-**Adding New Analysis Methods**:
-
-1. **Create Method Class**: Extend AnalysisMethodBase
-2. **Define Parameters**: Create parameter list in config.py
-3. **Register Method**: Add to OPTIMIZATION_METHODS configuration
-4. **Implement Interface**: Provide run_analysis() method
-5. **Integration**: Method automatically appears in UI
-
-**Parameter Extension**:
-
-- Define new parameter types by extending ParameterDefinition
-- Implement widget creation and value handling methods
-- Add parameter validation and constraint checking
-- Register in appropriate method parameter lists
-
-**Export Format Enhancement**:
-
-- Extend ExtensibleJsonResultsManager for new result types
-- Add plugin system for custom result processing
-- Implement new visualization types for method-specific displays
-- Maintain backward compatibility with existing formats
-
-### Method Characteristics
-
-**Method Comparison**:
+### Method Comparison
 
 | Method | Deterministic | Multi-Solution | Statistical |
 | --- | --- | --- | --- |
 | Single-Objective GA | No | No | No |
 | Multi-Objective NSGA-II | No | Yes | No |
-| Constrained GA | No | No | No |
+| Constrained Single-Objective | No | No | No |
+| Constrained GA (Deb Feasibility) | No | No | No |
 | AASHTO CDA | Yes | No | Yes |
+| PELT Segmentation | Yes | No | No |
 
-### Quality Assurance
+### Where to Find Deeper Technical Detail
 
-**Validation Approaches**:
+- Developer architecture and extension guidance: [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md)
+- Analysis method development guide: [docs/configuring_new_analysis_method.md](docs/configuring_new_analysis_method.md)
+- Preprocessing method development guide: [docs/configuring_new_preprocessing_method.md](docs/configuring_new_preprocessing_method.md)
+- Method-specific technical notes: [src/analysis/methods/docs/README.md](src/analysis/methods/docs/README.md)
 
-- **Cross-Method Validation**: Compare results across different analysis approaches  
-- **Statistical Testing**: Use AASHTO CDA for statistically-justified breakpoints
-- **Parameter Sensitivity**: Test robustness to parameter variations
-- **Reference Comparison**: Validate against published methods and implementations
-
-**Testing Framework**:
-
-- **Unit Tests**: Individual component validation
-- **Integration Tests**: Full workflow testing with sample data
-- **Regression Tests**: Ensure updates don't break existing functionality
-
-*This user guide covers the complete functionality of the Highway Segmentation Analysis application. For technical support, feature requests, or questions about extending the application, refer to the project documentation or contact the development team.*
+*This user guide focuses on practical configuration and interpretation workflows for pavement analysis.*
