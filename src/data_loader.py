@@ -4,7 +4,6 @@ import logging
 from typing import List, Set, Dict, Tuple, Optional, TYPE_CHECKING
 
 from config import get_preprocessing_method, resolve_preprocessing_class
-from route_utils import filter_data_by_route, normalize_route_id
 
 # Preprocessing integration
 if TYPE_CHECKING:

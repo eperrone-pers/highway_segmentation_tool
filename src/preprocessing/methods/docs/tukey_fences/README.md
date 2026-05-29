@@ -470,23 +470,33 @@ Concrete section (MP 30-50):
 
 ```json
 {
-  "preprocessing_results": {
-    "method_key": "tukey_fences",
-    "parameters": {
-      "k_factor": 1.5,
-      "action": "interpolate"
-    },
-    "modifications_applied": 47,
-    "modifications": [
+  "preprocessing_summary": {
+    "preprocessing_applied": true,
+    "phases": [
       {
-        "x": 14.3,
-        "y_old": 385.2,
-        "y_new": 94.1,
-        "reason": "interpolated from neighbors",
-        "segment": "[0.0-30.0]"
+        "phase_name": "primary",
+        "method_key": "tukey_fences",
+        "method_name": "Tukey Fences Outlier Detection",
+        "parameters": {
+          "k_factor": 1.5,
+          "action": "interpolate"
+        },
+        "modifications_summary": "Modified 47 point(s)"
+      }
+    ],
+    "total_modifications": 47
+  },
+  "preprocessing_modification_log": [
+    [
+      {
+        "modification_type": "point_interpolated",
+        "x_value": 14.3,
+        "original_y_value": 385.2,
+        "new_y_value": 94.1,
+        "reason": "interpolated from neighbors"
       }
     ]
-  }
+  ]
 }
 ```
 

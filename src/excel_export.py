@@ -4,8 +4,6 @@ import json
 import logging
 import os
 import pandas as pd
-
-_logger = logging.getLogger(__name__)
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List
@@ -13,6 +11,8 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 from openpyxl.utils.dataframe import dataframe_to_rows
 from openpyxl.worksheet.worksheet import Worksheet
+
+_logger = logging.getLogger(__name__)
 
 
 class HighwaySegmentationExcelExporter:

@@ -17,11 +17,9 @@ Phase: 1.95.4 - Multi-Objective Method Extraction
 """
 
 import logging
-import time
 import random
+import time
 from typing import Any
-
-_logger = logging.getLogger(__name__)
 
 from ..base import AnalysisMethodBase, AnalysisResult
 from ..utils.ga_utilities import (
@@ -30,6 +28,8 @@ from ..utils.ga_utilities import (
 from ..utils.segment_metrics import average_length_excluding_gap_segments
 from ..utils.genetic_algorithm import HighwaySegmentGA
 from config import get_optimization_method
+
+_logger = logging.getLogger(__name__)
 
 
 class MultiObjectiveMethod(AnalysisMethodBase):
