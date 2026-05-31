@@ -122,6 +122,18 @@ class EnhancedVisualizationWindow:
         self._current_seg_secondary_y = None
         self._last_seg_route_id = None
 
+        # Hover highlight state (blit-based nearest-point ring)
+        # _hover_seg_x/y are always the paired post-processing primary points used
+        # for nearest-point snapping. Kept separate from _current_seg_x/y because
+        # _current_seg_y is extended with preprocessing overlay y values for
+        # autoscaling when the preprocessing panel is visible, making the arrays
+        # different lengths and unusable for paired distance calculations.
+        self._hover_seg_x = None
+        self._hover_seg_y = None
+        self._hover_bg = None
+        self._hover_primary_ring = None
+        self._hover_secondary_ring = None
+
         # Secondary Y-axis series state (one optional series)
         self._secondary_y_col = None
         self._secondary_color = COLORS.get('secondary_default', '#14B8A6')
@@ -848,6 +860,162 @@ class EnhancedVisualizationWindow:
             return
         self._safe_canvas_draw(self.canvas_right, idle=idle)
 
+    # ------------------------------------------------------------------
+    # Hover highlight: coordinate label + blit-based nearest-point ring
+    # ------------------------------------------------------------------
+
+    def _setup_hover_artists(self) -> None:
+        """Create animated highlight ring artists on ax_right (and secondary axis if active).
+
+        Called at the end of each full plot redraw so the artists survive ax_right.clear().
+        The rings use animated=True so they are excluded from normal canvas draws and only
+        appear during blit operations — this avoids any visual cost when the cursor is idle.
+        """
+        try:
+            ring_kw = dict(
+                marker='o', ms=11, mfc='none', mew=2,
+                animated=True, zorder=10, ls='none', clip_on=True,
+            )
+            self._hover_primary_ring, = self.ax_right.plot(
+                [], [], color=COLORS.get('segment_avg', '#2563EB'), **ring_kw
+            )
+            self._hover_secondary_ring = None
+            ax2 = getattr(self, '_ax_right_secondary', None)
+            if ax2 is not None:
+                color2 = getattr(self, '_secondary_color', '#14B8A6')
+                self._hover_secondary_ring, = ax2.plot([], [], color=color2, **ring_kw)
+            self._hover_bg = None  # Invalidated; will be refreshed on next draw event
+        except Exception:
+            self._hover_primary_ring = None
+            self._hover_secondary_ring = None
+            self._hover_bg = None
+
+    def _update_hover_highlight(self, event) -> None:
+        """Update the coord label and blit-based highlight rings on mouse move.
+
+        Primary series takes precedence when both are within the 8-pixel snap threshold.
+        When snapped, the label shows exact data values; otherwise it shows cursor position.
+        """
+        try:
+            coord_label = getattr(self, 'coord_label', None)
+
+            # --- Clear and return when cursor is outside the plot axes ---
+            if event is None or event.inaxes != self.ax_right or event.xdata is None or event.ydata is None:
+                if coord_label is not None:
+                    coord_label.config(text='')
+                self._blit_rings(show_primary=False, show_secondary=False,
+                                 px=0, py=0, sx=0, sy=0)
+                return
+
+            x_cursor = float(event.xdata)
+            y_cursor = float(event.ydata)
+            cursor_px = np.array([event.x, event.y])
+
+            # --- Find nearest primary point (pixel distance) ---
+            primary_snapped = False
+            px, py = x_cursor, y_cursor
+            # Use _hover_seg_x/y (always paired, post-processing) not _current_seg_x/y,
+            # which may have its y extended with preprocessing overlay values for autoscaling.
+            primary_x = getattr(self, '_hover_seg_x', None)
+            primary_y = getattr(self, '_hover_seg_y', None)
+            if primary_x is not None and primary_y is not None and len(primary_x) > 0:
+                try:
+                    pts = np.column_stack([primary_x, primary_y])
+                    pts_disp = self.ax_right.transData.transform(pts)
+                    dists = np.hypot(pts_disp[:, 0] - cursor_px[0], pts_disp[:, 1] - cursor_px[1])
+                    idx = int(np.argmin(dists))
+                    if dists[idx] <= 8.0:
+                        primary_snapped = True
+                        px, py = float(primary_x[idx]), float(primary_y[idx])
+                except Exception:
+                    pass
+
+            # --- Find nearest secondary point (pixel distance on secondary axis) ---
+            secondary_snapped = False
+            sx, sy = x_cursor, y_cursor
+            ax2 = getattr(self, '_ax_right_secondary', None)
+            sec_x = getattr(self, '_current_seg_secondary_x', None)
+            sec_y = getattr(self, '_current_seg_secondary_y', None)
+            if ax2 is not None and sec_x is not None and sec_y is not None and len(sec_x) > 0:
+                try:
+                    pts2 = np.column_stack([sec_x, sec_y])
+                    pts2_disp = ax2.transData.transform(pts2)
+                    dists2 = np.hypot(pts2_disp[:, 0] - cursor_px[0], pts2_disp[:, 1] - cursor_px[1])
+                    idx2 = int(np.argmin(dists2))
+                    if dists2[idx2] <= 8.0:
+                        secondary_snapped = True
+                        sx, sy = float(sec_x[idx2]), float(sec_y[idx2])
+                except Exception:
+                    pass
+
+            # --- Build coordinate label text ---
+            # Only show the y value(s) for the series that is actually snapped.
+            # When neither is snapped, show raw cursor position on the primary axis.
+            if coord_label is not None:
+                x_name = getattr(self, 'x_column', None) or 'X'
+                y_name = getattr(self, 'y_column', None) or 'Y'
+                sec_name = getattr(self, '_secondary_y_col', None)
+
+                if primary_snapped and secondary_snapped and sec_name:
+                    # Both snapped: primary takes precedence for x; show both y values.
+                    text = (f"{x_name}: {px:.4f} ●   {y_name}: {py:.4f}"
+                            f"   {sec_name}: {sy:.4f} ●")
+                elif primary_snapped:
+                    text = f"{x_name}: {px:.4f} ●   {y_name}: {py:.4f}"
+                elif secondary_snapped and sec_name:
+                    # Secondary only: show the secondary point's x and y — do NOT
+                    # include the primary y since no primary point is highlighted.
+                    text = f"{x_name}: {sx:.4f} ●   {sec_name}: {sy:.4f}"
+                else:
+                    # No snap: show raw cursor position on primary axis.
+                    text = f"{x_name}: {x_cursor:.4f}   {y_name}: {y_cursor:.4f}"
+
+                coord_label.config(text=text)
+
+            # --- Blit the rings ---
+            self._blit_rings(
+                show_primary=primary_snapped, px=px, py=py,
+                show_secondary=secondary_snapped, sx=sx, sy=sy,
+            )
+        except Exception:
+            pass
+
+    def _blit_rings(self, *, show_primary: bool, px: float, py: float,
+                    show_secondary: bool, sx: float, sy: float) -> None:
+        """Restore saved background and blit highlight rings in one pass."""
+        try:
+            bg = getattr(self, '_hover_bg', None)
+            canvas = getattr(self, 'canvas_right', None)
+            if bg is None or canvas is None:
+                return
+
+            primary_ring = getattr(self, '_hover_primary_ring', None)
+            secondary_ring = getattr(self, '_hover_secondary_ring', None)
+
+            if primary_ring is None and secondary_ring is None:
+                return
+
+            canvas.restore_region(bg)
+
+            if primary_ring is not None:
+                if show_primary:
+                    primary_ring.set_data([px], [py])
+                else:
+                    primary_ring.set_data([], [])
+                self.ax_right.draw_artist(primary_ring)
+
+            ax2 = getattr(self, '_ax_right_secondary', None)
+            if secondary_ring is not None and ax2 is not None:
+                if show_secondary:
+                    secondary_ring.set_data([sx], [sy])
+                else:
+                    secondary_ring.set_data([], [])
+                ax2.draw_artist(secondary_ring)
+
+            canvas.blit(self.ax_right.bbox)
+        except Exception:
+            pass
+
     def _ensure_break_lane_tooltip(self) -> None:
         """Ensure the Tkinter tooltip window exists (used for break-lane hover)."""
         try:
@@ -951,7 +1119,10 @@ class EnhancedVisualizationWindow:
             return
 
     def _on_segmentation_mouse_move(self, event) -> None:
-        """Show a tooltip for lane boxes when labels are hidden."""
+        """Update coordinate label, highlight nearest data point, and show break-lane tooltips."""
+        # Named coordinate display + blit highlight (independent of break-lane logic below)
+        self._update_hover_highlight(event)
+
         try:
             if event is None or event.inaxes != self.ax_right:
                 self._hide_break_lane_tooltip()
@@ -1039,7 +1210,7 @@ class EnhancedVisualizationWindow:
             return
 
     def _on_segmentation_draw(self, event) -> None:
-        """After draw, decide which lane labels can fit (pixel-accurate)."""
+        """After draw, decide which lane labels can fit (pixel-accurate), and save blit background."""
         try:
             if event is None or getattr(event, 'canvas', None) is None:
                 return
@@ -1053,6 +1224,14 @@ class EnhancedVisualizationWindow:
                 return
 
             self._refresh_break_lane_labels(renderer)
+
+            # Save clean background for hover-ring blitting.
+            # Animated artists (rings) are excluded from the normal draw, so the
+            # saved bitmap is the plot content without any hover overlay.
+            try:
+                self._hover_bg = self.canvas_right.copy_from_bbox(self.ax_right.bbox)
+            except Exception:
+                self._hover_bg = None
         except Exception:
             return
 
@@ -2116,6 +2295,8 @@ class EnhancedVisualizationWindow:
 
             self._current_seg_x = None
             self._current_seg_y = None
+            self._hover_seg_x = None
+            self._hover_seg_y = None
 
             from visualization.graph_styling import pretty_axis_label
 
@@ -2276,6 +2457,12 @@ class EnhancedVisualizationWindow:
             
             x_data = prepared_series.x_data
             y_data = prepared_series.y_data
+
+            # Cache paired post-processing arrays for hover snapping.
+            # Must be set BEFORE _current_seg_y is potentially extended with
+            # preprocessing overlay values (which would make the arrays different lengths).
+            self._hover_seg_x = x_data
+            self._hover_seg_y = y_data
 
             # Cache current series for X-zoom autoscaling
             # Include preprocessing overlay points in y-data for proper autoscaling
@@ -2459,6 +2646,8 @@ class EnhancedVisualizationWindow:
             # No points available; disable autoscale input but keep current Y as requested.
             self._current_seg_x = None
             self._current_seg_y = None
+            self._hover_seg_x = None
+            self._hover_seg_y = None
         
         # Set labels and title with pleasant styling
         from visualization.graph_styling import pretty_axis_label
@@ -2562,6 +2751,10 @@ class EnhancedVisualizationWindow:
                         self._seg_default_ylim_secondary = full_secondary_ylim
             except Exception:
                 pass
+
+        # (Re-)create animated hover ring artists after every full redraw.
+        # ax_right.clear() removes all artists, so they must be rebuilt here.
+        self._setup_hover_artists()
 
     def _export_to_excel(self):
         """Export comprehensive optimization results using dedicated excel_export module."""

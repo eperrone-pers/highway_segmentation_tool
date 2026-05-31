@@ -18,6 +18,19 @@ if TYPE_CHECKING:
     from visualization_ui import EnhancedVisualizationWindow
 
 from visualization.utils import safe_print as _safe_print, default_colors
+from tooltip import attach_tooltip
+
+
+class _QuietToolbar(NavigationToolbar2Tk):
+    """Navigation toolbar with the built-in coordinate message suppressed.
+
+    The segmentation pane has its own named coord_label that shows axis
+    coordinates using actual column names.  The toolbar's raw (x, y) message
+    would duplicate and conflict with that label, so we silence it here.
+    """
+
+    def set_message(self, s: str) -> None:
+        pass
 
 SECONDARY_NONE_SENTINEL = "(None)"
 
@@ -65,11 +78,13 @@ class VisualizationUIBuilder:
         win.route_combo.pack(side='left', padx=5)
         win.route_combo.bind('<KeyRelease>', win.on_route_keyrelease)
         win.route_combo.bind('<<ComboboxSelected>>', win.on_route_changed)
+        attach_tooltip(win.route_combo, "Select which route to display. Type to filter available routes.")
 
         export_button = ttk.Button(
             control_frame, text="📊 Export to Excel", command=win._export_to_excel
         )
         export_button.pack(side='left', padx=10)
+        attach_tooltip(export_button, "Export all route segments, breakpoints, and statistics to an Excel workbook.")
 
         secondary_controls = ttk.Frame(control_frame)
         secondary_controls.pack(side='left', padx=(10, 0))
@@ -89,6 +104,9 @@ class VisualizationUIBuilder:
         win.secondary_column_combo.bind(
             '<<ComboboxSelected>>', lambda _e: win._schedule_secondary_redraw()
         )
+        attach_tooltip(win.secondary_column_combo,
+                       "Overlay a second data column on a right Y-axis. "
+                       "Useful for comparing two measurements on the same route.")
 
         win.secondary_color_button = ttk.Button(
             secondary_controls,
@@ -96,6 +114,7 @@ class VisualizationUIBuilder:
             command=win._choose_secondary_color,
         )
         win.secondary_color_button.pack(side='left', padx=(0, 6))
+        attach_tooltip(win.secondary_color_button, "Choose the color for the secondary Y-axis series.")
 
         win.secondary_color_swatch = tk.Label(
             secondary_controls,
@@ -107,6 +126,7 @@ class VisualizationUIBuilder:
         )
         win.secondary_color_swatch.pack(side='left', padx=(0, 10), pady=2)
         win.secondary_color_swatch.bind('<Button-1>', lambda _e: win._choose_secondary_color())
+        attach_tooltip(win.secondary_color_swatch, "Current color for the secondary series. Click to change.")
 
         ttk.Label(secondary_controls, text="Transparency:").pack(side='left', padx=(0, 4))
         win.secondary_alpha_var = tk.DoubleVar(value=win._secondary_points_alpha)
@@ -120,6 +140,9 @@ class VisualizationUIBuilder:
             length=90,
         )
         win.secondary_alpha_scale.pack(side='left', padx=(0, 4))
+        attach_tooltip(win.secondary_alpha_scale,
+                       "Adjust the opacity of the secondary series points "
+                       "(0.05 = nearly transparent, 0.90 = solid).")
         win.secondary_alpha_value_label = ttk.Label(
             secondary_controls, text=f"{win._secondary_points_alpha:.2f}"
         )
@@ -203,6 +226,9 @@ class VisualizationUIBuilder:
                 command=win.reset_pareto_zoom,
             )
             win.reset_pareto_zoom_button.pack(side='right', padx=(6, 0), pady=2)
+            attach_tooltip(win.reset_pareto_zoom_button,
+                           "Restore the Pareto front plot to its original view, "
+                           "showing all solutions in the trade-off space.")
 
             win.canvas_left.get_tk_widget().pack(side='top', fill='both', expand=True)
         else:
@@ -294,11 +320,22 @@ class VisualizationUIBuilder:
 
         right_toolbar_container = ttk.Frame(right_bottom_bar)
         right_toolbar_container.pack(side='left', fill='x', expand=True)
-        toolbar_right = NavigationToolbar2Tk(win.canvas_right, right_toolbar_container)
+        toolbar_right = _QuietToolbar(win.canvas_right, right_toolbar_container)
         toolbar_right.update()
 
         right_controls_container = ttk.Frame(right_bottom_bar)
         right_controls_container.pack(side='right')
+
+        win.coord_label = ttk.Label(
+            right_controls_container,
+            text="",
+            width=38,
+            anchor='e',
+        )
+        win.coord_label.pack(side='right', padx=(6, 0), pady=2)
+        attach_tooltip(win.coord_label,
+                       "Shows the axis coordinates under the cursor using the actual column names. "
+                       "A ● indicator appears when the cursor snaps to a nearby data point.")
 
         win.seg_xzoom_button = ttk.Checkbutton(
             right_controls_container,
@@ -312,6 +349,10 @@ class VisualizationUIBuilder:
         except Exception:
             pass
         win.seg_xzoom_button.pack(side='left', padx=(0, 6), pady=2)
+        attach_tooltip(win.seg_xzoom_button,
+                       "Enable drag-to-zoom on the X axis. "
+                       "Click and drag on the plot to select a stationing range, "
+                       "then use the arrow buttons to pan left or right.")
 
         win.reset_seg_zoom_button = ttk.Button(
             right_controls_container,
@@ -319,6 +360,8 @@ class VisualizationUIBuilder:
             command=win.reset_segmentation_x_zoom,
         )
         win.reset_seg_zoom_button.pack(side='left', padx=(0, 0), pady=2)
+        attach_tooltip(win.reset_seg_zoom_button,
+                       "Restore the segmentation graph to its full stationing range.")
 
         win.break_lanes_button = ttk.Checkbutton(
             right_controls_container,
@@ -332,6 +375,10 @@ class VisualizationUIBuilder:
         except Exception:
             pass
         win._break_lanes_pack_opts = dict(side='left', padx=(8, 0), pady=2)
+        attach_tooltip(win.break_lanes_button,
+                       "Show or hide the colored lane bands below the plot. "
+                       "Each band represents an attribute column (e.g. surface type, jurisdiction) "
+                       "whose value changes force mandatory segment boundaries.")
 
         win.preprocessing_changes_button = ttk.Checkbutton(
             right_controls_container,
@@ -345,6 +392,9 @@ class VisualizationUIBuilder:
         except Exception:
             pass
         win._preprocessing_changes_pack_opts = dict(side='left', padx=(8, 0), pady=2)
+        attach_tooltip(win.preprocessing_changes_button,
+                       "Show or hide markers for data points that were modified or "
+                       "removed during preprocessing (outlier detection, etc.).")
 
         try:
             win.break_lanes_button.pack_forget()
@@ -356,7 +406,7 @@ class VisualizationUIBuilder:
             win._on_segmentation_xspan_selected,
             direction='horizontal',
             useblit=True,
-            interactive=True,
+            interactive=False,
             props=dict(
                 alpha=0.18,
                 facecolor=COLORS['original_edge'],
@@ -366,30 +416,6 @@ class VisualizationUIBuilder:
         )
         win._seg_span_selector.set_active(False)
 
-        try:
-            rect = getattr(win._seg_span_selector, 'rect', None)
-            if rect is not None:
-                rect.set_alpha(0.18)
-                rect.set_facecolor(COLORS['original_edge'])
-                rect.set_edgecolor(COLORS['text_secondary'])
-                rect.set_linewidth(1.2)
-                try:
-                    import matplotlib.patheffects as pe
-
-                    rect.set_path_effects(
-                        [
-                            pe.withSimplePatchShadow(
-                                offset=(1.2, -1.2),
-                                shadow_rgbFace=COLORS['grid'],
-                                alpha=0.35,
-                            ),
-                            pe.Normal(),
-                        ]
-                    )
-                except Exception:
-                    pass
-        except Exception:
-            pass
 
     def _build_sash_grip(self, main_paned: tk.PanedWindow) -> None:
         """Draw a custom centered three-dot grip overlay on the pane divider."""
