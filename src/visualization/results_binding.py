@@ -9,6 +9,7 @@ All helpers are designed to be pure and easy to unit test.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
@@ -125,14 +126,18 @@ def resolve_routes(
     if not routes:
         return ["Unknown Route"]
 
-    # De-dup while preserving order
+    # De-dup then sort alphabetically (natural sort so "Route 10" > "Route 2")
     seen = set()
-    ordered: List[str] = []
+    unique: List[str] = []
     for r in routes:
         if r not in seen:
             seen.add(r)
-            ordered.append(r)
-    return ordered
+            unique.append(r)
+
+    def _natural_key(s: str):
+        return [int(c) if c.isdigit() else c.lower() for c in re.split(r'(\d+)', s)]
+
+    return sorted(unique, key=_natural_key)
 
 
 def original_data_path_from_results(json_results: Optional[Dict[str, Any]]) -> Optional[str]:

@@ -2137,7 +2137,11 @@ class EnhancedVisualizationWindow:
 
             deduped_labels, deduped_handles = dedupe_legend_entries(labels, handles)
             if deduped_labels:
-                self.ax_right.legend(deduped_handles, deduped_labels, loc='lower right', framealpha=0.9)
+                leg = self.ax_right.legend(deduped_handles, deduped_labels, loc='best', framealpha=0.85)
+                try:
+                    leg.set_draggable(True)
+                except Exception:
+                    pass
 
             from visualization.zoom_decisions import should_cache_default_limits
 
@@ -2488,7 +2492,11 @@ class EnhancedVisualizationWindow:
 
         deduped_labels, deduped_handles = dedupe_legend_entries(labels, handles)
         if deduped_labels:
-            self.ax_right.legend(deduped_handles, deduped_labels, loc='lower right', framealpha=0.9)
+            leg = self.ax_right.legend(deduped_handles, deduped_labels, loc='best', framealpha=0.85)
+            try:
+                leg.set_draggable(True)
+            except Exception:
+                pass
 
         # Deterministic full-view y-limits (avoid "sticky" limits when switching routes).
         full_primary_ylim = None
