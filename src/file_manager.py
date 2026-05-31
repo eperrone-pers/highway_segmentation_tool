@@ -199,19 +199,34 @@ class FileManager:
             
             self.app.log_message(f"Found {len(columns)} columns: {columns}")
 
-            # Remove any must-break column selections that don't exist in this file
+            # Remove any must-break / secondary-break column selections that don't
+            # exist in this file, and always refresh the labels so the "N selected"
+            # count is accurate after switching files.
             try:
                 must_break = getattr(self.app, 'must_break_columns', None)
-                if isinstance(must_break, list) and must_break:
+                if isinstance(must_break, list):
                     filtered = [c for c in must_break if c in columns]
-                    if filtered != must_break:
-                        self.app.must_break_columns = filtered
-                        if hasattr(self.app, '_update_must_break_columns_display'):
-                            self.app._update_must_break_columns_display()
-                        if hasattr(self.app, 'on_parameter_change'):
-                            self.app.on_parameter_change()
+                    self.app.must_break_columns = filtered
+                if hasattr(self.app, '_update_must_break_columns_display'):
+                    self.app._update_must_break_columns_display()
             except (AttributeError, TypeError):
                 pass
+
+            try:
+                sec_break = getattr(self.app, 'secondary_break_columns', None)
+                if isinstance(sec_break, list):
+                    filtered_sec = [c for c in sec_break if c in columns]
+                    self.app.secondary_break_columns = filtered_sec
+                if hasattr(self.app, '_update_secondary_break_columns_display'):
+                    self.app._update_secondary_break_columns_display()
+            except (AttributeError, TypeError):
+                pass
+
+            if hasattr(self.app, 'on_parameter_change'):
+                try:
+                    self.app.on_parameter_change()
+                except Exception:
+                    pass
             
             # Reset route state when loading new file
             self.app.available_routes = []
