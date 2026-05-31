@@ -137,9 +137,22 @@ class MethodConfigurationPanel(ttk.Frame):
         """
         method_name = self.method_var.get()
         
-        # Step 1: Persist current method's parameters before switching
+        # Step 1: Persist current method's parameters before switching.
+        # Write to both _saved_parameters (in-memory) and app.settings (persistent store)
+        # so that changes are not lost if the debounced save fires after the method switch.
         if self._current_method_key and self.param_tree_view:
-            self._saved_parameters[self._current_method_key] = self.param_tree_view.get_values()
+            outgoing_params = self.param_tree_view.get_values()
+            self._saved_parameters[self._current_method_key] = outgoing_params
+            # For analysis methods: flush directly into the settings dict so the
+            # outgoing params are captured regardless of debounce timing.
+            if self.method_registry_type == 'optimization' and outgoing_params:
+                try:
+                    if hasattr(self.app, 'settings'):
+                        opt = self.app.settings.setdefault('optimization', {})
+                        store = opt.setdefault('dynamic_parameters_by_method', {})
+                        store[self._current_method_key] = outgoing_params
+                except Exception:
+                    pass
         
         # Step 2: Handle "None" selection
         if method_name == "None":
@@ -191,9 +204,9 @@ class MethodConfigurationPanel(ttk.Frame):
                 self.app.log_message(f"Warning: Could not load parameters for {method_name}: {e}")
     
     def _on_parameter_change(self):
-        """Called when a parameter value changes."""
-        # Can be extended to trigger validation, updates, etc.
-        pass
+        """Trigger debounced settings save whenever any parameter value changes."""
+        if hasattr(self.app, 'on_parameter_change'):
+            self.app.on_parameter_change()
     
     def toggle_collapse(self):
         """Toggle the collapsed/expanded state."""

@@ -8,30 +8,68 @@ Provides:
 from __future__ import annotations
 
 import tkinter as tk
+from tkinter import ttk
 from typing import Callable
 
 _DELAY_MS = 300
 _WRAPLENGTH = 280
 
 
+def _tooltip_colors(widget: tk.Widget) -> tuple[str, str]:
+    """Return (background, foreground) suited to the current light/dark theme.
+
+    Uses winfo_rgb() to resolve the ttk TFrame background to actual RGB values.
+    This correctly handles macOS system color names (e.g. 'systemWindowBackgroundColor')
+    that simple string comparison cannot detect, making the result reliable across
+    platforms and both light and dark OS appearances.
+
+    Returns:
+        (bg_hex, fg_hex) — explicit color strings safe to pass to tk.Label.
+    """
+    try:
+        style = ttk.Style(widget)
+        bg_name = style.lookup('TFrame', 'background') or 'white'
+        r16, g16, b16 = widget.winfo_rgb(bg_name)   # 0–65535 range
+        luminance = (0.299 * r16 + 0.587 * g16 + 0.114 * b16) / 65535
+        if luminance < 0.45:
+            # Dark mode: near-black background, warm cream text
+            return '#1e1e18', '#f5f5dc'
+    except Exception:
+        pass
+    # Light mode: classic tooltip yellow, near-black text (never inherit from OS)
+    return '#ffffe0', '#1a1a1a'
+
+
 class _TooltipWindow:
-    """A small borderless popup showing a single text label."""
+    """A small borderless popup showing a single text label.
+
+    Colors are resolved at creation time so the tooltip is readable in both
+    light and dark OS appearances.
+    """
 
     def __init__(self, parent: tk.Widget, text: str, x: int, y: int) -> None:
+        bg, fg = _tooltip_colors(parent)
+
         self._tip = tk.Toplevel(parent)
         self._tip.wm_overrideredirect(True)
         self._tip.wm_geometry(f"+{x + 14}+{y + 14}")
+        # Set the Toplevel background to a slightly contrasting border color.
+        try:
+            self._tip.configure(background=fg)
+        except Exception:
+            pass
         tk.Label(
             self._tip,
             text=text,
             justify="left",
-            background="#ffffe0",
-            relief="solid",
-            borderwidth=1,
+            background=bg,
+            foreground=fg,
+            relief="flat",
+            borderwidth=0,
             wraplength=_WRAPLENGTH,
             padx=6,
             pady=4,
-        ).pack()
+        ).pack(padx=1, pady=1)
 
     def destroy(self) -> None:
         self._tip.destroy()
