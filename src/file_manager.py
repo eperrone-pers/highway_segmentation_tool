@@ -451,7 +451,70 @@ class FileManager:
             
             # Sort by X column (position/distance)
             data = data.sort_values(x_col).reset_index(drop=True)
-            
+
+            # Duplicate milepoint detection (per route).
+            # Only meaningful when the user selected a real route column; in single-route
+            # mode the route column is synthetic (filename) so rows that came from
+            # different routes in the source file share the same synthetic route ID and
+            # can legitimately repeat milepoints.
+            # Exact duplicates (same x AND same y) are dropped automatically.
+            # Conflicting duplicates (same x, different y) are a data error — collect
+            # all occurrences before stopping so the user can fix everything at once.
+            dup_mask = (
+                data.duplicated(subset=[actual_route_column, x_col], keep=False)
+                if user_selected_route_column
+                else pd.Series(False, index=data.index)
+            )
+            if dup_mask.any():
+                dup_data = data[dup_mask]
+                conflict_messages = []
+                exact_dup_count = 0
+
+                exact_dup_messages = []
+                for (route_val, x_val), group in dup_data.groupby(
+                    [actual_route_column, x_col], sort=False
+                ):
+                    distinct_y = group[y_col].nunique(dropna=True)
+                    if distinct_y <= 1:
+                        dropped = len(group) - 1
+                        exact_dup_count += dropped
+                        exact_dup_messages.append(
+                            f"  Route '{route_val}', {x_col}={x_val}: dropped {dropped} duplicate row(s)"
+                        )
+                    else:
+                        y_list = group[y_col].tolist()
+                        conflict_messages.append(
+                            f"  Route '{route_val}', {x_col}={x_val}: {y_col} values = {y_list}"
+                        )
+
+                if conflict_messages:
+                    self.app.log_message(
+                        f"ERROR: {len(conflict_messages)} milepoint(s) have the same X value "
+                        "but different Y values — cannot auto-resolve:"
+                    )
+                    for msg in conflict_messages:
+                        self.app.log_message(msg)
+                    self.app.log_message("Fix the data in your CSV and reload.")
+                    messagebox.showerror(
+                        "Duplicate Milepoint Conflicts",
+                        f"Found {len(conflict_messages)} milepoint(s) with duplicate X values "
+                        f"but conflicting {y_col} values.\n\n"
+                        "These cannot be resolved automatically. "
+                        "See the log for the full list of affected rows, then fix your CSV and reload.",
+                    )
+                    return
+
+                if exact_dup_count > 0:
+                    data = data.drop_duplicates(
+                        subset=[actual_route_column, x_col], keep="first"
+                    ).reset_index(drop=True)
+                    self.app.log_message(
+                        f"Removed {exact_dup_count} exact duplicate row(s) "
+                        f"(identical {x_col} and {y_col} within the same route):"
+                    )
+                    for msg in exact_dup_messages:
+                        self.app.log_message(msg)
+
             # Validate we have enough data
             if len(data) < 3:
                 show_error_message("Insufficient Data", "Need at least 3 data points for segmentation.", self.app.log_message)

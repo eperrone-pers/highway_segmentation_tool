@@ -2865,6 +2865,62 @@ class EnhancedVisualizationWindow:
         except Exception as e:
             messagebox.showerror("Export Error", f"Failed to export to Excel:\\n{str(e)}")
 
+    def _export_to_csv(self):
+        """Export segment boundaries and statistics for all routes to a flat CSV."""
+        try:
+            if not hasattr(self, 'json_results') or not self.json_results:
+                messagebox.showerror("Export Error", "No optimization results available for export.")
+                return
+
+            route_results = self.json_results.get('route_results', [])
+            if not route_results:
+                messagebox.showerror("Export Error", "No route results found in optimization data.")
+                return
+
+            from csv_export import segments_to_dataframe
+            df = segments_to_dataframe(self.json_results)
+            if df.empty:
+                messagebox.showerror(
+                    "Export Error",
+                    "No segment details found in results.\n\n"
+                    "Segment statistics require the original data file to be present "
+                    "when the analysis is run.",
+                )
+                return
+
+            route_count = len(route_results)
+            default_filename = "highway_segments_export.csv"
+
+            initial_dir = "."
+            if hasattr(self, 'parent_app') and hasattr(self.parent_app, '_last_file_directory'):
+                d = self.parent_app._last_file_directory
+                if d and os.path.isdir(d):
+                    initial_dir = d
+            elif os.path.exists("Results"):
+                initial_dir = "Results"
+
+            file_path = filedialog.asksaveasfilename(
+                defaultextension=".csv",
+                filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+                initialfile=default_filename,
+                initialdir=initial_dir,
+                title=f"Export Segments to CSV ({route_count} route(s))",
+            )
+            if not file_path:
+                return
+
+            if hasattr(self, 'parent_app'):
+                self.parent_app._last_file_directory = os.path.dirname(file_path)
+
+            df.to_csv(file_path, index=False)
+            messagebox.showinfo(
+                "Export Complete",
+                f"Saved {len(df)} segment(s) across {route_count} route(s):\n{file_path}",
+            )
+
+        except Exception as e:
+            messagebox.showerror("Export Error", f"Failed to export CSV:\n{str(e)}")
+
 
 def show_enhanced_visualization(parent_app, json_results_path=None, json_results_data=None):
     """

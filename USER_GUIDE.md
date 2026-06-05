@@ -1155,8 +1155,8 @@ This section provides step-by-step guidance for typical pavement engineering app
 
 **Data Quality Checklist**:
 
-- ✦ Milepoints in ascending order within each route
-- ✦ No duplicate milepoint values
+- ✦ Milepoints do not need to be pre-sorted — the tool sorts by milepoint automatically on load
+- ✦ No duplicate milepoint values with conflicting measurements — exact duplicates (same milepoint *and* value) are removed automatically on load; if the same milepoint appears with different values the file will not load until the conflict is resolved in the source CSV
 - ✦ Measurement values are numeric (missing values allowed)
 - ✦ Reasonable milepoint spacing (typically 0.01-0.1 miles)
 - ✦ Sufficient data points (minimum 50+ recommended)

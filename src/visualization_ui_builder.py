@@ -83,8 +83,14 @@ class VisualizationUIBuilder:
         export_button = ttk.Button(
             control_frame, text="📊 Export to Excel", command=win._export_to_excel
         )
-        export_button.pack(side='left', padx=10)
+        export_button.pack(side='left', padx=(10, 4))
         attach_tooltip(export_button, "Export all route segments, breakpoints, and statistics to an Excel workbook.")
+
+        csv_button = ttk.Button(
+            control_frame, text="📄 Export Segments CSV", command=win._export_to_csv
+        )
+        csv_button.pack(side='left', padx=(0, 10))
+        attach_tooltip(csv_button, "Export segment boundaries and statistics for all routes to a flat CSV (for GIS / PMS tools).")
 
         secondary_controls = ttk.Frame(control_frame)
         secondary_controls.pack(side='left', padx=(10, 0))
