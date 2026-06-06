@@ -30,7 +30,7 @@ The Highway Segmentation Analysis application provides advanced statistical and 
 - **📊 Smart Data Handling**: Automatic gap detection with mandatory breakpoint insertion
 - **🎯 Flexible Attribute Breaks**: Early breaks for preprocessing segments, late breaks for analysis segments
 - **📈 Interactive Visualization**: Click-to-explore results with detailed segment information
-- **💾 Comprehensive Export**: JSON and Excel outputs with complete analysis metadata
+- **💾 Comprehensive Export**: JSON, Excel, and CSV outputs with complete analysis metadata
 - **⚙️ Persistent Settings**: Your preferences are automatically saved between sessions
 - **🔧 Extensible Architecture**: Easy addition of new analysis methods, preprocessing methods, and parameters
 
@@ -282,7 +282,8 @@ When you load results (or when a run completes), the enhanced visualization wind
 - A segmentation plot (right pane)
 - A Pareto front plot (left pane) will be visible for multi-objective methods
 - A **Break Attributes Diagram** (optional): a compact lane view that shows the values of the selected attribute break columns (early and/or late) along the x-axis at the top of the segmentation graph.
-- **📊 Export to Excel** to export the loaded results
+- **📊 Export to Excel** to export the loaded results to a full Excel workbook
+- **📄 Export Segments CSV** to export a flat segment-level CSV (useful for GIS and PMS tools)
 
 ---
 
@@ -355,6 +356,14 @@ When you load results (or when a run completes), the enhanced visualization wind
 1. Load results (either after a run, or via **📊 Load & Plot Results**)
 2. In the enhanced visualization window, click **📊 Export to Excel**
 3. Choose an output `.xlsx` file
+
+### To export results to CSV
+
+1. Load results (either after a run, or via **📊 Load & Plot Results**)
+2. In the enhanced visualization window, click **📄 Export Segments CSV**
+3. Choose an output `.csv` file
+
+The CSV contains one row per segment (from the best/first solution for each route) with columns for route ID, segment index, start, end, length, point count, and the y-column statistics (avg, min, max, std). This format is suited for import into GIS tools and pavement management systems.
 
 ---
 
@@ -1155,8 +1164,8 @@ This section provides step-by-step guidance for typical pavement engineering app
 
 **Data Quality Checklist**:
 
-- ✦ Milepoints in ascending order within each route
-- ✦ No duplicate milepoint values
+- ✦ Milepoints do not need to be pre-sorted — the tool sorts by milepoint automatically on load
+- ✦ No duplicate milepoint values with conflicting measurements — exact duplicates (same milepoint *and* value) are removed automatically on load; if the same milepoint appears with different values the file will not load until the conflict is resolved in the source CSV
 - ✦ Measurement values are numeric (missing values allowed)
 - ✦ Reasonable milepoint spacing (typically 0.01-0.1 miles)
 - ✦ Sufficient data points (minimum 50+ recommended)
@@ -1778,7 +1787,12 @@ milepoint,structural_strength_ind,route
 - **Parameters Sheet**: Complete analysis configuration used
 - **Data Quality Sheet**: Gap analysis and validation information
 
-If you need a simple CSV of breakpoints for GIS/tools, export to Excel or parse the JSON results file.
+**📄 Segments CSV (.csv)**:
+
+- One row per segment (best/first solution per route)
+- Columns: `route_id`, `segment_index`, `start`, `end`, `length`, `point_count`, `<y_col>_avg`, `<y_col>_min`, `<y_col>_max`, `<y_col>_std`, `is_mandatory`
+- Suited for direct import into GIS tools and pavement management systems
+- Available via **📄 Export Segments CSV** in the visualization window, or the `--export-csv` CLI flag
 
 ### File Management Best Practices
 

@@ -52,6 +52,11 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Suppress progress logging (prints only the output path or summary path)",
     )
+    run_p.add_argument(
+        "--export-csv",
+        action="store_true",
+        help="Export segment results to a flat CSV file alongside the JSON output",
+    )
 
     batch_group = run_p.add_argument_group(
         "batch mode",
@@ -138,6 +143,7 @@ def main(argv: list[str] | None = None) -> int:
                         summary_json=args.summary_json,
                         continue_on_error=not bool(args.stop_on_error),
                         export_excel=bool(args.export_excel),
+                        export_csv=bool(args.export_csv),
                         validate_spec=not bool(args.no_validate_spec),
                         log_callback=log,
                     )
@@ -154,6 +160,16 @@ def main(argv: list[str] | None = None) -> int:
                 validate_spec=not bool(args.no_validate_spec),
                 log_callback=log,
             )
+            if args.export_csv:
+                from pathlib import Path as _Path
+                from csv_export import export_json_to_csv
+                csv_path = str(_Path(output_path).with_suffix(".csv"))
+                ok, err = export_json_to_csv(output_path, csv_path)
+                if ok:
+                    if not quiet:
+                        print(f"Wrote segments CSV: {csv_path}")
+                else:
+                    print(f"Warning: CSV export failed: {err}", file=sys.stderr)
             print(output_path)
             return 0
 

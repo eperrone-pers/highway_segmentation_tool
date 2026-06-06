@@ -853,6 +853,7 @@ def run_batch_analysis_from_spec_file(
     summary_json: Optional[str | os.PathLike[str]] = None,
     continue_on_error: bool = True,
     export_excel: bool = False,
+    export_csv: bool = False,
     validate_spec: bool = True,
     log_callback: Optional[LogCallback] = None,
 ) -> str:
@@ -875,6 +876,7 @@ def run_batch_analysis_from_spec_file(
         continue_on_error: When True, log failures and continue. When False, stop
             immediately and raise ``RunSpecError`` on the first failure.
         export_excel: When True, export each result JSON to an adjacent XLSX file.
+        export_csv: When True, export segment results for each JSON to an adjacent CSV file.
         validate_spec: When True, validate the template spec against the JSON schema.
         log_callback: Optional log sink; defaults to stdout.
 
@@ -926,6 +928,8 @@ def run_batch_analysis_from_spec_file(
 
     if export_excel:
         from excel_export import export_json_to_excel
+    if export_csv:
+        from csv_export import export_json_to_csv
 
     summary: Dict[str, Any] = {
         "batch_version": "1.0.0",
@@ -938,6 +942,7 @@ def run_batch_analysis_from_spec_file(
         "summary_json": str(summary_json_path),
         "continue_on_error": continue_on_error,
         "export_excel": export_excel,
+        "export_csv": export_csv,
         "total_files": len(input_files),
         "completed": 0,
         "failed": 0,
@@ -976,6 +981,13 @@ def run_batch_analysis_from_spec_file(
                 file_result["output_xlsx"] = str(xlsx_path) if ok else None
                 if not ok:
                     log(f"  Warning: Excel export failed for {input_file.name}")
+
+            if export_csv:
+                csv_path = output_dir_path / f"{stem}.csv"
+                ok, err = export_json_to_csv(json_path, str(csv_path))
+                file_result["output_csv"] = str(csv_path) if ok else None
+                if not ok:
+                    log(f"  Warning: CSV export failed for {input_file.name}: {err}")
 
             summary["completed"] += 1
 
