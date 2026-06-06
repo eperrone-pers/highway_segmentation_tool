@@ -296,6 +296,71 @@ class FileManager:
         except Exception as e:
             self.app.log_message(f"Error loading CSV columns: {str(e)}")
     
+    def populate_columns_from_list(self, columns: list) -> None:
+        """Update all column-selection widgets from a pre-fetched column list.
+
+        Performs the same state reset and combo population as
+        ``load_csv_columns`` but accepts the column list directly instead
+        of reading it from a file. Used by the database connection dialog
+        after a table/view is selected.
+
+        Args:
+            columns: Ordered list of column name strings from the data source.
+        """
+        self.app.available_columns = columns
+        self.app.log_message(f"Found {len(columns)} columns: {columns}")
+
+        # Drop must_break / secondary_break selections that don't exist in the new source.
+        try:
+            must_break = getattr(self.app, 'must_break_columns', None)
+            if isinstance(must_break, list):
+                self.app.must_break_columns = [c for c in must_break if c in columns]
+            if hasattr(self.app, '_update_must_break_columns_display'):
+                self.app._update_must_break_columns_display()
+        except (AttributeError, TypeError):
+            pass
+
+        try:
+            sec_break = getattr(self.app, 'secondary_break_columns', None)
+            if isinstance(sec_break, list):
+                self.app.secondary_break_columns = [c for c in sec_break if c in columns]
+            if hasattr(self.app, '_update_secondary_break_columns_display'):
+                self.app._update_secondary_break_columns_display()
+        except (AttributeError, TypeError):
+            pass
+
+        # Reset route state.
+        self.app.available_routes = []
+        self.app.selected_routes = []
+        if hasattr(self.app, 'route_info_label'):
+            self.app.route_info_label.config(text="")
+        if hasattr(self.app, 'filter_routes_button'):
+            self.app.filter_routes_button.config(state="disabled")
+        if hasattr(self.app, 'route_column'):
+            self.app.route_column.set(ROUTE_COLUMN_NONE_SENTINEL)
+        if hasattr(self.app, 'optimization_controller'):
+            self.app.optimization_controller.reset_state()
+
+        # Update combos.
+        if hasattr(self.app, 'x_column_combo'):
+            self.app.x_column_combo['values'] = columns
+            current_x = self.app.x_column.get()
+            if current_x == "Load data first..." or current_x not in columns:
+                self.app.x_column.set("")
+        if hasattr(self.app, 'y_column_combo'):
+            self.app.y_column_combo['values'] = columns
+            current_y = self.app.y_column.get()
+            if current_y == "Load data first..." or current_y not in columns:
+                self.app.y_column.set("")
+        if hasattr(self.app, 'route_column_combo'):
+            self.app.route_column_combo['values'] = [ROUTE_COLUMN_NONE_SENTINEL] + columns
+
+        self.app.log_message("Column selections cleared — please select X and Y columns manually")
+        try:
+            self.app.on_parameter_change()
+        except Exception:
+            pass
+
     def load_data_file(self):
         """Load and process the selected data file."""
         data_path = self.get_data_file_path()

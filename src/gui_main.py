@@ -308,14 +308,8 @@ class HighwaySegmentationGUI:
         if source_type.dialog_type == "file_browser":
             self.browse_data_file()
         elif source_type.dialog_type == "connection_form":
-            # TODO Step 3c: open DatabaseConnectionDialog
-            from tkinter import messagebox
-            messagebox.showinfo(
-                "Coming Soon",
-                "The database connection dialog will be added in the next step.\n\n"
-                "Switch to 'CSV File' to load data in the meantime.",
-                parent=self,
-            )
+            from database_connection_dialog import DatabaseConnectionDialog
+            DatabaseConnectionDialog(self)
 
     def browse_save_location(self):
         """Browse for save location and save the selection."""
