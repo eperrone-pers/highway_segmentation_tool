@@ -106,32 +106,29 @@ class DataSourceBase(ABC):
         y_col: str,
         route_col: Optional[str] = None,
         selected_routes: Optional[List[str]] = None,
-        must_break_cols: Optional[List[str]] = None,
-        secondary_break_cols: Optional[List[str]] = None,
     ) -> pd.DataFrame:
         """Load raw data as a DataFrame with all values as strings.
 
-        Returning string dtype matches the existing CSV loading behaviour
-        in ``file_manager.py`` and ensures downstream type coercion logic
-        runs identically regardless of source type.
+        All columns from the source are returned — column selection for
+        analysis (x/y/route/attribute breaks) happens afterward in the
+        GUI or CLI. This matches the behaviour of ``pd.read_csv`` which
+        also returns every column unconditionally.
+
+        Only row filtering is applied: when ``selected_routes`` is
+        provided, only rows matching those route IDs are returned.
 
         Args:
-            x_col: Name of the distance/milepoint column.
-            y_col: Name of the condition measurement column.
+            x_col: Name of the distance/milepoint column (used for
+                validation only — does not limit returned columns).
+            y_col: Name of the condition measurement column (same).
             route_col: Name of the route identifier column, or ``None``
                 for single-route mode.
             selected_routes: If provided, only rows whose ``route_col``
                 value is in this list are returned. ``None`` means all
                 routes.
-            must_break_cols: Additional columns to include (early
-                attribute break columns).
-            secondary_break_cols: Additional columns to include (late
-                attribute break columns).
 
         Returns:
-            DataFrame with string dtype columns. At minimum contains
-            ``x_col`` and ``y_col``; includes ``route_col`` and any
-            attribute break columns when supplied.
+            DataFrame with all source columns and string dtype values.
 
         Raises:
             DataSourceError: If the data cannot be loaded.

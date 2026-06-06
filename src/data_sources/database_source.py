@@ -112,19 +112,27 @@ class DatabaseDataSource(DataSourceBase):
         y_col: str,
         route_col: Optional[str] = None,
         selected_routes: Optional[List[str]] = None,
-        must_break_cols: Optional[List[str]] = None,
-        secondary_break_cols: Optional[List[str]] = None,
     ) -> pd.DataFrame:
-        """Load data from the configured table/view as a string DataFrame.
+        """Load all scalar columns from the configured table/view.
 
-        Selects only the columns needed by the analysis pipeline. When
-        ``selected_routes`` is provided a WHERE clause is added so only
-        the requested routes are fetched — avoids loading the full table
-        for large datasets.
+        Mirrors ``pd.read_csv`` behaviour: every column is returned so
+        the GUI can offer the full column list for attribute break
+        selection after the data loads. Only row filtering is applied —
+        ``SELECT *`` with an optional ``WHERE route IN (...)`` clause.
+
+        LOB/BLOB/CLOB/binary columns are excluded automatically because
+        they cannot be meaningfully cast to strings and are irrelevant to
+        pavement segmentation.
+
+        Args:
+            x_col: Distance/milepoint column name (row validation only).
+            y_col: Condition measurement column name (row validation only).
+            route_col: Route identifier column for WHERE filtering.
+            selected_routes: If provided, only rows for these routes are
+                returned. ``None`` returns all rows.
 
         Returns:
-            DataFrame with string dtype columns, matching ``pd.read_csv``
-            behaviour in the existing CSV pipeline.
+            DataFrame with all non-LOB columns as string dtype.
 
         Raises:
             DataSourceError: If the query fails.
@@ -136,10 +144,6 @@ class DatabaseDataSource(DataSourceBase):
                 "No table/view or custom SQL query configured."
             )
 
-        cols = _unique_ordered([x_col, y_col, route_col]
-                                + (must_break_cols or [])
-                                + (secondary_break_cols or []))
-
         try:
             engine = self._get_engine()
             if self._config.custom_sql_query:
@@ -148,23 +152,34 @@ class DatabaseDataSource(DataSourceBase):
                     df = pd.read_sql(query, conn)
             else:
                 table_ref = self._table_identifier()
-                col_list = ", ".join(
-                    str(sqlalchemy.column(c)) for c in cols
-                )
-                sql = f"SELECT {col_list} FROM {table_ref}"
+                sql = f"SELECT * FROM {table_ref}"
 
                 params: Dict[str, Any] = {}
                 if selected_routes and route_col:
                     placeholders = ", ".join(
                         f":route_{i}" for i in range(len(selected_routes))
                     )
-                    sql += f" WHERE {sqlalchemy.column(route_col)} IN ({placeholders})"
+                    sql += (
+                        f" WHERE {sqlalchemy.column(route_col)}"
+                        f" IN ({placeholders})"
+                    )
                     params = {f"route_{i}": r for i, r in enumerate(selected_routes)}
 
                 with engine.connect() as conn:
                     df = pd.read_sql(sqlalchemy.text(sql), conn, params=params)
 
-            return df.astype(str)
+            df = _drop_lob_columns(df)
+            result = df.astype(str)
+
+            for required_col in (x_col, y_col):
+                if required_col not in result.columns:
+                    raise DataSourceError(
+                        f"Required column '{required_col}' not found in "
+                        f"'{self._config.table_or_view}'. "
+                        f"Available columns: {list(result.columns)}"
+                    )
+
+            return result
 
         except DataSourceError:
             raise
@@ -468,12 +483,33 @@ class DatabaseDataSource(DataSourceBase):
 # Helpers                                                              #
 # ------------------------------------------------------------------ #
 
-def _unique_ordered(items: List[Optional[str]]) -> List[str]:
-    """Return deduplicated list preserving order, filtering out None."""
-    seen: set = set()
-    result = []
-    for item in items:
-        if item and item not in seen:
-            seen.add(item)
-            result.append(item)
-    return result
+def _drop_lob_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Return df with LOB/BLOB/CLOB/binary columns removed.
+
+    After ``pd.read_sql``, large-object columns arrive as ``object``
+    dtype containing ``bytes`` or ``memoryview`` values. They cannot be
+    cast to strings meaningfully and are irrelevant to pavement
+    segmentation analysis.
+
+    Args:
+        df: Raw DataFrame from ``pd.read_sql``.
+
+    Returns:
+        DataFrame with binary/LOB columns dropped.
+    """
+    lob_cols = []
+    for col in df.columns:
+        if df[col].dtype != object:
+            continue
+        non_null = df[col].dropna()
+        if non_null.empty:
+            continue
+        sample = non_null.iloc[0]
+        if isinstance(sample, (bytes, memoryview, bytearray)):
+            lob_cols.append(col)
+
+    if lob_cols:
+        _logger.debug("Dropping LOB/binary columns (not useful for analysis): %s", lob_cols)
+        df = df.drop(columns=lob_cols)
+
+    return df

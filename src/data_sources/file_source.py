@@ -68,23 +68,18 @@ class FileDataSource(DataSourceBase):
         y_col: str,
         route_col: Optional[str] = None,
         selected_routes: Optional[List[str]] = None,
-        must_break_cols: Optional[List[str]] = None,
-        secondary_break_cols: Optional[List[str]] = None,
     ) -> pd.DataFrame:
         """Load the full CSV as a string-typed DataFrame.
 
-        All values are read as strings (``dtype=str``) to match the
-        existing behaviour in ``file_manager.load_data_file()``. The
-        caller is responsible for type coercion of numeric columns.
+        All columns are returned (matches ``pd.read_csv`` behaviour).
+        The only filtering applied is row-level: when ``selected_routes``
+        is provided, only rows for those routes are kept.
 
         Args:
-            x_col: Distance/milepoint column name.
-            y_col: Condition measurement column name.
+            x_col: Distance/milepoint column name (validation only).
+            y_col: Condition measurement column name (validation only).
             route_col: Route identifier column, or ``None``.
             selected_routes: If provided, filter to these route IDs only.
-                Applied after loading the full file.
-            must_break_cols: Early attribute break columns to retain.
-            secondary_break_cols: Late attribute break columns to retain.
 
         Returns:
             Full DataFrame with all columns, string dtype.

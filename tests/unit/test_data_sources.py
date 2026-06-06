@@ -9,7 +9,7 @@ import pandas as pd
 from data_sources.base import DataSourceConfig, DataSourceError
 from data_sources.registry import get_data_source
 from data_sources.file_source import FileDataSource
-from data_sources.database_source import DatabaseDataSource, _unique_ordered
+from data_sources.database_source import DatabaseDataSource, _drop_lob_columns
 from data_sources.driver_registry import DATABASE_DRIVERS, DRIVER_BY_KEY, get_driver
 
 
@@ -364,19 +364,21 @@ class TestDatabaseDataSource:
 
     # -- load_data --
 
-    def test_load_data_returns_string_dtype(self):
+    def test_load_data_returns_all_columns_string_dtype(self):
         src = DatabaseDataSource(_db_config())
         src._engine = MagicMock()
         expected_df = pd.DataFrame({
             "milepoint": ["0.0", "0.1"],
-            "iri": [85.0, 90.2],   # numeric — should be cast to str
+            "iri": [85.0, 90.2],          # numeric — must be cast to str
             "route": ["US101", "US101"],
+            "surface_type": ["AC", "AC"],  # extra column user may pick for breaks
         })
         with patch("pandas.read_sql", return_value=expected_df):
             with patch("sqlalchemy.text", return_value=MagicMock()):
                 with patch("sqlalchemy.column", side_effect=lambda c: c):
                     with patch("sqlalchemy.table", return_value="iri_survey"):
                         df = src.load_data(x_col="milepoint", y_col="iri", route_col="route")
+        assert "surface_type" in df.columns, "All columns must be returned for attribute break selection"
         for col in df.columns:
             assert pd.api.types.is_string_dtype(df[col]), (
                 f"Column '{col}' should be string dtype, got {df[col].dtype}"
@@ -387,6 +389,17 @@ class TestDatabaseDataSource:
         src._engine = MagicMock()
         with pytest.raises(DataSourceError, match="No table/view or custom SQL"):
             src.load_data("x", "y")
+
+    def test_load_data_raises_if_required_column_missing(self):
+        src = DatabaseDataSource(_db_config())
+        src._engine = MagicMock()
+        df_without_iri = pd.DataFrame({"milepoint": ["0.0"], "route": ["US101"]})
+        with patch("pandas.read_sql", return_value=df_without_iri):
+            with patch("sqlalchemy.text", return_value=MagicMock()):
+                with patch("sqlalchemy.column", side_effect=lambda c: c):
+                    with patch("sqlalchemy.table", return_value="iri_survey"):
+                        with pytest.raises(DataSourceError, match="Required column 'iri'"):
+                            src.load_data(x_col="milepoint", y_col="iri")
 
     # -- detect_routes --
 
@@ -471,20 +484,43 @@ class TestDatabaseDataSource:
 
 
 # ------------------------------------------------------------------ #
-# _unique_ordered helper                                               #
+# _drop_lob_columns helper                                             #
 # ------------------------------------------------------------------ #
 
-class TestUniqueOrdered:
-    def test_basic_deduplication(self):
-        assert _unique_ordered(["a", "b", "a", "c"]) == ["a", "b", "c"]
+class TestDropLobColumns:
+    def test_drops_bytes_column(self):
+        df = pd.DataFrame({
+            "milepoint": [0.0, 0.1],
+            "iri": [85.0, 90.2],
+            "geom": [b"\x00\x01", b"\x00\x02"],  # BLOB
+        })
+        result = _drop_lob_columns(df)
+        assert "geom" not in result.columns
+        assert "milepoint" in result.columns
+        assert "iri" in result.columns
 
-    def test_filters_none(self):
-        assert _unique_ordered(["a", None, "b"]) == ["a", "b"]
+    def test_drops_memoryview_column(self):
+        df = pd.DataFrame({
+            "milepoint": [0.0],
+            "shape": [memoryview(b"\x00")],
+        })
+        result = _drop_lob_columns(df)
+        assert "shape" not in result.columns
 
-    def test_empty_string_kept(self):
-        # Empty string is falsy — filtered out (matches None behaviour)
-        result = _unique_ordered(["a", "", "b"])
-        assert "" not in result
+    def test_keeps_string_object_columns(self):
+        df = pd.DataFrame({
+            "milepoint": [0.0],
+            "surface": ["AC"],   # object dtype but str values — keep
+        })
+        result = _drop_lob_columns(df)
+        assert "surface" in result.columns
 
-    def test_preserves_order(self):
-        assert _unique_ordered(["z", "a", "m"]) == ["z", "a", "m"]
+    def test_passes_through_no_lob(self):
+        df = pd.DataFrame({"a": [1.0], "b": ["x"]})
+        result = _drop_lob_columns(df)
+        assert list(result.columns) == ["a", "b"]
+
+    def test_handles_all_null_column(self):
+        df = pd.DataFrame({"milepoint": [0.0], "geom": [None]})
+        result = _drop_lob_columns(df)
+        assert "geom" in result.columns  # null-only columns are not dropped
