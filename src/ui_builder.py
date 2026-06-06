@@ -450,7 +450,7 @@ class UIBuilder:
                                                   state="disabled")
         self.app.filter_routes_button.grid(row=0, column=1, padx=(3, 0))
 
-        self.app.route_info_label = ttk.Label(route_controls_frame, text="", foreground="blue")
+        self.app.route_info_label = ttk.Label(route_controls_frame, text="", foreground="steelblue")
         self.app.route_info_label.grid(row=0, column=2, padx=(5, 0), sticky="w")
 
         # Row 3: X Column (Distance)
@@ -529,7 +529,7 @@ class UIBuilder:
         columns_frame = ttk.Frame(attr_frame)
         columns_frame.grid(row=0, column=1, sticky="w", padx=ui_config.standard_padding_x)
         
-        self.app.must_break_columns_summary = ttk.Label(columns_frame, text="None selected", foreground="blue")
+        self.app.must_break_columns_summary = ttk.Label(columns_frame, text="None selected", foreground="steelblue")
         self.app.must_break_columns_summary.grid(row=0, column=0, sticky="w")
         
         ttk.Button(columns_frame, text="Select...",
@@ -560,7 +560,7 @@ class UIBuilder:
         columns_frame.grid(row=0, column=1, sticky="w", padx=ui_config.standard_padding_x)
         
         # Secondary attribute breaks selection
-        self.app.secondary_break_columns_summary = ttk.Label(columns_frame, text="None", foreground="blue")
+        self.app.secondary_break_columns_summary = ttk.Label(columns_frame, text="None", foreground="steelblue")
         self.app.secondary_break_columns_summary.grid(row=0, column=0, sticky="w")
         
         ttk.Button(columns_frame, text="Select...",

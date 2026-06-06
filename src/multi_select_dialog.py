@@ -83,7 +83,7 @@ class MultiSelectDialog:
         ttk.Button(actions, text="Clear", command=self._clear_all).grid(row=0, column=1, padx=(0, 6))
 
         self.status_var = tk.StringVar(value="None")
-        ttk.Label(actions, textvariable=self.status_var, foreground="blue").grid(row=0, column=2, sticky="e")
+        ttk.Label(actions, textvariable=self.status_var, foreground="steelblue").grid(row=0, column=2, sticky="e")
 
         list_frame = ttk.Frame(main)
         list_frame.grid(row=3, column=0, sticky="nsew")

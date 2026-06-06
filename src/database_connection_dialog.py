@@ -427,7 +427,7 @@ class DatabaseConnectionDialog(tk.Toplevel):
         outer.rowconfigure(2, weight=1)
 
         # Status line
-        self._conn_status_label = ttk.Label(outer, text="", foreground="blue")
+        self._conn_status_label = ttk.Label(outer, text="", foreground="steelblue")
         self._conn_status_label.grid(
             row=0, column=0, columnspan=2, sticky="w", **_PAD,
         )
