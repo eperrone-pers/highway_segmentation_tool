@@ -427,7 +427,7 @@ class UIBuilder:
         )
         self.app.data_entry = ttk.Label(
             setup_frame, textvariable=self.app.data_file,
-            anchor="w", foreground="gray40",
+            anchor="w",
         )
         self.app.data_entry.grid(
             row=1, column=1, columnspan=2, sticky="ew",
