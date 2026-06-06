@@ -310,20 +310,17 @@ class FileManager:
         self.app.available_columns = columns
         self.app.log_message(f"Found {len(columns)} columns: {columns}")
 
-        # Drop must_break / secondary_break selections that don't exist in the new source.
+        # Clear attribute break selections — a new data source means a fresh start;
+        # columns that share a name across sources may have different semantics.
         try:
-            must_break = getattr(self.app, 'must_break_columns', None)
-            if isinstance(must_break, list):
-                self.app.must_break_columns = [c for c in must_break if c in columns]
+            self.app.must_break_columns = []
             if hasattr(self.app, '_update_must_break_columns_display'):
                 self.app._update_must_break_columns_display()
         except (AttributeError, TypeError):
             pass
 
         try:
-            sec_break = getattr(self.app, 'secondary_break_columns', None)
-            if isinstance(sec_break, list):
-                self.app.secondary_break_columns = [c for c in sec_break if c in columns]
+            self.app.secondary_break_columns = []
             if hasattr(self.app, '_update_secondary_break_columns_display'):
                 self.app._update_secondary_break_columns_display()
         except (AttributeError, TypeError):
