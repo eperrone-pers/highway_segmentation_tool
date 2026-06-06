@@ -201,7 +201,7 @@ class HighwaySegmentationGUI:
 
         self.available_columns = []
         self.available_routes = []
-        self.selected_routes = []
+        self.selected_routes = None
 
         defaults = self._get_parameter_defaults()
 
@@ -491,7 +491,7 @@ class HighwaySegmentationGUI:
             self.route_column.set(ROUTE_COLUMN_NONE_SENTINEL)
 
         self.available_routes = []
-        self.selected_routes = []
+        self.selected_routes = None  # None = no filter applied; [] = user selected nothing (error)
         if self.route_info_label is not None:
             self.route_info_label.config(text="")
         if self.filter_routes_button is not None:
@@ -514,31 +514,34 @@ class HighwaySegmentationGUI:
         route_col = normalize_route_column_selection(route_col_raw)
 
         if route_col is not None:
-            # Route column selected - validate it exists before trying to detect routes
             data_path = self.file_manager.get_data_file_path()
+            active_source = getattr(self, '_active_data_source', None)
             if data_path:
                 try:
-                    # Quick check if the column exists to prevent error popups
                     if self._route_column_exists_in_file(data_path, route_col):
-                        # Treat route identifiers as categorical strings in-memory
                         try:
                             self.file_manager.ensure_route_column_is_string(route_col)
                         except Exception as e:
                             self.log_message(f"Warning: Could not normalize route column to string: {e}")
-                        # Column exists - safe to detect routes
                         self.file_manager.detect_available_routes()
                         if self.filter_routes_button is not None:
                             self.filter_routes_button.config(state="normal")
                     else:
-                        # Column doesn't exist - reset quietly without popup
                         self.log_message(f"Route column '{route_col}' not found - resetting selection")
                         self._reset_route_ui_state(reset_route_column=True)
                 except Exception as e:
-                    # Error reading file - reset to safe state
                     self.log_message(f"Error validating route column: {str(e)}")
                     self._reset_route_ui_state(reset_route_column=True)
+            elif active_source is not None:
+                # DB source active — detect routes directly from the database
+                try:
+                    self.file_manager.detect_available_routes()
+                    if self.filter_routes_button is not None:
+                        self.filter_routes_button.config(state="normal")
+                except Exception as e:
+                    self.log_message(f"Error detecting routes from database: {str(e)}")
+                    self._reset_route_ui_state(reset_route_column=False)
             else:
-                # No data file - can't detect routes
                 self._reset_route_ui_state(reset_route_column=False)
         else:
             self._reset_route_ui_state(reset_route_column=False)
@@ -549,28 +552,28 @@ class HighwaySegmentationGUI:
         if not self.available_routes:
             # Try to automatically detect routes using current settings
             data_path = self.file_manager.get_data_file_path()
+            active_source = getattr(self, '_active_data_source', None)
             route_col = normalize_route_column_selection(
                 self.route_column.get() if hasattr(self, 'route_column') else None
             )
-            
-            if not data_path:
-                messagebox.showwarning("No Data File", "Please select a data file first before filtering routes.")
-                return
-            elif route_col is None:
+
+            if route_col is None:
                 messagebox.showwarning("No Route Column", "Please select a route column first before filtering routes.")
                 return
+            elif not data_path and active_source is None:
+                messagebox.showwarning("No Data Source", "Please connect to a data source before filtering routes.")
+                return
             else:
-                # Try to detect routes automatically
                 self.log_message("No routes loaded. Attempting to detect routes from current settings...")
                 try:
                     self.file_manager.detect_available_routes()
                     if not self.available_routes:
-                        messagebox.showerror("Route Detection Failed", 
-                                           f"Could not find any routes in column '{route_col}' of the selected data file. "
-                                           f"Please verify the route column selection and data file content.")
+                        messagebox.showerror("Route Detection Failed",
+                                           f"Could not find any routes in column '{route_col}'. "
+                                           f"Please verify the route column selection and data source content.")
                         return
                 except Exception as e:
-                    messagebox.showerror("Route Detection Error", 
+                    messagebox.showerror("Route Detection Error",
                                        f"Error detecting routes: {str(e)}")
                     return
             
@@ -583,9 +586,10 @@ class HighwaySegmentationGUI:
             result = dialog.show()
             
             if result is not None:
-                self.selected_routes = result
+                self.selected_routes = result if result else None  # empty selection → None (use all)
                 self._update_route_info_display()
-                self.log_message(f"Route selection updated: {len(self.selected_routes)} routes selected")
+                count = len(self.selected_routes) if self.selected_routes else len(self.available_routes)
+                self.log_message(f"Route selection updated: {count} routes selected")
             else:
                 self.log_message("Route filter dialog cancelled or failed")
                 
@@ -700,8 +704,12 @@ class HighwaySegmentationGUI:
 
         if self.available_routes:
             total_routes = len(self.available_routes)
-            selected_count = len(self.selected_routes)
-            self.route_info_label.config(text=f"{selected_count} of {total_routes} selected")
+            # None means "no filter — all routes"; a list means an explicit selection.
+            if self.selected_routes is None:
+                self.route_info_label.config(text=f"All {total_routes} routes")
+            else:
+                selected_count = len(self.selected_routes)
+                self.route_info_label.config(text=f"{selected_count} of {total_routes} selected")
         else:
             self.route_info_label.config(text="")
     
@@ -1151,8 +1159,8 @@ class HighwaySegmentationGUI:
             except Exception:
                 self.settings['ui_state']['secondary_break_columns'] = []
             
-            if hasattr(self, 'selected_routes'):
-                self.settings['ui_state']['selected_routes'] = self.selected_routes.copy()
+            routes = getattr(self, 'selected_routes', None)
+            self.settings['ui_state']['selected_routes'] = routes.copy() if isinstance(routes, list) else None
             
             # Save preprocessing panel configurations
             if 'preprocessing' not in self.settings:

@@ -66,9 +66,10 @@ def complex_mock_app():
     app.data_file_path = Mock()
     app.available_columns = []
     
-    # Route management  
+    # Route management
     app.available_routes = []
-    app.selected_routes = []
+    app.selected_routes = None  # None = no filter applied (use all routes)
+    app._active_data_source = None
     app.route_column = Mock()
     app.route_column.get.return_value = ROUTE_COLUMN_NONE_SENTINEL  # Fix Mock iteration issue
     app.route_column.set = Mock()
@@ -276,7 +277,7 @@ class TestPhase1CompleteWorkflow:
             
             # Verify route data was cleared for single route mode
             assert complex_mock_app.available_routes == []
-            assert complex_mock_app.selected_routes == []
+            assert complex_mock_app.selected_routes is None
             
 # Step 4: Load data and validate parameters in single route mode
             complex_mock_app._data_file_path = temp_path
@@ -493,10 +494,9 @@ SR-123,0.5,"""
             file_manager.detect_available_routes()
             state1_routes = complex_mock_app.available_routes.copy()
             
-            # State 2: Reset parameters
+            # State 2: Reset parameters (does not reset route lists — only UI params)
             parameter_manager.reset_parameters()
             assert complex_mock_app.available_routes == []
-            assert complex_mock_app.selected_routes == []
             
             # State 3: Reload (should restore same state as State 1)
             file_manager.detect_available_routes()

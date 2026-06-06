@@ -183,8 +183,15 @@ class OptimizationController:
                 is_single_route_mode = True
             
             if is_single_route_mode:
-                filename = os.path.basename(self.app.file_manager.get_data_file_path() or "unknown.csv")
-                route_name = filename.replace('.csv', '').replace('.xlsx', '')
+                data_path = self.app.file_manager.get_data_file_path()
+                if data_path:
+                    route_name = os.path.basename(data_path).replace('.csv', '').replace('.xlsx', '')
+                else:
+                    active_source = getattr(self.app, '_active_data_source', None)
+                    route_name = (
+                        getattr(active_source, '_config', None) and active_source._config.table_or_view
+                        or (active_source.display_name if active_source else "data")
+                    )
                 all_routes = [route_name]
             else:
                 if actual_route_column in self.app.data.route_data.columns:

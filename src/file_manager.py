@@ -199,7 +199,8 @@ class FileManager:
             df = pd.read_csv(data_path, nrows=0)
             columns = df.columns.tolist()
             self.app.available_columns = columns
-            
+            self.app.data = None  # stale data from previous source must not carry over
+
             self.app.log_message(f"Found {len(columns)} columns: {columns}")
 
             # Remove any must-break / secondary-break column selections that don't
@@ -233,7 +234,7 @@ class FileManager:
             
             # Reset route state when loading new file
             self.app.available_routes = []
-            self.app.selected_routes = []
+            self.app.selected_routes = None
             if hasattr(self.app, 'route_info_label'):
                 self.app.route_info_label.config(text="")
             if hasattr(self.app, 'filter_routes_button'):
@@ -310,6 +311,11 @@ class FileManager:
         self.app.available_columns = columns
         self.app.log_message(f"Found {len(columns)} columns: {columns}")
 
+        # Clear stale data so the auto-load in start_optimization() runs fresh.
+        # Without this, switching to a new table keeps the old DataFrame and the
+        # x/y column names no longer match the stale data, causing KeyErrors.
+        self.app.data = None
+
         # Clear attribute break selections — a new data source means a fresh start;
         # columns that share a name across sources may have different semantics.
         try:
@@ -326,9 +332,10 @@ class FileManager:
         except (AttributeError, TypeError):
             pass
 
-        # Reset route state.
+        # Reset route state. None means "no filter applied — use all routes".
+        # An empty list [] would be interpreted as "user selected nothing" and raise an error.
         self.app.available_routes = []
-        self.app.selected_routes = []
+        self.app.selected_routes = None
         if hasattr(self.app, 'route_info_label'):
             self.app.route_info_label.config(text="")
         if hasattr(self.app, 'filter_routes_button'):
@@ -770,16 +777,54 @@ class FileManager:
             self.app.log_message(f"Error processing data: {str(e)}")
             show_error_message("Data Loading Error", f"Error processing data: {str(e)}", self.app.log_message)
     
+    def _detect_routes_from_db_source(self, source, route_col: str) -> None:
+        """Populate available_routes from a live DatabaseDataSource."""
+        from route_utils import list_routes, normalize_route_id
+        try:
+            distinct_routes = source.detect_routes(route_col)
+            if not distinct_routes:
+                self.app.log_message(
+                    f"No valid route IDs found in database column '{route_col}'."
+                )
+                self.app.available_routes = []
+                self.app.selected_routes = None
+                return
+            self.app.available_routes = distinct_routes
+            current = getattr(self.app, 'selected_routes', None)
+            if not current:
+                self.app.selected_routes = None  # no filter = use all
+            else:
+                valid = [r for r in current if r in distinct_routes]
+                self.app.selected_routes = valid if valid else None
+            self.app._update_route_info_display()
+            self.app.log_message(
+                f"Found {len(distinct_routes)} routes in DB column '{route_col}': {distinct_routes}"
+            )
+        except Exception as e:
+            self.app.log_message(f"Error detecting routes from database: {e}")
+            self.app.available_routes = []
+            self.app.selected_routes = None
+
     def detect_available_routes(self):
         """Detect and populate available routes based on selected route column."""
         data_path = self.get_data_file_path()
+        active_source = getattr(self.app, '_active_data_source', None)
         route_col = normalize_route_column_selection(self.app.route_column.get())
 
-        if not data_path or route_col is None:
+        if route_col is None:
             self.app.available_routes = []
-            self.app.selected_routes = []
+            self.app.selected_routes = None
             return
-            
+
+        if not data_path and active_source is not None:
+            self._detect_routes_from_db_source(active_source, route_col)
+            return
+
+        if not data_path:
+            self.app.available_routes = []
+            self.app.selected_routes = None
+            return
+
         try:
             # First, read the CSV headers to verify the column exists
             df_headers = pd.read_csv(data_path, nrows=0)
@@ -801,9 +846,9 @@ class FileManager:
                     self.app.log_message
                 )
                 self.app.available_routes = []
-                self.app.selected_routes = []
+                self.app.selected_routes = None
                 return
-            
+
             # Load just the route column to get distinct values
             df = pd.read_csv(data_path, usecols=[route_col], dtype={route_col: str})
 
@@ -835,39 +880,38 @@ class FileManager:
                 )
                 self.app.route_column.set(ROUTE_COLUMN_NONE_SENTINEL)
                 self.app.available_routes = []
-                self.app.selected_routes = []
+                self.app.selected_routes = None
                 return
-            
+
             self.app.available_routes = distinct_routes
-            
-            # Default: select all routes
-            if not self.app.selected_routes:
-                self.app.selected_routes = distinct_routes.copy()
+
+            # Default: no filter (use all routes). Preserve an explicit prior selection
+            # only if every selected route still exists in the new data.
+            current = getattr(self.app, 'selected_routes', None)
+            if not current:
+                self.app.selected_routes = None  # no filter = use all
             else:
-                # Remove any previously selected routes that no longer exist
-                self.app.selected_routes = [r for r in self.app.selected_routes if r in distinct_routes]
-                # If no valid routes remain, select all
-                if not self.app.selected_routes:
-                    self.app.selected_routes = distinct_routes.copy()
-            
+                valid = [r for r in current if r in distinct_routes]
+                self.app.selected_routes = valid if valid else None
+
             self.app._update_route_info_display()
             self.app.log_message(f"Found {len(distinct_routes)} routes in column '{route_col}': {distinct_routes}")
-            
+
         except FileNotFoundError:
             self.app.log_message(f"ERROR: Data file not found: {data_path}")
             show_error_message("File Not Found", f"The selected data file could not be found:\n{data_path}", self.app.log_message)
             self.app.available_routes = []
-            self.app.selected_routes = []
+            self.app.selected_routes = None
         except pd.errors.EmptyDataError:
             self.app.log_message(f"ERROR: Data file is empty: {data_path}")
             show_error_message("Empty File", "The selected data file is empty or contains no data.", self.app.log_message)
             self.app.available_routes = []
-            self.app.selected_routes = []
+            self.app.selected_routes = None
         except Exception as e:
             self.app.log_message(f"ERROR: Unexpected error detecting routes: {str(e)}")
             show_error_message("Route Detection Error", f"An unexpected error occurred while reading routes:\n\n{str(e)}", self.app.log_message)
             self.app.available_routes = []
-            self.app.selected_routes = []
+            self.app.selected_routes = None
 
     def ensure_route_column_is_string(self, route_col: str):
         """Ensure the in-memory dataset treats the given route column as string.
@@ -1433,7 +1477,8 @@ class FileManager:
                     if 'route_column' in ui_state and hasattr(self.app, 'route_column'):
                         self.app.route_column.set(ui_state.get('route_column') or '')
                     if 'selected_routes' in ui_state:
-                        self.app.selected_routes = ui_state.get('selected_routes') or []
+                        saved = ui_state.get('selected_routes')
+                        self.app.selected_routes = list(saved) if isinstance(saved, list) else None
                     if 'window_geometry' in ui_state and ui_state.get('window_geometry'):
                         try:
                             self.app.root.geometry(ui_state.get('window_geometry'))
