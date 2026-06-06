@@ -626,6 +626,16 @@ def _run_analysis_from_resolved_spec(
         log(f"Connecting to database: {_ds_label}")
         try:
             _active_source = DatabaseDataSource(spec.data_source_config)
+            _row_count = _active_source.get_row_count()
+            if _row_count > 0:
+                from app_constants import ValidationConfig
+                _threshold = ValidationConfig().large_table_row_threshold
+                if _row_count > _threshold:
+                    log(
+                        f"WARNING: Table '{spec.data_source_config.table_or_view}' "
+                        f"contains {_row_count:,} rows — load may be slow. "
+                        f"Consider pre-filtering via a database view."
+                    )
             raw_df = _active_source.load_data(
                 x_col=spec.x_column,
                 y_col=spec.y_column,

@@ -198,6 +198,32 @@ class DatabaseDataSource(DataSourceBase):
                 f"Failed to load data from '{self._config.table_or_view}': {exc}"
             ) from exc
 
+    def get_row_count(self) -> int:
+        """Return the number of rows in the configured table or view.
+
+        Used to warn the user before loading a very large table.  Fails
+        open — returns 0 on any error so the caller can still attempt to
+        load the data.
+
+        Returns:
+            Row count, or 0 if the count cannot be determined.
+        """
+        import sqlalchemy
+
+        if not self._config.table_or_view:
+            return 0
+        table_ref = self._table_identifier()
+        sql = f"SELECT COUNT(*) FROM {table_ref}"
+        try:
+            engine = self._get_engine()
+            with engine.connect() as conn:
+                result = conn.execute(sqlalchemy.text(sql))
+                row = result.fetchone()
+                return int(row[0]) if row else 0
+        except Exception as exc:
+            _logger.debug("Could not determine row count for '%s': %s", self._config.table_or_view, exc)
+            return 0
+
     def detect_routes(self, route_col: str) -> List[str]:
         """Return sorted distinct non-null route IDs from the table.
 

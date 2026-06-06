@@ -705,6 +705,27 @@ class FileManager:
 
         selected_routes = getattr(self.app, 'selected_routes', None) or None
 
+        # Large-table guard: warn the user before loading a very large table.
+        if hasattr(source, 'get_row_count') and not is_test_environment():
+            try:
+                from app_constants import ValidationConfig
+                _threshold = ValidationConfig().large_table_row_threshold
+                _count = source.get_row_count()
+                if _count > _threshold:
+                    proceed = messagebox.askyesno(
+                        "Large Table Warning",
+                        f"The table '{source._config.table_or_view}' contains "
+                        f"{_count:,} rows, which may take a long time to load.\n\n"
+                        f"Consider connecting to a view or query that limits the "
+                        f"data to the routes or time period you need.\n\n"
+                        "Continue loading anyway?",
+                        icon="warning",
+                    )
+                    if not proceed:
+                        return
+            except Exception:
+                pass  # fail-open: never block the load due to count failure
+
         self.app.log_message(
             f"Loading data from {source.display_name}..."
             + (f" (route filter: {selected_routes})" if selected_routes else "")
