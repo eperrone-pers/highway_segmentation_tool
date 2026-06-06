@@ -37,9 +37,21 @@ The system is designed around three extensibility principles:
 | `visualization_ui.py` | Enhanced results visualization window (Pareto + segmentation panes). |
 | `visualization_ui_builder.py` | Builds the visualization window layout (extracted from `visualization_ui.py`). |
 | `parameter_manager.py` | Parameter validation, state management, and UI updates. |
-| `file_manager.py` | File I/O: data loading, CSV processing, result file management. |
-| `settings_manager.py` | Persists user settings (column selections, parameters) between sessions. |
+| `file_manager.py` | Data loading for both CSV and database sources; result file management. Routes all source types through a shared post-read processing pipeline (`_process_dataframe`). |
+| `database_connection_dialog.py` | Two-stage database connection dialog (driver/credentials form → table/view picker). |
+| `settings_manager.py` | Persists user settings (column selections, parameters, saved DB connections) between sessions. |
 | `cli_export_dialog.py` | "Create Batch Command" dialog — exports current GUI settings as a CLI run spec. |
+
+### Data source layer
+
+| Module | Responsibility |
+| --- | --- |
+| `data_sources/base.py` | `DataSourceBase` ABC, `DataSourceConfig` dataclass, `DataSourceError` exception. Defines the interface all sources must implement. |
+| `data_sources/file_source.py` | `FileDataSource` — wraps `pd.read_csv`. |
+| `data_sources/database_source.py` | `DatabaseDataSource` — SQLAlchemy-backed implementation. Lazy engine creation, password retrieval from keyring / env var, `SELECT *` with optional route filter. |
+| `data_sources/driver_registry.py` | `DATABASE_DRIVERS` list — one `DatabaseDriverConfig` per engine. Extension point: add new database types here. |
+| `data_sources/type_registry.py` | `DATA_SOURCE_TYPES` list — drives the GUI source-type dropdown. Extension point: add new source categories here. |
+| `data_sources/registry.py` | `get_data_source()` factory — resolves a `DataSourceConfig` to a concrete `DataSourceBase` instance. |
 
 ### Configuration
 
@@ -83,9 +95,11 @@ The system is designed around three extensibility principles:
 ### GUI path
 
 ```text
-User loads CSV
-  └─ FileManager.load_data_file()
-       └─ data_loader.load_data() → app.data (RouteAnalysis)
+User loads data (CSV or database)
+  ├─ [CSV]      FileManager.load_data_file()
+  │               └─ pd.read_csv → _process_dataframe() → app.data (RouteAnalysis)
+  └─ [Database] FileManager.load_from_active_source()
+                  └─ DatabaseDataSource.load_data() → _process_dataframe() → app.data (RouteAnalysis)
 
 User configures parameters
   └─ UIBuilder (dynamic widgets from ParameterDefinition list)
@@ -132,7 +146,10 @@ User clicks Start
 ```text
 cli.py main()
   └─ cli_runner.run_from_spec(run_spec)
-       ├─ data_loader.load_data()  →  RouteAnalysis
+       ├─ [data_file_path]  FileDataSource.load_data()      →  DataFrame
+       ├─ [data_source]     DatabaseDataSource.load_data()  →  DataFrame
+       │                    (password from HST_DB_PASSWORD env var)
+       ├─ [shared]  _convert_columns_for_analysis()  →  RouteAnalysis
        ├─ route_utils.prepare_routes_for_optimization()
        │     (same per-route filter → sort → gap/attribute-break/preprocessing logic as GUI path)
        ├─ For each route:
@@ -224,7 +241,29 @@ for route_id, route_analysis, preprocessing_results in prepared_routes:
     result = method.run_analysis(route_analysis, ...)
 ```
 
-### 4.6 Logging conventions
+### 4.6 DataSourceBase — the data source abstraction
+
+All data loading goes through the `DataSourceBase` ABC (`src/data_sources/base.py`). The two implementations — `FileDataSource` and `DatabaseDataSource` — expose the same interface so `FileManager` and `cli_runner` never branch on source type in their core logic.
+
+```python
+class DataSourceBase(ABC):
+    @property
+    def source_type(self) -> str: ...      # "file" | "database"
+    @property
+    def display_name(self) -> str: ...     # shown in GUI status line
+    def get_available_columns(self) -> List[str]: ...
+    def load_data(self, x_col, y_col, route_col=None, selected_routes=None) -> pd.DataFrame: ...
+    def detect_routes(self, route_col: str) -> List[str]: ...
+    def get_traceability_info(self) -> Dict[str, Any]: ...  # never includes password
+```
+
+`get_traceability_info()` produces the `analysis_metadata.input_file_info` block in the results JSON. For file sources this contains the file path, size, and modification time. For database sources it contains driver, host, database, table/view, and username — **never** the password.
+
+**Adding a new database engine:** add one `DatabaseDriverConfig` entry to `DATABASE_DRIVERS` in `src/data_sources/driver_registry.py`. No other code changes needed.
+
+**Adding a new source category** (e.g., ArcGIS REST, WMS): implement `DataSourceBase`, add a `DataSourceTypeConfig` entry to `DATA_SOURCE_TYPES` in `src/data_sources/type_registry.py`, and add the dialog handler.
+
+### 4.7 Logging conventions
 
 | Context | Mechanism | Why |
 | --- | --- | --- |
@@ -244,6 +283,8 @@ for route_id, route_analysis, preprocessing_results in prepared_routes:
 | Add a new analysis method | [`docs/configuring_new_analysis_method.md`](configuring_new_analysis_method.md) |
 | Add a new preprocessing method | [`docs/configuring_new_preprocessing_method.md`](configuring_new_preprocessing_method.md) |
 | Change the JSON output schema | `src/extensible_results_manager.py` + [`docs/json_format_specification.md`](json_format_specification.md) |
+| Add a new database engine | Add one `DatabaseDriverConfig` to `DATABASE_DRIVERS` in `src/data_sources/driver_registry.py` |
+| Add a new data source category | Implement `DataSourceBase`; add `DataSourceTypeConfig` to `DATA_SOURCE_TYPES` in `src/data_sources/type_registry.py` |
 | Add CLI arguments or run-spec fields | `src/cli.py` + `src/cli_runner.py` |
 | Add a new parameter type to the UI | `src/parameter_definitions.py` + `src/config.py` |
 | Modify result serialization for all methods | `AnalysisResult.to_route_result_dict()` in `src/analysis/base.py` |

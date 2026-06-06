@@ -342,12 +342,24 @@ Constrained/single-objective methods typically emit a single point; multi-object
     },
     "input_file_info": {
       "type": "object",
-      "required": ["data_file_name", "total_data_rows", "total_routes_available", "column_info"],
+      "description": "Source traceability. Shape depends on source_type.",
+      "required": ["total_data_rows", "total_routes_available", "column_info"],
       "properties": {
-        "data_file_path": {"type": "string"},
-        "data_file_name": {"type": "string"},
-        "data_file_size_bytes": {"type": "integer", "minimum": 0},
-        "data_file_modified": {"type": "string", "format": "date-time"},
+        "source_type": {
+          "type": "string",
+          "enum": ["file", "database"],
+          "description": "Discriminator: 'file' for CSV, 'database' for SQL sources"
+        },
+        "data_file_path": {"type": "string", "description": "Absolute path (file sources only)"},
+        "data_file_name": {"type": "string", "description": "Filename (file sources only)"},
+        "data_file_size_bytes": {"type": "integer", "minimum": 0, "description": "File sources only"},
+        "data_file_modified": {"type": "string", "format": "date-time", "description": "File sources only"},
+        "driver": {"type": "string", "description": "SQLAlchemy driver key, e.g. 'postgresql' (database sources only)"},
+        "host": {"type": ["string", "null"], "description": "Database host (database sources only)"},
+        "database": {"type": ["string", "null"], "description": "Database/catalog name (database sources only)"},
+        "schema": {"type": ["string", "null"], "description": "Schema name (database sources only)"},
+        "table_or_view": {"type": "string", "description": "Table or view name (database sources only)"},
+        "username": {"type": ["string", "null"], "description": "Username — no password ever written (database sources only)"},
         "total_data_rows": {"type": "integer", "minimum": 1},
         "total_routes_available": {"type": "integer", "minimum": 1},
         "column_info": {

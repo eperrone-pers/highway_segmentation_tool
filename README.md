@@ -104,7 +104,7 @@ The GUI provides an intuitive way to configure all parameters:
 
 ### Configuration Sections
 
-- **File Operations:** Select CSV, optional route column, X/Y columns, gap threshold, and results save path
+- **Data Source:** Select source type (CSV or Database), click **Connect / Open** to load a file or connect to a database, then pick X/Y columns, optional route column, gap threshold, and results save path
 - **Optimization Method:** Dropdown selection populated from the method registry (`OPTIMIZATION_METHODS`)
 - **Method Parameters:** Dynamically generated, method-specific parameters (defined in `src/config.py`). Double-click a parameter value in the table to edit.
 - **Performance & Caching:** Caching and performance options (where applicable)
@@ -143,17 +143,13 @@ Notes:
 
 ## Data Format
 
-The repository is delivered with sample input CSVs in `data/`.
+### CSV files
 
-CSV file with columns:
+The repository includes sample CSVs in `data/`. Required column structure:
 
 - **Distance column**: Highway milepoint or station locations  
 - **Measurement column**: Numeric condition values (e.g., IRI, PCI, rutting depth, structural indices)
 - **Route column** (optional): Route identifiers for multi-route analysis
-
-The tool works with any numeric pavement condition index including IRI (International Roughness Index), PCI (Pavement Condition Index), rutting depth, cracking indices, structural numbers, deflection data, and custom metrics.
-
-Example:
 
 ```csv
 milepoint,structural_strength_ind
@@ -161,6 +157,30 @@ milepoint,structural_strength_ind
 196.901,73.8
 197.043,82.1
 ```
+
+### Database sources (GUI and CLI)
+
+The tool connects directly to relational databases via SQLAlchemy. Supported engines:
+
+| Driver key | Database |
+| --- | --- |
+| `postgresql` | PostgreSQL / PostGIS |
+| `oracle` | Oracle Database |
+| `sqlserver` | SQL Server |
+| `mysql` | MySQL / MariaDB |
+| `snowflake` | Snowflake |
+| `bigquery` | Google BigQuery |
+| `redshift` | Amazon Redshift |
+| `azuresynapse` | Azure Synapse |
+| `sqlite` | SQLite (no server required) |
+
+**GUI:** choose **Database (SQL)** in the Data Source dropdown, click **Connect / Open**, select the driver and credentials, then browse tables/views.
+
+**CLI:** use a `data_source` block in the run spec instead of `data_file_path`. See [`docs/CLI_USAGE.md`](docs/CLI_USAGE.md#database-input).
+
+Passwords are stored in the system keyring (GUI) or the `HST_DB_PASSWORD` environment variable (CLI) — never in settings files.
+
+The tool works with any numeric pavement condition index including IRI, PCI, rutting depth, cracking indices, structural numbers, deflection data, and custom metrics.
 
 ## Output Files
 

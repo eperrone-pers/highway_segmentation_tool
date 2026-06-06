@@ -12,7 +12,7 @@
 8. [Basic Workflow](#basic-workflow)
 9. [Understanding Results](#understanding-results)
 10. [Pavement-Specific Parameter Guidance](#pavement-specific-parameter-guidance)
-11. [Data Import & Export](#data-import--export)
+11. [Data Import & Export](#data-import--export) — [Connecting to a Database](#connecting-to-a-database)
 12. [Advanced Configuration](#advanced-configuration)
 13. [Troubleshooting](#troubleshooting)
 14. [Technical Reference](#technical-reference)
@@ -105,9 +105,9 @@ This tool works with any numeric pavement condition index:
 
 **For a basic analysis without preprocessing:**
 
-1. In **📁 File Operations**, click **Browse...** next to **Data File** and select a CSV
+1. In **📁 Data Source**, choose **CSV File** or **Database (SQL)** and click **Connect / Open** to load your data (see [Connecting to a Database](#connecting-to-a-database) for the DB workflow)
 2. Select **X Column (Distance)** and **Y Column (Data Values)** (these are not auto-selected)
-3. Optional (multi-route files): pick **Route Column (Optional)** then click **Filter** to select which routes to process
+3. Optional (multi-route data): pick **Route Column (Optional)** then click **Filter** to select which routes to process
 4. In **Step 2: Gap Analysis**, set **Gap Threshold** (controls where mandatory breakpoints are inserted at data gaps)
 5. Leave preprocessing steps (1, 4, 6) set to "None" (collapsed panels)
 6. In **Step 7: Analysis Method**, select your method and configure parameters (expand the panel)
@@ -1710,9 +1710,10 @@ Step 5: Late breaks = ["COUNTY", "DISTRICT", "MAINT_ZONE"]  # Add administrative
 
 ### Import Data Format
 
-**Supported File Types**:
+**Supported Sources**:
 
 - ✅ CSV files with headers (.csv)
+- ✅ Relational databases via SQLAlchemy (PostgreSQL, Oracle, SQL Server, MySQL, Snowflake, BigQuery, Redshift, Azure Synapse, SQLite)
 
 If your data is in Excel or TSV format, convert it to CSV before loading.
 
@@ -1728,7 +1729,7 @@ milepoint,structural_strength_ind,route
 **Column Selection**:
 
 - **X Column (Distance)** and **Y Column (Data Values)** must be selected from the dropdowns.
-- The app intentionally does not auto-select columns when switching files (to avoid accidental mismatches).
+- The app intentionally does not auto-select columns when switching sources (to avoid accidental mismatches).
 - **Route Column (Optional)** enables multi-route processing; use **Filter** to select which route IDs to run.
 
 **Multi-Route Support**:
@@ -1736,6 +1737,58 @@ milepoint,structural_strength_ind,route
 - Include route identifier column for analyzing multiple highway sections
 - Each route is processed and then consolidated into a single results JSON
 - Route filtering available for selective analysis
+
+---
+
+### Connecting to a Database
+
+The GUI supports direct database connections via the **Data Source** row at the top of the configuration panel.
+
+#### Step-by-step
+
+1. In the **Data Source** dropdown, choose **Database (SQL)**.
+2. Click **Connect / Open**. The connection dialog opens.
+3. **Stage 1 — Connection form:**
+   - Select your **Driver** (PostgreSQL, Oracle, SQL Server, SQLite, etc.).
+   - Fill in the connection fields that appear for the selected driver (host, port, database/schema, username).
+   - Enter your **Password** — it is stored in the system keyring, never saved to disk.
+   - Optionally type a **Connection Name** and click **Save Connection** to store credentials for future sessions (password is saved to keyring under this name).
+   - Click **Browse Tables & Views…** to test the connection and advance to Stage 2.
+4. **Stage 2 — Table / view picker:**
+   - Select the **Schema** from the dropdown.
+   - Click a table or view in the list.
+   - Click **Use This Table** to confirm. The dialog closes and column names populate automatically.
+5. Back in the main window, select **X Column**, **Y Column**, and optionally a **Route Column**.
+6. If you selected a route column, click **Filter** to choose which routes to include (or leave unfiltered to process all routes).
+7. Click **Start** to run analysis. Data is loaded from the database automatically.
+
+#### Supported databases
+
+| Driver | Notes |
+| --- | --- |
+| `postgresql` | Requires `psycopg2-binary`: `pip install psycopg2-binary` |
+| `oracle` | Requires `cx_Oracle`: `pip install cx_Oracle` |
+| `sqlserver` | Requires `pyodbc`: `pip install pyodbc` |
+| `mysql` | Requires `pymysql`: `pip install pymysql` |
+| `snowflake` | Requires `snowflake-sqlalchemy`: `pip install snowflake-sqlalchemy` |
+| `bigquery` | Requires `sqlalchemy-bigquery`: `pip install sqlalchemy-bigquery` |
+| `redshift` | Requires `redshift-connector sqlalchemy-redshift` |
+| `azuresynapse` | Requires `pyodbc` with ODBC Driver 17+ for SQL Server |
+| `sqlite` | No extra packages — uses Python's built-in SQLite |
+
+#### Passwords and security
+
+- Passwords are **never** written to `app_settings.json` or any file on disk.
+- The GUI stores passwords in the **system keyring** (macOS Keychain, Windows Credential Manager, Linux Secret Service).
+- The CLI reads the password from the `HST_DB_PASSWORD` environment variable. See [`docs/CLI_USAGE.md`](CLI_USAGE.md#database-input).
+
+#### Switching between tables
+
+Selecting a new table or reconnecting to a different source automatically clears the loaded data and resets column selections, so you always start fresh.
+
+#### Large tables
+
+If a table exceeds 100,000 rows the app shows a warning before loading. Consider connecting to a database view that pre-filters to the routes or time period you need.
 
 ### Export Formats and Contents
 
