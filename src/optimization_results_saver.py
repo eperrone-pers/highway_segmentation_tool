@@ -155,10 +155,29 @@ class OptimizationResultsSaver:
                     "saving will omit route_column metadata"
                 )
 
-            input_file_info = {
-                'data_file_path': str(data_file_path) if data_file_path else 'unknown.csv',
-                'data_file_name': data_file_path.name if data_file_path else 'unknown.csv',
-                'data_file_size_bytes': data_file_path.stat().st_size if data_file_path and data_file_path.exists() else None,
+            # Build traceability metadata from the active data source.
+            from data_sources.base import DataSourceBase as _DataSourceBase
+            active_source = getattr(self.app, '_active_data_source', None)
+            if isinstance(active_source, _DataSourceBase):
+                input_file_info = active_source.get_traceability_info()
+            elif data_file_path is not None:
+                try:
+                    from data_sources.file_source import FileDataSource
+                    from data_sources.base import DataSourceConfig
+                    _fs = FileDataSource(DataSourceConfig(source_type="file", file_path=str(data_file_path)))
+                    input_file_info = _fs.get_traceability_info()
+                except Exception:
+                    input_file_info = {
+                        "source_type": "file",
+                        "data_file_path": str(data_file_path),
+                        "data_file_name": data_file_path.name,
+                        "data_file_size_bytes": data_file_path.stat().st_size if data_file_path.exists() else None,
+                    }
+            else:
+                input_file_info = {"source_type": "file"}
+
+            # Merge in runtime stats that require the loaded DataFrame.
+            input_file_info.update({
                 'total_data_rows': len(self.app.data.route_data) if hasattr(self.app.data, 'route_data') else None,
                 'total_routes_available': (
                     len(self.app.data.route_data[route_col_used].unique())
@@ -175,7 +194,7 @@ class OptimizationResultsSaver:
                         else None
                     )
                 }
-            }
+            })
 
             route_processing_config = {
                 'route_mode': 'multi_route' if len(all_route_results) > 1 else 'single_route',

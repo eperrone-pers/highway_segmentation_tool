@@ -722,10 +722,11 @@ def _run_analysis_from_resolved_spec(
     if out_path.exists() and not spec.overwrite:
         raise RunSpecError(f"Output file already exists and overwrite=false: {out_path}")
 
+    from data_sources.file_source import FileDataSource
+    from data_sources.base import DataSourceConfig as _DSConfig
+    _file_source = FileDataSource(_DSConfig(source_type="file", file_path=str(spec.data_file_path)))
     input_file_info = {
-        "data_file_path": str(spec.data_file_path),
-        "data_file_name": spec.data_file_path.name,
-        "data_file_size_bytes": spec.data_file_path.stat().st_size if spec.data_file_path.exists() else None,
+        **_file_source.get_traceability_info(),
         "total_data_rows": int(len(df)),
         "total_routes_available": int(len(all_routes)) if actual_route_column else 1,
         "column_info": {
