@@ -242,6 +242,11 @@ class DatabaseDataSource(DataSourceBase):
             raise DataSourceError(
                 "No table/view or custom SQL query configured."
             )
+        if not self._config.table_or_view:
+            raise DataSourceError(
+                "detect_routes() requires a table_or_view — "
+                "route detection from a custom SQL query is not supported."
+            )
 
         table_ref = self._table_identifier()
         col = sqlalchemy.column(route_col)

@@ -556,22 +556,3 @@ class JsonResultsManager:
             "total_routes_processed": total_routes_processed,
             "total_length_processed": round(total_length_processed, 3)
         }
-
-
-# Convenience function for single-result scenarios
-def save_single_analysis_result(analysis_result: AnalysisResult, 
-                              output_path: str,
-                              **kwargs) -> str:
-    """
-    Convenience function to save a single AnalysisResult to JSON.
-    
-    Args:
-        analysis_result: The AnalysisResult to save
-        output_path: Where to save the JSON file
-        **kwargs: Additional arguments passed to JsonResultsManager
-        
-    Returns:
-        str: Path to saved file
-    """
-    json_manager = JsonResultsManager()
-    return json_manager.save_analysis_results(analysis_result, output_path, **kwargs)

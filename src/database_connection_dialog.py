@@ -28,6 +28,76 @@ _logger = logging.getLogger(__name__)
 _KEYRING_SERVICE = "highway_segmentation_tool"
 _NEW_CONNECTION_SENTINEL = "— New connection —"
 
+
+# ---------------------------------------------------------------------------
+# Pure settings helpers — no Tkinter dependency; importable and testable
+# without a running Tk event loop.
+# ---------------------------------------------------------------------------
+
+def get_saved_connections(settings: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Return the saved-connections list from *settings*, or ``[]``."""
+    return settings.get("data_sources", {}).get("saved_connections", [])
+
+
+def build_connection_record(
+    config: "DataSourceConfig",
+    driver_key: str,
+    table_name: str,
+) -> Dict[str, Any]:
+    """Build a serialisable connection record from *config*.
+
+    The record is suitable for storing in ``app.settings["data_sources"]
+    ["saved_connections"]``.  Passwords are **never** included.
+
+    Args:
+        config: Source configuration for the connection.
+        driver_key: Driver key string (e.g. ``"postgresql"``).
+        table_name: Table or view that was selected.
+
+    Returns:
+        Dict with ``name``, ``driver_key``, ``table_or_view``, and any
+        non-null standard fields (``host``, ``port``, ``database``,
+        ``schema``, ``username``).  Non-password ``extra`` fields are
+        also included.
+    """
+    conn_name = (
+        config.connection_name
+        or f"{config.database or 'db'}/{table_name}"
+    )
+    record: Dict[str, Any] = {
+        "name": conn_name,
+        "driver_key": driver_key,
+        "table_or_view": table_name,
+    }
+    for attr in ("host", "port", "database", "schema", "username"):
+        val = getattr(config, attr, None)
+        if val is not None:
+            record[attr] = val
+    for k, v in (config.extra or {}).items():
+        if k != "password" and v is not None:
+            record[k] = v
+    return record
+
+
+def upsert_connection_record(settings: Dict[str, Any], record: Dict[str, Any]) -> None:
+    """Insert or update *record* in the saved-connections list.
+
+    Matches on ``record["name"]``; updates in place if found, appends if not.
+    """
+    ds = settings.setdefault("data_sources", {})
+    conns: List[Dict[str, Any]] = ds.setdefault("saved_connections", [])
+    idx = next((i for i, c in enumerate(conns) if c["name"] == record["name"]), None)
+    if idx is not None:
+        conns[idx] = record
+    else:
+        conns.append(record)
+
+
+def delete_connection_by_name(settings: Dict[str, Any], name: str) -> None:
+    """Remove the saved connection named *name* from *settings* in place."""
+    conns = [c for c in get_saved_connections(settings) if c["name"] != name]
+    settings.setdefault("data_sources", {})["saved_connections"] = conns
+
 # Maps field keys (from DatabaseDriverConfig.fields) to GUI labels.
 _FIELD_LABELS: Dict[str, str] = {
     "host": "Host:",
@@ -263,7 +333,7 @@ class DatabaseConnectionDialog(tk.Toplevel):
     # ── Saved connections ─────────────────────────────────────────────── #
 
     def _saved_connections(self) -> List[Dict[str, Any]]:
-        return self.app.settings.get("data_sources", {}).get("saved_connections", [])
+        return get_saved_connections(self.app.settings)
 
     def _refresh_saved_combo(self) -> None:
         names = [_NEW_CONNECTION_SENTINEL] + [
@@ -316,8 +386,7 @@ class DatabaseConnectionDialog(tk.Toplevel):
         selected = self._saved_conn_var.get()
         if selected == _NEW_CONNECTION_SENTINEL:
             return
-        conns = [c for c in self._saved_connections() if c["name"] != selected]
-        self.app.settings.setdefault("data_sources", {})["saved_connections"] = conns
+        delete_connection_by_name(self.app.settings, selected)
         self._saved_conn_var.set(_NEW_CONNECTION_SENTINEL)
         self._refresh_saved_combo()
 
@@ -626,42 +695,16 @@ class DatabaseConnectionDialog(tk.Toplevel):
             config: The ``DataSourceConfig`` for the chosen connection.
             table_name: The selected table or view name.
         """
-        conn_name = (
-            config.connection_name
-            or f"{config.database or 'db'}/{table_name}"
-        )
         driver = self._current_driver()
-
-        record: Dict[str, Any] = {
-            "name": conn_name,
-            "driver_key": driver.driver_key,
-            "table_or_view": table_name,
-        }
-        for attr in ("host", "port", "database", "schema", "username"):
-            val = getattr(config, attr, None)
-            if val is not None:
-                record[attr] = val
-        # Copy non-password extra fields (e.g. Snowflake account, BigQuery project).
-        for k, v in (config.extra or {}).items():
-            if k != "password" and v is not None:
-                record[k] = v
-
-        ds = self.app.settings.setdefault("data_sources", {})
-        conns: List[Dict[str, Any]] = ds.setdefault("saved_connections", [])
-        idx = next(
-            (i for i, c in enumerate(conns) if c["name"] == conn_name), None,
-        )
-        if idx is not None:
-            conns[idx] = record
-        else:
-            conns.append(record)
+        record = build_connection_record(config, driver.driver_key, table_name)
+        upsert_connection_record(self.app.settings, record)
 
         # Password into keyring — never written to disk.
         password = self._password_var.get()
         if password:
             try:
                 import keyring
-                keyring.set_password(_KEYRING_SERVICE, conn_name, password)
+                keyring.set_password(_KEYRING_SERVICE, record["name"], password)
             except Exception as exc:
                 _logger.warning("Could not store password in keyring: %s", exc)
 

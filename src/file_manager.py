@@ -779,7 +779,6 @@ class FileManager:
     
     def _detect_routes_from_db_source(self, source, route_col: str) -> None:
         """Populate available_routes from a live DatabaseDataSource."""
-        from route_utils import list_routes, normalize_route_id
         try:
             distinct_routes = source.detect_routes(route_col)
             if not distinct_routes:
