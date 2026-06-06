@@ -26,6 +26,7 @@ import jsonschema
 
 from config import OptionalNumericParameter, get_optimization_method, resolve_method_class, PreprocessingRunConfig
 from data_loader import RouteAnalysis, analyze_route_gaps, process_route_with_preprocessing
+from data_sources.base import DataSourceConfig
 from extensible_results_manager import ExtensibleJsonResultsManager
 from route_utils import filter_data_by_route, list_routes, normalize_route_id
 from value_parsing import coerce_none_like
@@ -106,7 +107,8 @@ class ResolvedRunSpec:
         spec_path: Absolute path to the run-spec JSON file (used as the path
             resolution root for relative paths inside the spec).
         spec_version: Version string from the spec (e.g., ``"1.0"``).
-        data_file_path: Absolute path to the input CSV or Excel file.
+        data_file_path: Absolute path to the input CSV or Excel file. ``None``
+            when ``data_source_config`` is set (the two are mutually exclusive).
         x_column: Column name for the x-axis values (distance / station).
         y_column: Column name for the y-axis values (pavement metric).
         gap_threshold: Minimum distance gap (in the x-axis unit, typically miles)
@@ -127,12 +129,16 @@ class ResolvedRunSpec:
         output_json_path: Absolute path where the results JSON file will be written.
         overwrite: When ``True``, overwrite an existing output file. When ``False``,
             ``run_analysis_from_spec_file`` raises ``RunSpecError`` if the file exists.
+        data_source_config: Database connection parameters when the run spec uses
+            a ``data_source`` block instead of ``data_file_path``. ``None`` for
+            file-based inputs. Password is read at runtime from the
+            ``HST_DB_PASSWORD`` environment variable — never stored in the spec.
     """
 
     spec_path: Path
     spec_version: str
 
-    data_file_path: Path
+    data_file_path: Optional[Path]
     x_column: str
     y_column: str
     gap_threshold: float
@@ -143,11 +149,13 @@ class ResolvedRunSpec:
 
     method_key: str
     method_parameters: Dict[str, Any]
-    
+
     preprocessing_config: Optional[PreprocessingRunConfig]
 
     output_json_path: Path
     overwrite: bool
+
+    data_source_config: Optional[DataSourceConfig] = None
 
 
 def _now_utc() -> str:
@@ -229,7 +237,30 @@ def load_and_resolve_run_spec(spec_path: str | os.PathLike[str], *, validate: bo
     method_block = instance["method"]
     output_block = instance["output"]
 
-    data_file_path = _resolve_path(base_dir, str(input_block["data_file_path"]))
+    data_file_path: Optional[Path] = None
+    data_source_config: Optional[DataSourceConfig] = None
+
+    if "data_source" in input_block:
+        ds_block = input_block["data_source"]
+        try:
+            data_source_config = DataSourceConfig(
+                source_type="database",
+                driver_key=str(ds_block["driver"]).strip(),
+                table_or_view=str(ds_block["table_or_view"]).strip(),
+                host=str(ds_block["host"]).strip() if ds_block.get("host") else None,
+                port=int(ds_block["port"]) if ds_block.get("port") is not None else None,
+                database=str(ds_block["database"]).strip() if ds_block.get("database") else None,
+                schema=str(ds_block["schema"]).strip() if ds_block.get("schema") else None,
+                username=str(ds_block["username"]).strip() if ds_block.get("username") else None,
+                connection_name=str(ds_block["connection_name"]).strip() if ds_block.get("connection_name") else None,
+            )
+        except KeyError as exc:
+            raise RunSpecError(f"input.data_source is missing required field: {exc}") from exc
+    elif "data_file_path" in input_block:
+        data_file_path = _resolve_path(base_dir, str(input_block["data_file_path"]))
+    else:
+        raise RunSpecError("input block must contain either 'data_file_path' or 'data_source'")
+
     x_column = str(input_block["x_column"]).strip()
     y_column = str(input_block["y_column"]).strip()
     gap_threshold = float(input_block["gap_threshold"])
@@ -339,6 +370,7 @@ def load_and_resolve_run_spec(spec_path: str | os.PathLike[str], *, validate: bo
         preprocessing_config=preprocessing_config,
         output_json_path=output_json_path,
         overwrite=overwrite,
+        data_source_config=data_source_config,
     )
 
 
@@ -587,14 +619,35 @@ def _run_analysis_from_resolved_spec(
     """
     log = log_callback or _default_logger
 
-    log(f"Loading input file: {spec.data_file_path}")
-    if not spec.data_file_path.exists():
-        raise RunSpecError(f"Input file does not exist: {spec.data_file_path}")
+    if spec.data_source_config is not None:
+        from data_sources.database_source import DatabaseDataSource
+        from data_sources.base import DataSourceError
+        _ds_label = f"{spec.data_source_config.driver_key}/{spec.data_source_config.table_or_view}"
+        log(f"Connecting to database: {_ds_label}")
+        try:
+            _active_source = DatabaseDataSource(spec.data_source_config)
+            raw_df = _active_source.load_data(
+                x_col=spec.x_column,
+                y_col=spec.y_column,
+                route_col=spec.route_column,
+                selected_routes=spec.selected_routes,
+            )
+        except DataSourceError as exc:
+            raise RunSpecError(f"Database load failed: {exc}") from exc
+        input_file_stem = spec.data_source_config.table_or_view or "database_source"
+    else:
+        log(f"Loading input file: {spec.data_file_path}")
+        if not spec.data_file_path.exists():
+            raise RunSpecError(f"Input file does not exist: {spec.data_file_path}")
+        raw_df = _read_tabular_file(spec.data_file_path)
+        from data_sources.file_source import FileDataSource
+        from data_sources.base import DataSourceConfig as _DSConfig
+        _active_source = FileDataSource(_DSConfig(source_type="file", file_path=str(spec.data_file_path)))
+        input_file_stem = spec.data_file_path.stem
 
-    raw_df = _read_tabular_file(spec.data_file_path)
-    df = _convert_columns_for_analysis(raw_df, x_column=spec.x_column, y_column=spec.y_column, route_column=spec.route_column)
-
-    input_file_stem = spec.data_file_path.stem
+    df = _convert_columns_for_analysis(
+        raw_df, x_column=spec.x_column, y_column=spec.y_column, route_column=spec.route_column
+    )
 
     # Mirror GUI behavior: in single-route mode, the GUI load pipeline creates a synthetic
     # route column in-memory (typically named "route"). This affects metadata like
@@ -722,11 +775,8 @@ def _run_analysis_from_resolved_spec(
     if out_path.exists() and not spec.overwrite:
         raise RunSpecError(f"Output file already exists and overwrite=false: {out_path}")
 
-    from data_sources.file_source import FileDataSource
-    from data_sources.base import DataSourceConfig as _DSConfig
-    _file_source = FileDataSource(_DSConfig(source_type="file", file_path=str(spec.data_file_path)))
     input_file_info = {
-        **_file_source.get_traceability_info(),
+        **_active_source.get_traceability_info(),
         "total_data_rows": int(len(df)),
         "total_routes_available": int(len(all_routes)) if actual_route_column else 1,
         "column_info": {

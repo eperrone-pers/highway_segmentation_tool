@@ -40,12 +40,62 @@
     "input": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["data_file_path", "x_column", "y_column", "gap_threshold"],
+      "required": ["x_column", "y_column", "gap_threshold"],
+      "oneOf": [
+        {"required": ["data_file_path"]},
+        {"required": ["data_source"]}
+      ],
+      "description": "Input data specification. Exactly one of 'data_file_path' or 'data_source' must be provided.",
       "properties": {
         "data_file_path": {
           "type": "string",
           "minLength": 1,
-          "description": "Path to the input CSV/XLSX file"
+          "description": "Path to the input CSV/XLSX file. Mutually exclusive with 'data_source'."
+        },
+
+        "data_source": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Database connection parameters. Mutually exclusive with 'data_file_path'. Set the HST_DB_PASSWORD environment variable to supply the password — never put it in the spec file.",
+          "required": ["driver", "table_or_view"],
+          "properties": {
+            "driver": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Database driver key (e.g. 'postgresql', 'oracle', 'sqlserver', 'mysql', 'sqlite', 'custom')"
+            },
+            "host": {
+              "type": "string",
+              "description": "Database server hostname or IP address"
+            },
+            "port": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535,
+              "description": "Database server port number"
+            },
+            "database": {
+              "type": "string",
+              "description": "Database or catalog name"
+            },
+            "schema": {
+              "type": "string",
+              "description": "Schema name within the database"
+            },
+            "table_or_view": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Name of the table or view to query"
+            },
+            "username": {
+              "type": "string",
+              "description": "Database username. Password must be set via the HST_DB_PASSWORD environment variable."
+            },
+            "connection_name": {
+              "type": "string",
+              "description": "Optional human-readable label for this connection (used for system-keyring lookup when running interactively)"
+            }
+          }
         },
 
         "x_column": {
