@@ -420,13 +420,14 @@ class UIBuilder:
             command=self.app.connect_or_open,
         ).grid(row=0, column=2, padx=ui_config.standard_padding_x, sticky="w")
 
-        # Row 1: Read-only status showing what is currently connected
+        # Row 1: Status label showing what is currently connected.
+        # Uses a Label (not an Entry) so it is visually non-editable.
         ttk.Label(setup_frame, text="Connected to:").grid(
             row=1, column=0, sticky="w", pady=(3, 0),
         )
-        self.app.data_entry = ttk.Entry(
+        self.app.data_entry = ttk.Label(
             setup_frame, textvariable=self.app.data_file,
-            width=ui_config.entry_field_width_large, state="readonly",
+            anchor="w", foreground="gray40",
         )
         self.app.data_entry.grid(
             row=1, column=1, columnspan=2, sticky="ew",
