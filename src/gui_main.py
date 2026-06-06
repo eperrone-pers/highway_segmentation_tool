@@ -182,7 +182,9 @@ class HighwaySegmentationGUI:
 
         self.data = None
         self._data_file_path = ""
-        self.data_file = tk.StringVar(value="No file selected")
+        self.data_file = tk.StringVar(value="Not connected")
+        self._active_data_source = None  # Set by connect_or_open() when a DB is connected
+        self.data_source_type_var = tk.StringVar()
         self._save_file_path = ""
         
         # Column mapping - initialized empty, UI builder sets display text
@@ -291,7 +293,30 @@ class HighwaySegmentationGUI:
         if result:  # File was selected
             self.on_parameter_change()  # Save the new file path
         return result
-    
+
+    def connect_or_open(self):
+        """Dispatch Connect / Open based on the selected data source type.
+
+        - ``file_browser`` types: open the OS file picker (existing CSV flow).
+        - ``connection_form`` types: open the database connection dialog (Step 3c).
+        """
+        from data_sources.type_registry import get_type_by_display_name
+        selected = self.data_source_type_var.get()
+        source_type = get_type_by_display_name(selected)
+        if source_type is None:
+            return
+        if source_type.dialog_type == "file_browser":
+            self.browse_data_file()
+        elif source_type.dialog_type == "connection_form":
+            # TODO Step 3c: open DatabaseConnectionDialog
+            from tkinter import messagebox
+            messagebox.showinfo(
+                "Coming Soon",
+                "The database connection dialog will be added in the next step.\n\n"
+                "Switch to 'CSV File' to load data in the meantime.",
+                parent=self,
+            )
+
     def browse_save_location(self):
         """Browse for save location and save the selection."""
         result = self.file_manager.browse_save_location()
@@ -984,6 +1009,18 @@ class HighwaySegmentationGUI:
     def _apply_loaded_settings(self):
         """Apply loaded settings to all UI elements."""
         self.settings_manager.apply_to_app(self)
+
+        # Restore last-used source type dropdown.
+        last_type = self.settings.get('data_sources', {}).get('last_used_source_type', '')
+        if last_type and hasattr(self, 'data_source_type_combo'):
+            from data_sources.type_registry import get_source_type, get_display_names
+            try:
+                source_type = get_source_type(last_type)
+                if source_type.display_name in get_display_names():
+                    self.data_source_type_combo.set(source_type.display_name)
+                    self.data_source_type_var.set(source_type.display_name)
+            except KeyError:
+                pass
     
     def _setup_parameter_tracking(self):
         """Set up automatic saving when parameters change."""
@@ -1011,6 +1048,11 @@ class HighwaySegmentationGUI:
         try:
             self.settings['files']['data_file_path'] = self.file_manager.get_data_file_path() or ''
             self.settings['files']['save_file_path'] = self.file_manager.get_save_file_path() or ''
+
+            # Save last-used source type so the dropdown is restored on next launch.
+            if hasattr(self, 'data_source_type_var'):
+                ds = self.settings.setdefault('data_sources', {})
+                ds['last_used_source_type'] = self.data_source_type_var.get()
 
             # Persist dynamic params for the active method so they survive restart.
             try:

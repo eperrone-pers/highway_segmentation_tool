@@ -76,6 +76,9 @@ class FileManager:
         """
         if full_path:
             self.app._data_file_path = full_path
+            # Selecting a file supersedes any active database connection.
+            if hasattr(self.app, '_active_data_source'):
+                self.app._active_data_source = None
             # Extract and display just the filename
             filename = os.path.basename(full_path)
             
