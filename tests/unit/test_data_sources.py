@@ -42,15 +42,18 @@ def file_config(csv_file):
 # ------------------------------------------------------------------ #
 
 class TestDataSourceConfig:
+    @pytest.mark.unit
     def test_defaults_to_file_source(self):
         config = DataSourceConfig()
         assert config.source_type == "file"
 
+    @pytest.mark.unit
     def test_file_config_fields(self, csv_file):
         config = DataSourceConfig(source_type="file", file_path=str(csv_file))
         assert config.source_type == "file"
         assert config.file_path == str(csv_file)
 
+    @pytest.mark.unit
     def test_database_config_fields(self):
         config = DataSourceConfig(
             source_type="database",
@@ -70,11 +73,13 @@ class TestDataSourceConfig:
 # ------------------------------------------------------------------ #
 
 class TestFileDataSource:
+    @pytest.mark.unit
     def test_raises_if_no_file_path(self):
         config = DataSourceConfig(source_type="file", file_path=None)
         with pytest.raises(DataSourceError, match="file_path"):
             FileDataSource(config)
 
+    @pytest.mark.unit
     def test_raises_if_file_missing(self, tmp_path):
         config = DataSourceConfig(
             source_type="file", file_path=str(tmp_path / "missing.csv")
@@ -82,25 +87,30 @@ class TestFileDataSource:
         with pytest.raises(DataSourceError, match="not found"):
             FileDataSource(config)
 
+    @pytest.mark.unit
     def test_source_type(self, file_config):
         src = FileDataSource(file_config)
         assert src.source_type == "file"
 
+    @pytest.mark.unit
     def test_display_name_is_filename(self, file_config, csv_file):
         src = FileDataSource(file_config)
         assert src.display_name == csv_file.name
 
+    @pytest.mark.unit
     def test_get_available_columns(self, file_config):
         src = FileDataSource(file_config)
         cols = src.get_available_columns()
         assert cols == ["milepoint", "iri", "route"]
 
+    @pytest.mark.unit
     def test_load_data_returns_dataframe(self, file_config):
         src = FileDataSource(file_config)
         df = src.load_data(x_col="milepoint", y_col="iri")
         assert isinstance(df, pd.DataFrame)
         assert len(df) == 5
 
+    @pytest.mark.unit
     def test_load_data_all_string_dtype(self, file_config):
         src = FileDataSource(file_config)
         df = src.load_data(x_col="milepoint", y_col="iri")
@@ -109,6 +119,7 @@ class TestFileDataSource:
                 f"Column '{col}' should be string dtype, got {df[col].dtype}"
             )
 
+    @pytest.mark.unit
     def test_load_data_filter_by_selected_routes(self, file_config):
         src = FileDataSource(file_config)
         df = src.load_data(
@@ -118,22 +129,26 @@ class TestFileDataSource:
         assert len(df) == 3
         assert df["route"].unique().tolist() == ["US101"]
 
+    @pytest.mark.unit
     def test_load_data_no_filter_returns_all(self, file_config):
         src = FileDataSource(file_config)
         df = src.load_data(x_col="milepoint", y_col="iri", route_col="route")
         assert len(df) == 5
 
+    @pytest.mark.unit
     def test_detect_routes(self, file_config):
         src = FileDataSource(file_config)
         routes = src.detect_routes("route")
         assert routes == ["I5", "US101"]
 
+    @pytest.mark.unit
     def test_detect_routes_sorted(self, tmp_path):
         p = tmp_path / "routes.csv"
         p.write_text("mp,iri,route\n0,80,Z_Route\n1,85,A_Route\n2,90,M_Route\n")
         src = FileDataSource(DataSourceConfig(source_type="file", file_path=str(p)))
         assert src.detect_routes("route") == ["A_Route", "M_Route", "Z_Route"]
 
+    @pytest.mark.unit
     def test_detect_routes_excludes_blank(self, tmp_path):
         p = tmp_path / "blanks.csv"
         p.write_text("mp,iri,route\n0,80,US101\n1,85,\n2,90,US101\n")
@@ -142,6 +157,7 @@ class TestFileDataSource:
         assert "" not in routes
         assert "US101" in routes
 
+    @pytest.mark.unit
     def test_get_traceability_info(self, file_config, csv_file):
         src = FileDataSource(file_config)
         info = src.get_traceability_info()
@@ -156,10 +172,12 @@ class TestFileDataSource:
 # ------------------------------------------------------------------ #
 
 class TestRegistry:
+    @pytest.mark.unit
     def test_file_source_returns_file_data_source(self, file_config):
         src = get_data_source(file_config)
         assert isinstance(src, FileDataSource)
 
+    @pytest.mark.unit
     def test_database_source_returns_database_data_source(self):
         config = DataSourceConfig(
             source_type="database", driver_key="postgresql"
@@ -167,6 +185,7 @@ class TestRegistry:
         src = get_data_source(config)
         assert isinstance(src, DatabaseDataSource)
 
+    @pytest.mark.unit
     def test_unknown_source_type_raises(self):
         config = DataSourceConfig(source_type="ftp")
         with pytest.raises(DataSourceError, match="Unknown source_type"):
@@ -178,6 +197,7 @@ class TestRegistry:
 # ------------------------------------------------------------------ #
 
 class TestDriverRegistry:
+    @pytest.mark.unit
     def test_all_drivers_have_required_fields(self):
         required_attrs = [
             "driver_key", "display_name", "fields", "required_packages"
@@ -188,10 +208,12 @@ class TestDriverRegistry:
                     f"Driver '{driver.driver_key}' missing attribute '{attr}'"
                 )
 
+    @pytest.mark.unit
     def test_driver_keys_are_unique(self):
         keys = [d.driver_key for d in DATABASE_DRIVERS]
         assert len(keys) == len(set(keys)), "Duplicate driver keys found"
 
+    @pytest.mark.unit
     def test_known_drivers_present(self):
         expected = {
             "postgresql", "oracle", "sqlserver", "mysql",
@@ -200,24 +222,29 @@ class TestDriverRegistry:
         }
         assert expected == set(DRIVER_BY_KEY.keys())
 
+    @pytest.mark.unit
     def test_get_driver_returns_correct_entry(self):
         driver = get_driver("postgresql")
         assert driver.default_port == 5432
         assert "psycopg2-binary" in driver.required_packages
 
+    @pytest.mark.unit
     def test_get_driver_raises_for_unknown_key(self):
         with pytest.raises(KeyError, match="Unknown database driver key"):
             get_driver("nonexistent_db")
 
+    @pytest.mark.unit
     def test_custom_driver_has_no_dialect(self):
         driver = get_driver("custom")
         assert driver.sqlalchemy_dialect is None
         assert driver.fields == ["connection_url"]
 
+    @pytest.mark.unit
     def test_sqlite_needs_no_packages(self):
         driver = get_driver("sqlite")
         assert driver.required_packages == []
 
+    @pytest.mark.unit
     def test_cloud_drivers_have_no_default_port(self):
         for key in ("snowflake", "bigquery"):
             driver = get_driver(key)
@@ -245,17 +272,18 @@ def _db_config(**kwargs) -> DataSourceConfig:
     return DataSourceConfig(**defaults)
 
 
-def _make_mock_engine(columns=None, rows=None, schema_names=None,
+def _make_mock_engine(columns=None, schema_names=None,
                       table_names=None, view_names=None):
-    """Build a mock SQLAlchemy engine with inspector and connection."""
+    """Build a mock SQLAlchemy engine with a wired inspector.
+
+    Returns ``(mock_engine, inspector, mock_conn)``. Patch
+    ``sqlalchemy.inspect`` to return the inspector, and patch
+    ``pandas.read_sql`` to control query results.
+    """
     columns = columns or [{"name": "milepoint"}, {"name": "iri"}, {"name": "route"}]
     schema_names = schema_names or ["public"]
     table_names = table_names or ["iri_survey"]
     view_names = view_names or []
-    rows = rows if rows is not None else [
-        {"milepoint": "0.0", "iri": "85.0", "route": "US101"},
-        {"milepoint": "0.1", "iri": "90.2", "route": "US101"},
-    ]
 
     inspector = MagicMock()
     inspector.get_columns.return_value = columns
@@ -272,31 +300,37 @@ def _make_mock_engine(columns=None, rows=None, schema_names=None,
 
 
 class TestDatabaseDataSource:
+    @pytest.mark.unit
     def test_raises_for_wrong_source_type(self):
         config = DataSourceConfig(source_type="file")
         with pytest.raises(DataSourceError, match="source_type='database'"):
             DatabaseDataSource(config)
 
+    @pytest.mark.unit
     def test_raises_without_driver_key(self):
         config = DataSourceConfig(source_type="database", driver_key="")
         with pytest.raises(DataSourceError, match="driver_key"):
             DatabaseDataSource(config)
 
+    @pytest.mark.unit
     def test_source_type(self):
         src = DatabaseDataSource(_db_config())
         assert src.source_type == "database"
 
+    @pytest.mark.unit
     def test_display_name_uses_connection_name(self):
         cfg = _db_config(connection_name="DOT Prod", table_or_view="iri_survey")
         src = DatabaseDataSource(cfg)
         assert "DOT Prod" in src.display_name
         assert "iri_survey" in src.display_name
 
+    @pytest.mark.unit
     def test_display_name_falls_back_to_driver_key(self):
         cfg = _db_config(connection_name="", table_or_view="")
         src = DatabaseDataSource(cfg)
         assert "postgresql" in src.display_name
 
+    @pytest.mark.unit
     def test_get_traceability_info_no_password(self):
         cfg = _db_config()
         cfg.extra["password"] = "secret"
@@ -310,6 +344,7 @@ class TestDatabaseDataSource:
 
     # -- get_available_columns --
 
+    @pytest.mark.unit
     def test_get_available_columns_returns_column_names(self):
         src = DatabaseDataSource(_db_config())
         engine, inspector, _ = _make_mock_engine()
@@ -318,12 +353,14 @@ class TestDatabaseDataSource:
             cols = src.get_available_columns()
         assert cols == ["milepoint", "iri", "route"]
 
+    @pytest.mark.unit
     def test_get_available_columns_raises_without_table(self):
         src = DatabaseDataSource(_db_config(table_or_view=""))
         src._engine = MagicMock()
         with pytest.raises(DataSourceError, match="No table or view"):
             src.get_available_columns()
 
+    @pytest.mark.unit
     def test_get_available_columns_wraps_exceptions(self):
         src = DatabaseDataSource(_db_config())
         engine, inspector, _ = _make_mock_engine()
@@ -335,6 +372,7 @@ class TestDatabaseDataSource:
 
     # -- get_available_schemas --
 
+    @pytest.mark.unit
     def test_get_available_schemas(self):
         src = DatabaseDataSource(_db_config())
         engine, inspector, _ = _make_mock_engine(schema_names=["public", "pavement"])
@@ -345,6 +383,7 @@ class TestDatabaseDataSource:
 
     # -- get_available_tables_and_views --
 
+    @pytest.mark.unit
     def test_get_available_tables_and_views(self):
         src = DatabaseDataSource(_db_config())
         engine, inspector, _ = _make_mock_engine(
@@ -364,16 +403,17 @@ class TestDatabaseDataSource:
 
     # -- load_data --
 
+    @pytest.mark.unit
     def test_load_data_returns_all_columns_string_dtype(self):
         src = DatabaseDataSource(_db_config())
         src._engine = MagicMock()
-        expected_df = pd.DataFrame({
+        raw_df = pd.DataFrame({
             "milepoint": ["0.0", "0.1"],
             "iri": [85.0, 90.2],          # numeric — must be cast to str
             "route": ["US101", "US101"],
-            "surface_type": ["AC", "AC"],  # extra column user may pick for breaks
+            "surface_type": ["AC", "AC"],  # extra column; must be present for attribute breaks
         })
-        with patch("pandas.read_sql", return_value=expected_df):
+        with patch("pandas.read_sql", return_value=raw_df):
             with patch("sqlalchemy.text", return_value=MagicMock()):
                 with patch("sqlalchemy.column", side_effect=lambda c: c):
                     with patch("sqlalchemy.table", return_value="iri_survey"):
@@ -384,12 +424,14 @@ class TestDatabaseDataSource:
                 f"Column '{col}' should be string dtype, got {df[col].dtype}"
             )
 
+    @pytest.mark.unit
     def test_load_data_raises_without_table_and_query(self):
         src = DatabaseDataSource(_db_config(table_or_view=""))
         src._engine = MagicMock()
         with pytest.raises(DataSourceError, match="No table/view or custom SQL"):
             src.load_data("x", "y")
 
+    @pytest.mark.unit
     def test_load_data_raises_if_required_column_missing(self):
         src = DatabaseDataSource(_db_config())
         src._engine = MagicMock()
@@ -403,6 +445,7 @@ class TestDatabaseDataSource:
 
     # -- detect_routes --
 
+    @pytest.mark.unit
     def test_detect_routes_returns_sorted_unique(self):
         src = DatabaseDataSource(_db_config())
         src._engine = MagicMock()
@@ -412,10 +455,18 @@ class TestDatabaseDataSource:
                 with patch("sqlalchemy.column", side_effect=lambda c: c):
                     with patch("sqlalchemy.table", return_value="iri_survey"):
                         routes = src.detect_routes("route")
-        assert routes == sorted(set(["US101", "I5", "SR99"]))
+        assert routes == ["I5", "SR99", "US101"]
+
+    @pytest.mark.unit
+    def test_detect_routes_raises_without_table(self):
+        src = DatabaseDataSource(_db_config(table_or_view=""))
+        src._engine = MagicMock()
+        with pytest.raises(DataSourceError, match="No table/view or custom SQL"):
+            src.detect_routes("route")
 
     # -- password retrieval --
 
+    @pytest.mark.unit
     def test_get_password_from_env_var(self):
         src = DatabaseDataSource(_db_config())
         with patch.dict(os.environ, {"HST_DB_PASSWORD": "env_secret"}):
@@ -423,6 +474,7 @@ class TestDatabaseDataSource:
                 pwd = src._get_password()
         assert pwd == "env_secret"
 
+    @pytest.mark.unit
     def test_get_password_from_extra(self):
         cfg = _db_config()
         cfg.extra["password"] = "extra_secret"
@@ -432,6 +484,7 @@ class TestDatabaseDataSource:
                 pwd = src._get_password()
         assert pwd == "extra_secret"
 
+    @pytest.mark.unit
     def test_get_password_keyring_wins_over_env(self):
         src = DatabaseDataSource(_db_config())
         with patch.dict(os.environ, {"HST_DB_PASSWORD": "env_secret"}):
@@ -441,24 +494,26 @@ class TestDatabaseDataSource:
 
     # -- _check_required_packages --
 
+    @pytest.mark.unit
     def test_check_required_packages_raises_for_missing(self):
         src = DatabaseDataSource(_db_config(driver_key="postgresql"))
         with patch("importlib.import_module", side_effect=ImportError("no module")):
             with pytest.raises(DataSourceError, match="Missing required package"):
                 src._check_required_packages()
 
+    @pytest.mark.unit
     def test_check_required_packages_custom_skips_check(self):
         src = DatabaseDataSource(_db_config(driver_key="custom"))
-        # Should not raise even though custom has no packages to check
-        src._check_required_packages()
+        src._check_required_packages()  # must not raise
 
+    @pytest.mark.unit
     def test_check_required_packages_sqlite_skips_check(self):
         src = DatabaseDataSource(_db_config(driver_key="sqlite"))
-        # sqlite has required_packages=[], so nothing to import — should not raise
-        src._check_required_packages()
+        src._check_required_packages()  # required_packages=[], nothing to import
 
     # -- _build_connection_url --
 
+    @pytest.mark.unit
     def test_build_connection_url_sqlite(self):
         cfg = _db_config(driver_key="sqlite")
         cfg.extra["file_path"] = "/tmp/test.db"
@@ -467,14 +522,15 @@ class TestDatabaseDataSource:
         assert "sqlite" in str(url)
         assert "/tmp/test.db" in str(url)
 
+    @pytest.mark.unit
     def test_build_connection_url_custom_raises_without_url(self):
         cfg = _db_config(driver_key="custom")
         cfg.extra = {}
-        cfg.table_or_view = ""
         src = DatabaseDataSource(cfg)
         with pytest.raises(DataSourceError, match="connection_url"):
             src._build_connection_url()
 
+    @pytest.mark.unit
     def test_build_connection_url_custom_uses_extra(self):
         cfg = _db_config(driver_key="custom")
         cfg.extra["connection_url"] = "postgresql://user:pw@host/db"
@@ -488,6 +544,7 @@ class TestDatabaseDataSource:
 # ------------------------------------------------------------------ #
 
 class TestDropLobColumns:
+    @pytest.mark.unit
     def test_drops_bytes_column(self):
         df = pd.DataFrame({
             "milepoint": [0.0, 0.1],
@@ -499,6 +556,7 @@ class TestDropLobColumns:
         assert "milepoint" in result.columns
         assert "iri" in result.columns
 
+    @pytest.mark.unit
     def test_drops_memoryview_column(self):
         df = pd.DataFrame({
             "milepoint": [0.0],
@@ -507,19 +565,22 @@ class TestDropLobColumns:
         result = _drop_lob_columns(df)
         assert "shape" not in result.columns
 
+    @pytest.mark.unit
     def test_keeps_string_object_columns(self):
         df = pd.DataFrame({
             "milepoint": [0.0],
-            "surface": ["AC"],   # object dtype but str values — keep
+            "surface": ["AC"],
         })
         result = _drop_lob_columns(df)
         assert "surface" in result.columns
 
+    @pytest.mark.unit
     def test_passes_through_no_lob(self):
         df = pd.DataFrame({"a": [1.0], "b": ["x"]})
         result = _drop_lob_columns(df)
         assert list(result.columns) == ["a", "b"]
 
+    @pytest.mark.unit
     def test_handles_all_null_column(self):
         df = pd.DataFrame({"milepoint": [0.0], "geom": [None]})
         result = _drop_lob_columns(df)

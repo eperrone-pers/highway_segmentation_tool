@@ -19,6 +19,16 @@ _KEYRING_SERVICE = "highway_segmentation_tool"
 # Environment variable checked as a password fallback for CLI/headless use.
 _PASSWORD_ENV_VAR = "HST_DB_PASSWORD"
 
+# Some packages install under a different name than their pip distribution name.
+# e.g. "psycopg2-binary" installs as the "psycopg2" module.
+_PACKAGE_IMPORT_NAMES: Dict[str, str] = {
+    "psycopg2-binary": "psycopg2",
+    "sqlalchemy-bigquery": "sqlalchemy_bigquery",
+    "snowflake-sqlalchemy": "snowflake.sqlalchemy",
+    "redshift-connector": "redshift_connector",
+    "sqlalchemy-redshift": "sqlalchemy_redshift",
+}
+
 
 class DatabaseDataSource(DataSourceBase):
     """Data source backed by a relational database via SQLAlchemy.
@@ -198,9 +208,14 @@ class DatabaseDataSource(DataSourceBase):
             Sorted list of route ID strings.
 
         Raises:
-            DataSourceError: If the query fails.
+            DataSourceError: If the query fails or no table is configured.
         """
         import sqlalchemy
+
+        if not self._config.table_or_view and not self._config.custom_sql_query:
+            raise DataSourceError(
+                "No table/view or custom SQL query configured."
+            )
 
         table_ref = self._table_identifier()
         col = sqlalchemy.column(route_col)
@@ -212,15 +227,8 @@ class DatabaseDataSource(DataSourceBase):
             engine = self._get_engine()
             with engine.connect() as conn:
                 df = pd.read_sql(sqlalchemy.text(sql), conn)
-            routes = (
-                df.iloc[:, 0]
-                .astype(str)
-                .str.strip()
-                .replace("", pd.NA)
-                .dropna()
-                .unique()
-                .tolist()
-            )
+            series = df.iloc[:, 0].astype(str).str.strip()
+            routes = series[series != ""].unique().tolist()
             return sorted(routes)
         except DataSourceError:
             raise
@@ -331,7 +339,7 @@ class DatabaseDataSource(DataSourceBase):
             return self._engine
 
         try:
-            import sqlalchemy  # noqa: F401
+            import sqlalchemy as sa
         except ImportError as exc:
             raise DataSourceError(
                 "SQLAlchemy is required for database connectivity. "
@@ -341,7 +349,6 @@ class DatabaseDataSource(DataSourceBase):
         self._check_required_packages()
 
         try:
-            import sqlalchemy as sa
             url = self._build_connection_url()
             self._engine = sa.create_engine(url)
             _logger.debug("Created SQLAlchemy engine for %s", self.display_name)
@@ -372,7 +379,8 @@ class DatabaseDataSource(DataSourceBase):
 
         missing = []
         for pkg in driver.required_packages:
-            module = pkg.replace("-", "_").split(">=")[0].split("==")[0]
+            bare = pkg.split(">=")[0].split("==")[0].split("[")[0]
+            module = _PACKAGE_IMPORT_NAMES.get(bare, bare.replace("-", "_"))
             try:
                 importlib.import_module(module)
             except ImportError:
@@ -433,7 +441,7 @@ class DatabaseDataSource(DataSourceBase):
 
         # Custom URL — use as-is
         if cfg.driver_key == "custom":
-            url = cfg.extra.get("connection_url") or cfg.table_or_view
+            url = cfg.extra.get("connection_url")
             if not url:
                 raise DataSourceError(
                     "Custom driver requires a connection_url in config.extra."
