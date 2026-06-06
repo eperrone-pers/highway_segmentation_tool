@@ -58,7 +58,10 @@ class DatabaseConnectionDialog(tk.Toplevel):
     """
 
     def __init__(self, parent_app: Any) -> None:
-        super().__init__(parent_app)
+        # parent_app is the HighwaySegmentationGUI instance (not a tk widget).
+        # tk.Toplevel requires an actual Tkinter widget as its master.
+        root = getattr(parent_app, "root", parent_app)
+        super().__init__(root)
         self.app = parent_app
         self.title("Database Connection")
         self.resizable(False, False)
@@ -90,8 +93,8 @@ class DatabaseConnectionDialog(tk.Toplevel):
 
         # Centre over parent window.
         self.update_idletasks()
-        px = parent_app.winfo_rootx() + parent_app.winfo_width() // 2
-        py = parent_app.winfo_rooty() + parent_app.winfo_height() // 2
+        px = root.winfo_rootx() + root.winfo_width() // 2
+        py = root.winfo_rooty() + root.winfo_height() // 2
         self.geometry(
             f"+{px - self.winfo_width() // 2}+{py - self.winfo_height() // 2}"
         )
