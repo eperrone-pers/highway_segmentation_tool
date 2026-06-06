@@ -325,6 +325,10 @@ class HighwaySegmentationGUI:
         """Load the data file into memory."""
         return self.file_manager.load_data_file()
 
+    def load_from_active_source(self):
+        """Load data from the active database connection."""
+        return self.file_manager.load_from_active_source()
+
     def load_and_plot_results(self):
         """Load a results JSON file and open its visualization."""
         return self.file_manager.load_and_plot_results()
