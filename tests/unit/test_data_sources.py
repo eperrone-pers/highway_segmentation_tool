@@ -443,6 +443,36 @@ class TestDatabaseDataSource:
                         with pytest.raises(DataSourceError, match="Required column 'iri'"):
                             src.load_data(x_col="milepoint", y_col="iri")
 
+    # -- get_row_count --
+
+    @pytest.mark.unit
+    def test_get_row_count_returns_count(self):
+        src = DatabaseDataSource(_db_config())
+        mock_conn = MagicMock()
+        mock_conn.execute.return_value.fetchone.return_value = (42,)
+        mock_engine = MagicMock()
+        mock_engine.connect.return_value.__enter__ = lambda s: mock_conn
+        mock_engine.connect.return_value.__exit__ = MagicMock(return_value=False)
+        src._engine = mock_engine
+        with patch("sqlalchemy.text", return_value=MagicMock()):
+            with patch("sqlalchemy.table", return_value="iri_survey"):
+                count = src.get_row_count()
+        assert count == 42
+
+    @pytest.mark.unit
+    def test_get_row_count_returns_zero_without_table(self):
+        src = DatabaseDataSource(_db_config(table_or_view=""))
+        assert src.get_row_count() == 0
+
+    @pytest.mark.unit
+    def test_get_row_count_returns_zero_on_error(self):
+        src = DatabaseDataSource(_db_config())
+        mock_engine = MagicMock()
+        mock_engine.connect.side_effect = RuntimeError("DB down")
+        src._engine = mock_engine
+        count = src.get_row_count()   # must not raise
+        assert count == 0
+
     # -- detect_routes --
 
     @pytest.mark.unit

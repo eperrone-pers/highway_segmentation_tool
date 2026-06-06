@@ -663,7 +663,7 @@ The runner reads `HST_DB_PASSWORD` at connection time. If the env var is not set
   "input": {
     "data_source": {
       "driver": "sqlite",
-      "host": "data/local.db",
+      "database": "data/local.db",
       "table_or_view": "pavement_condition"
     },
     "x_column": "STATION",

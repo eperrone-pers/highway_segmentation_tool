@@ -474,9 +474,11 @@ class DatabaseDataSource(DataSourceBase):
                 )
             return url
 
-        # SQLite — file path, no credentials
+        # SQLite — file path, no credentials.
+        # Accept the path from extra["file_path"] (GUI dialog), cfg.database
+        # (recommended for CLI run-specs), or cfg.host (legacy fallback).
         if cfg.driver_key == "sqlite":
-            file_path = cfg.extra.get("file_path") or cfg.database or ""
+            file_path = cfg.extra.get("file_path") or cfg.database or cfg.host or ""
             return f"sqlite:///{file_path}"
 
         try:
