@@ -7,10 +7,22 @@ pipeline downstream.
 
 from data_sources.base import DataSourceBase, DataSourceConfig, DataSourceError
 from data_sources.registry import get_data_source
+from data_sources.type_registry import (
+    DataSourceTypeConfig,
+    DATA_SOURCE_TYPES,
+    get_source_type,
+    get_display_names,
+    get_type_by_display_name,
+)
 
 __all__ = [
     "DataSourceBase",
     "DataSourceConfig",
     "DataSourceError",
     "get_data_source",
+    "DataSourceTypeConfig",
+    "DATA_SOURCE_TYPES",
+    "get_source_type",
+    "get_display_names",
+    "get_type_by_display_name",
 ]
