@@ -526,6 +526,7 @@ class DatabaseConnectionDialog(tk.Toplevel):
         )
         self._table_listbox.grid(row=0, column=0, sticky="nsew")
         self._table_listbox.bind("<<ListboxSelect>>", self._on_table_selected)
+        self._table_listbox.bind("<Double-Button-1>", lambda _e: self._on_use_table())
 
         sb = ttk.Scrollbar(
             list_frame, orient="vertical", command=self._table_listbox.yview,
