@@ -2464,18 +2464,23 @@ class EnhancedVisualizationWindow:
             self._hover_seg_x = x_data
             self._hover_seg_y = y_data
 
-            # Cache current series for X-zoom autoscaling
-            # Include preprocessing overlay points in y-data for proper autoscaling
-            self._current_seg_x = x_data
+            # Cache current series for X-zoom autoscaling.
+            # When preprocessing overlay is active, extend both x and y in parallel so
+            # visible_y_values_in_x_window sees paired arrays and filters correctly.
+            # (_hover_seg_x/_hover_seg_y above remain paired to main data only for hover snapping.)
             if show_preprocessing and (original_filtered_x or preprocessed_data_x):
-                # Combine main data with preprocessing overlay for complete y-range
+                all_x_values = list(x_data)
                 all_y_values = list(y_data)
                 if original_filtered_y:
+                    all_x_values.extend(original_filtered_x)
                     all_y_values.extend(original_filtered_y)
                 if preprocessed_data_y:
+                    all_x_values.extend(preprocessed_data_x)
                     all_y_values.extend(preprocessed_data_y)
+                self._current_seg_x = np.array(all_x_values)
                 self._current_seg_y = np.array(all_y_values)
             else:
+                self._current_seg_x = x_data
                 self._current_seg_y = y_data
             
             # Ensure route endpoints are included in mandatory breakpoints
