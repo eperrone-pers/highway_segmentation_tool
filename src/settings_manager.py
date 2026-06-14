@@ -407,7 +407,7 @@ class SettingsManager:
             except Exception as e:
                 app.log_message(f"Warning: Could not restore secondary preprocessing config: {e}")
 
-        if 'selected_routes' in ui_state:
+        if 'selected_routes' in ui_state and ui_state['selected_routes'] is not None:
             app.selected_routes = ui_state['selected_routes'].copy()
 
         if (
