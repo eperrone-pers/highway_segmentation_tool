@@ -10,7 +10,7 @@ import threading
 import time
 import os
 import json
-from dataclasses import asdict
+from dataclasses import asdict, replace as dataclass_replace
 from datetime import datetime
 from tkinter import messagebox
 from config import get_optimization_method, resolve_method_class
@@ -159,8 +159,6 @@ class OptimizationController:
             method_key = params['optimization_method']
 
             method_config = get_optimization_method(method_key)
-            if not method_config:
-                raise ValueError(f"Unknown optimization method: {method_key}")
 
             # Framework-level gap threshold (single source of truth: app.gap_threshold)
             gap_threshold = float(self.app.gap_threshold.get())
@@ -171,144 +169,19 @@ class OptimizationController:
             min_length = params.get('min_length', None)
             max_length = params.get('max_length', None)
             
-            route_column_raw = self.app.route_column.get() if hasattr(self.app, 'route_column') else None
-            route_column = normalize_route_column_selection(route_column_raw)
+            routes_to_process, local_data, actual_route_column, is_single_route_mode = self._resolve_routes()
 
-            if route_column and route_column in self.app.data.route_data.columns:
-                actual_route_column = route_column
-                is_single_route_mode = False
-            else:
-                # Default to single route mode (covers ROUTE_COLUMN_NONE_SENTINEL and unselected cases)
-                actual_route_column = None
-                is_single_route_mode = True
-            
-            if is_single_route_mode:
-                data_path = self.app.file_manager.get_data_file_path()
-                if data_path:
-                    route_name = os.path.basename(data_path).replace('.csv', '').replace('.xlsx', '')
-                else:
-                    active_source = getattr(self.app, '_active_data_source', None)
-                    route_name = (
-                        getattr(active_source, '_config', None) and active_source._config.table_or_view
-                        or (active_source.display_name if active_source else "data")
-                    )
-                all_routes = [route_name]
-            else:
-                if actual_route_column in self.app.data.route_data.columns:
-                    # B1 behavior: exclude rows with missing/invalid route IDs.
-                    # This matters when the user selects a route column after loading.
-                    try:
-                        route_series = self.app.data.route_data[actual_route_column]
-                        normalized_series = route_series.apply(normalize_route_id)
-                        invalid_mask = normalized_series.isna()
-                        invalid_count = int(invalid_mask.sum())
-                        if invalid_count > 0:
-                            self.app.log_message(
-                                f"Route column '{actual_route_column}' contains {invalid_count} record(s) "
-                                "with missing route IDs. "
-                                "Those records will be excluded from multi-route analysis."
-                            )
-
-                        if invalid_count == len(self.app.data.route_data):
-                            raise ValueError(
-                                f"All records in the selected route column '{actual_route_column}' are missing. "
-                                "Choose a different route column, or select 'None - treat as single route'."
-                            )
-
-                        if invalid_count > 0:
-                            filtered = self.app.data.route_data.loc[~invalid_mask].copy()
-                            filtered[actual_route_column] = normalized_series.loc[~invalid_mask].astype("string")
-                            self.app.data.route_data = filtered
-                    except Exception:
-                        # If normalization/filtering fails for unexpected reasons, treat as fatal.
-                        raise
-
-                    all_routes = list_routes(self.app.data.route_data, actual_route_column)
-                else:
-                    self.app.log_message(f"[ERROR] Route column '{actual_route_column}' not found in data!")
-                    return
-            
-            # Determine routes to process.
-            # Important: an explicit empty selection ([]) is an error in multi-route mode.
-            if is_single_route_mode:
-                selected_routes = all_routes
-            else:
-                raw_selected_routes = getattr(self.app, 'selected_routes', None)
-                if raw_selected_routes is None:
-                    selected_routes = all_routes
-                elif isinstance(raw_selected_routes, (list, tuple)):
-                    if len(raw_selected_routes) == 0:
-                        raise ValueError(
-                            "No routes selected. Please open Route Filter and select at least one route."
-                        )
-                    selected_routes = list(raw_selected_routes)
-                else:
-                    selected_routes = all_routes
-
-            selected_routes = [r for r in (normalize_route_id(r) for r in selected_routes) if r is not None]
-            routes_to_process = [route for route in selected_routes if route in all_routes]
-
-            if len(routes_to_process) == 0:
-                if is_single_route_mode:
-                    raise ValueError("No route could be determined for single-route processing")
-                raise ValueError(
-                    "No selected routes matched the data. "
-                    "Re-open Route Filter (or re-load the file) and select at least one available route."
-                )
-            
             self.app.log_message(f"Starting optimization for {len(routes_to_process)} route(s)...")
             if len(routes_to_process) > 1:
                 self.app.log_message(f"Route column: {actual_route_column}")
                 self.app.log_message(f"Routes to process: {', '.join(routes_to_process)}")
             else:
                 self.app.log_message(f"Processing single route: {routes_to_process[0]}")
-            
-            # Collect preprocessing configuration from GUI panels
-            from config import PreprocessingRunConfig
-            preprocessing_config = PreprocessingRunConfig(
-                pre_gap_method=None,
-                pre_gap_parameters={},
-                primary_method=None,
-                primary_parameters={},
-                secondary_method=None,
-                secondary_parameters={}
-            )
 
-            # Get pre-gap preprocessing config (if panel exists and method selected)
-            if hasattr(self.app, 'pregap_preprocess_panel') and self.app.pregap_preprocess_panel:
-                try:
-                    pre_gap_method_key = self.app.pregap_preprocess_panel.get_method_key()
-                    if pre_gap_method_key:
-                        preprocessing_config.pre_gap_method = pre_gap_method_key
-                        preprocessing_config.pre_gap_parameters = self.app.pregap_preprocess_panel.get_parameters()
-                        self.app.log_message(f"Pre-gap preprocessing enabled: {pre_gap_method_key}")
-                except Exception as e:
-                    self.app.log_message(f"Warning: Could not load pre-gap preprocessing config: {e}")
-            
-            # Get primary preprocessing config (if panel exists and method selected)
-            if hasattr(self.app, 'primary_preprocess_panel') and self.app.primary_preprocess_panel:
-                try:
-                    primary_method_key = self.app.primary_preprocess_panel.get_method_key()
-                    if primary_method_key:
-                        preprocessing_config.primary_method = primary_method_key
-                        preprocessing_config.primary_parameters = self.app.primary_preprocess_panel.get_parameters()
-                        self.app.log_message(f"Primary preprocessing enabled: {primary_method_key}")
-                except Exception as e:
-                    self.app.log_message(f"Warning: Could not load primary preprocessing config: {e}")
-            
-            # Get secondary preprocessing config (if panel exists and method selected)
-            if hasattr(self.app, 'secondary_preprocess_panel') and self.app.secondary_preprocess_panel:
-                try:
-                    secondary_method_key = self.app.secondary_preprocess_panel.get_method_key()
-                    if secondary_method_key:
-                        preprocessing_config.secondary_method = secondary_method_key
-                        preprocessing_config.secondary_parameters = self.app.secondary_preprocess_panel.get_parameters()
-                        self.app.log_message(f"Secondary preprocessing enabled: {secondary_method_key}")
-                except Exception as e:
-                    self.app.log_message(f"Warning: Could not load secondary preprocessing config: {e}")
+            preprocessing_config = self._assemble_preprocessing_config()
             
             prepared_routes, self.preprocessed_data_by_route = prepare_routes_for_optimization(
-                self.app.data,
+                local_data,
                 actual_route_column,
                 routes_to_process,
                 self.app.x_column.get(),
@@ -388,7 +261,172 @@ class OptimizationController:
         finally:
             # Always clean up UI state
             self.app.root.after(0, lambda: self._finalize_optimization(self.app.stop_requested))
-    
+
+    def _resolve_routes(self):
+        """Determine which routes to process for the current optimization run.
+
+        Reads route column and selection state from the GUI, validates the selected
+        route column, filters out records with missing/invalid route IDs, and
+        intersects the full route list with the user's explicit selection.
+
+        Returns:
+            Tuple of (routes_to_process, local_data, actual_route_column, is_single_route_mode):
+                - routes_to_process: Validated, ordered list of route IDs to analyze.
+                - local_data: Thread-local data snapshot; either self.app.data or a
+                  filtered copy with invalid-route-ID rows removed.
+                - actual_route_column: Name of the active route column, or None in
+                  single-route mode.
+                - is_single_route_mode: True when no route column is in use.
+
+        Raises:
+            ValueError: If no valid routes can be determined (all records missing,
+                no selection, or no selected routes match the data).
+        """
+        route_column_raw = self.app.route_column.get() if hasattr(self.app, 'route_column') else None
+        route_column = normalize_route_column_selection(route_column_raw)
+
+        if route_column and route_column in self.app.data.route_data.columns:
+            actual_route_column = route_column
+            is_single_route_mode = False
+        else:
+            # Default to single route mode (covers ROUTE_COLUMN_NONE_SENTINEL and unselected cases)
+            actual_route_column = None
+            is_single_route_mode = True
+
+        # local_data is used for this run only — self.app.data is never mutated so the
+        # main thread's view of the loaded dataset stays intact across multiple runs.
+        local_data = self.app.data
+
+        if is_single_route_mode:
+            data_path = self.app.file_manager.get_data_file_path()
+            if data_path:
+                route_name = os.path.basename(data_path).replace('.csv', '').replace('.xlsx', '')
+            else:
+                active_source = getattr(self.app, '_active_data_source', None)
+                route_name = (
+                    getattr(active_source, '_config', None) and active_source._config.table_or_view
+                    or (active_source.display_name if active_source else "data")
+                )
+            all_routes = [route_name]
+        else:
+            if actual_route_column in self.app.data.route_data.columns:
+                # B1 behavior: exclude rows with missing/invalid route IDs.
+                # This matters when the user selects a route column after loading.
+                try:
+                    route_series = self.app.data.route_data[actual_route_column]
+                    normalized_series = route_series.apply(normalize_route_id)
+                    invalid_mask = normalized_series.isna()
+                    invalid_count = int(invalid_mask.sum())
+                    if invalid_count > 0:
+                        self.app.log_message(
+                            f"Route column '{actual_route_column}' contains {invalid_count} record(s) "
+                            "with missing route IDs. "
+                            "Those records will be excluded from multi-route analysis."
+                        )
+
+                    if invalid_count == len(self.app.data.route_data):
+                        raise ValueError(
+                            f"All records in the selected route column '{actual_route_column}' are missing. "
+                            "Choose a different route column, or select 'None - treat as single route'."
+                        )
+
+                    if invalid_count > 0:
+                        filtered = self.app.data.route_data.loc[~invalid_mask].copy()
+                        filtered[actual_route_column] = normalized_series.loc[~invalid_mask].astype("string")
+                        local_data = dataclass_replace(self.app.data, route_data=filtered)
+                except Exception:
+                    # If normalization/filtering fails for unexpected reasons, treat as fatal.
+                    raise
+
+                all_routes = list_routes(local_data.route_data, actual_route_column)
+            else:
+                raise ValueError(
+                    f"Route column '{actual_route_column}' not found in data. "
+                    "Re-load the file or select a different route column."
+                )
+
+        # Determine routes to process.
+        # Important: an explicit empty selection ([]) is an error in multi-route mode.
+        if is_single_route_mode:
+            selected_routes = all_routes
+        else:
+            raw_selected_routes = getattr(self.app, 'selected_routes', None)
+            if raw_selected_routes is None:
+                selected_routes = all_routes
+            elif isinstance(raw_selected_routes, (list, tuple)):
+                if len(raw_selected_routes) == 0:
+                    raise ValueError(
+                        "No routes selected. Please open Route Filter and select at least one route."
+                    )
+                selected_routes = list(raw_selected_routes)
+            else:
+                selected_routes = all_routes
+
+        selected_routes = [r for r in (normalize_route_id(r) for r in selected_routes) if r is not None]
+        routes_to_process = [route for route in selected_routes if route in all_routes]
+
+        if len(routes_to_process) == 0:
+            if is_single_route_mode:
+                raise ValueError("No route could be determined for single-route processing")
+            raise ValueError(
+                "No selected routes matched the data. "
+                "Re-open Route Filter (or re-load the file) and select at least one available route."
+            )
+
+        return routes_to_process, local_data, actual_route_column, is_single_route_mode
+
+    def _assemble_preprocessing_config(self):
+        """Build preprocessing configuration from the current GUI panel state.
+
+        Reads the three preprocessing panels (pre-gap, primary, secondary) and
+        assembles a PreprocessingRunConfig. Panels that are absent or have no method
+        selected contribute None / empty-dict for their respective slot.
+
+        Returns:
+            PreprocessingRunConfig populated from current GUI state.
+        """
+        from config import PreprocessingRunConfig
+        preprocessing_config = PreprocessingRunConfig(
+            pre_gap_method=None,
+            pre_gap_parameters={},
+            primary_method=None,
+            primary_parameters={},
+            secondary_method=None,
+            secondary_parameters={}
+        )
+
+        if hasattr(self.app, 'pregap_preprocess_panel') and self.app.pregap_preprocess_panel:
+            try:
+                pre_gap_method_key = self.app.pregap_preprocess_panel.get_method_key()
+                if pre_gap_method_key:
+                    preprocessing_config.pre_gap_method = pre_gap_method_key
+                    preprocessing_config.pre_gap_parameters = self.app.pregap_preprocess_panel.get_parameters()
+                    self.app.log_message(f"Pre-gap preprocessing enabled: {pre_gap_method_key}")
+            except Exception as e:
+                self.app.log_message(f"Warning: Could not load pre-gap preprocessing config: {e}")
+
+        if hasattr(self.app, 'primary_preprocess_panel') and self.app.primary_preprocess_panel:
+            try:
+                primary_method_key = self.app.primary_preprocess_panel.get_method_key()
+                if primary_method_key:
+                    preprocessing_config.primary_method = primary_method_key
+                    preprocessing_config.primary_parameters = self.app.primary_preprocess_panel.get_parameters()
+                    self.app.log_message(f"Primary preprocessing enabled: {primary_method_key}")
+            except Exception as e:
+                self.app.log_message(f"Warning: Could not load primary preprocessing config: {e}")
+
+        if hasattr(self.app, 'secondary_preprocess_panel') and self.app.secondary_preprocess_panel:
+            try:
+                secondary_method_key = self.app.secondary_preprocess_panel.get_method_key()
+                if secondary_method_key:
+                    preprocessing_config.secondary_method = secondary_method_key
+                    preprocessing_config.secondary_parameters = self.app.secondary_preprocess_panel.get_parameters()
+                    self.app.log_message(f"Secondary preprocessing enabled: {secondary_method_key}")
+            except Exception as e:
+                self.app.log_message(f"Warning: Could not load secondary preprocessing config: {e}")
+
+        return preprocessing_config
+
     def _run_single_route_optimization(self, data, method_config, method_key, params,
                                      x_column, y_column, min_length, max_length, gap_threshold,
                                      route_id, route_idx=1, total_routes=1, preprocessing_results=None):

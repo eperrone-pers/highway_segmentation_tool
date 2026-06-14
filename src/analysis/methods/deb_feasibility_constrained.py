@@ -19,21 +19,23 @@ from __future__ import annotations
 import random
 import time
 import logging
-from typing import Any, Callable, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 
 import numpy as np
 
 from ..base import AnalysisMethodBase, AnalysisResult
 from ..utils.ga_utilities import (
     analyze_population_diversity,
+    build_ga_data_summary,
+    calculate_gap_aware_target,
     crossover_with_retries,
     mutation_with_retries,
+    tournament_select,
 )
 from ..utils.segment_metrics import average_length_excluding_gap_segments
 
 # Import GA class and configuration
 from ..utils.genetic_algorithm import HighwaySegmentGA
-from config import get_optimization_method
 
 logger = logging.getLogger(__name__)
 
@@ -80,8 +82,7 @@ class DebFeasibilityConstrainedMethod(AnalysisMethodBase):
 
         log = log_callback or print
 
-        method_config = get_optimization_method(self.method_key)
-        param_defaults = {param.name: param.default_value for param in method_config.parameters}
+        param_defaults = self.get_param_defaults()
 
         # Merge parameters: defaults <- input_parameters <- kwargs
         parameters = dict(param_defaults)
@@ -127,7 +128,7 @@ class DebFeasibilityConstrainedMethod(AnalysisMethodBase):
         route_df = data.route_data
         total_distance = route_df[x_column].max() - route_df[x_column].min()
         mandatory_breakpoints = sorted(list(ga.mandatory_breakpoints))
-        target_segments = self._calculate_gap_aware_target(
+        target_segments = calculate_gap_aware_target(
             mandatory_breakpoints,
             total_distance,
             target_avg_length,
@@ -197,11 +198,14 @@ class DebFeasibilityConstrainedMethod(AnalysisMethodBase):
                 )
 
             # Parent selection using Deb comparisons (tournament)
-            parents = self._select_parents_deb(
+            _feasible = [v <= 0.0 for v in violations]
+            parents = tournament_select(
                 population,
-                base_fitnesses,
-                violations,
-                num_parents=max(2, population_size // 2),
+                max(2, population_size // 2),
+                comparator=lambda i, j: DebFeasibilityConstrainedMethod._deb_better(
+                    _feasible[i], violations[i], base_fitnesses[i],
+                    _feasible[j], violations[j], base_fitnesses[j],
+                ),
             )
 
             # Offspring generation
@@ -348,47 +352,10 @@ class DebFeasibilityConstrainedMethod(AnalysisMethodBase):
             "average_generation_time": float(np.mean(generation_times)) if generation_times else 0.0,
         }
 
-        # Data summary consistent with constrained method
-        if hasattr(ga, "route_analysis") and ga.route_analysis and hasattr(ga.route_analysis, "data_range"):
-            data_range = ga.route_analysis.data_range
-        else:
-            data_range = {
-                "x_min": float(route_df[x_column].min()),
-                "x_max": float(route_df[x_column].max()),
-                "y_min": float(route_df[y_column].min()),
-                "y_max": float(route_df[y_column].max()),
-            }
-
-        data_summary = {
-            "total_data_points": len(route_df),
-            "data_range": data_range,
-            "mandatory_breakpoints": list(ga.mandatory_breakpoints),
-            "target_segments_calculated": target_segments,
-            "gap_analysis": {
-                "total_gaps": len(ga.route_analysis.gap_segments)
-                if hasattr(ga, "route_analysis") and ga.route_analysis
-                else 0,
-                "gap_segments": [
-                    {"start": gap[0], "end": gap[1], "length": gap[1] - gap[0]}
-                    for gap in ga.route_analysis.gap_segments
-                ]
-                if hasattr(ga, "route_analysis") and ga.route_analysis
-                else [],
-                "total_gap_length": ga.route_analysis.route_stats.get("gap_total_length", 0.0)
-                if hasattr(ga, "route_analysis") and ga.route_analysis
-                else 0.0,
-            },
-        }
-
-        # Optional: attribute-based must-break metadata for visualization/reporting
-        try:
-            from data_loader import build_attribute_break_analysis
-
-            attr_block = build_attribute_break_analysis(ga.route_analysis)
-            if attr_block:
-                data_summary["attribute_break_analysis"] = attr_block
-        except Exception:
-            pass
+        data_summary = build_ga_data_summary(
+            ga, data.route_data, x_column, y_column,
+            extra_fields={'target_segments_calculated': target_segments},
+        )
 
         log("\n=== DEB-FEASIBILITY CONSTRAINED RESULTS ===")
         log(f"Best base fitness: {best_solution['fitness']:.6f}")
@@ -473,39 +440,6 @@ class DebFeasibilityConstrainedMethod(AnalysisMethodBase):
             return False
         return fit_a > fit_b
 
-    def _select_parents_deb(
-        self,
-        population: List[List[float]],
-        base_fitnesses: List[float],
-        violations: List[float],
-        num_parents: int,
-        tournament_size: int = 3,
-    ) -> List[List[float]]:
-        parents: List[List[float]] = []
-        pop_size = len(population)
-        if pop_size == 0 or num_parents <= 0:
-            return parents
-
-        t_size = min(max(2, tournament_size), pop_size)
-        feasible = [v <= 0.0 for v in violations]
-
-        for _ in range(num_parents):
-            indices = random.sample(range(pop_size), k=t_size)
-            winner = indices[0]
-            for idx in indices[1:]:
-                if self._deb_better(
-                    feasible[idx],
-                    violations[idx],
-                    base_fitnesses[idx],
-                    feasible[winner],
-                    violations[winner],
-                    base_fitnesses[winner],
-                ):
-                    winner = idx
-            parents.append(population[winner])
-
-        return parents
-
     def _elitist_selection_deb(
         self,
         population: List[List[float]],
@@ -541,58 +475,3 @@ class DebFeasibilityConstrainedMethod(AnalysisMethodBase):
         selected_indices = elite_indices + indices[elite_count : elite_count + remaining]
 
         return [combined[i] for i in selected_indices]
-
-    @staticmethod
-    def _calculate_gap_aware_target(
-        mandatory_breakpoints: List[float],
-        total_distance: float,
-        target_avg_length: float,
-        min_length: float,
-        max_length: float,
-        log: Callable[[str], None],
-    ) -> int:
-        """Calculate realistic target segments considering mandatory breakpoints."""
-        if len(mandatory_breakpoints) > 2:
-            mandatory_distances = [
-                mandatory_breakpoints[i + 1] - mandatory_breakpoints[i]
-                for i in range(len(mandatory_breakpoints) - 1)
-            ]
-            mandatory_total_distance = float(sum(mandatory_distances))
-            num_mandatory_segments = len(mandatory_distances)
-
-            remaining_distance = float(total_distance - mandatory_total_distance)
-            if remaining_distance > 0:
-                total_segments_needed = float(total_distance / max(target_avg_length, 1e-9))
-                target_regular_segments = max(0, int(round(total_segments_needed - num_mandatory_segments)))
-                target_segments = num_mandatory_segments + target_regular_segments
-
-                required_regular_avg = (
-                    remaining_distance / target_regular_segments
-                    if target_regular_segments > 0
-                    else target_avg_length
-                )
-
-                log("Gap-aware calculation:")
-                log(
-                    f"  Mandatory segments: {num_mandatory_segments} covering {mandatory_total_distance:.2f} miles"
-                )
-                log(f"  Remaining distance: {remaining_distance:.2f} miles for regular segments")
-                log(f"  Target regular segments: {target_regular_segments}")
-                log(f"  Required regular avg: {required_regular_avg:.3f} miles")
-
-                if required_regular_avg > max_length * 0.9:
-                    log(
-                        f"  WARNING: Required regular segment avg ({required_regular_avg:.2f}) is near max_length ({max_length:.2f})"
-                    )
-                elif required_regular_avg < min_length * 1.1:
-                    log(
-                        f"  WARNING: Required regular segment avg ({required_regular_avg:.2f}) is near min_length ({min_length:.2f})"
-                    )
-            else:
-                target_segments = num_mandatory_segments
-                log(f"  All distance covered by mandatory segments: {num_mandatory_segments} segments")
-        else:
-            target_segments = max(2, int(round(total_distance / max(target_avg_length, 1e-9))))
-            log(f"Simple calculation (no gaps): {target_segments} segments for {total_distance:.2f} miles")
-
-        return max(2, int(target_segments))

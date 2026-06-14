@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import json
+import logging
 import os
 from collections import Counter
 from dataclasses import dataclass, replace as _dc_replace
@@ -24,7 +25,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, TYPE_CHECKING
 import pandas as pd
 import jsonschema
 
-from config import OptionalNumericParameter, get_optimization_method, resolve_method_class, PreprocessingRunConfig
+from config import OptionalNumericParameter, get_optimization_method, resolve_method_class, PreprocessingRunConfig, get_preprocessing_method
 from data_loader import RouteAnalysis, analyze_route_gaps, process_route_with_preprocessing
 from data_sources.base import DataSourceConfig
 from extensible_results_manager import ExtensibleJsonResultsManager
@@ -34,6 +35,7 @@ from value_parsing import coerce_none_like
 if TYPE_CHECKING:
     from analysis.base import AnalysisResult
 
+_logger = logging.getLogger(__name__)
 
 LogCallback = Callable[[str], None]
 
@@ -121,7 +123,7 @@ class ResolvedRunSpec:
             breakpoint regardless of the GA solution (e.g., district or jurisdiction
             boundaries). ``None`` means no forced attribute breaks.
         method_key: Analysis method identifier
-            (e.g., ``"single_objective"``, ``"multi_objective"``, ``"aashto_cda"``).
+            (e.g., ``"single"``, ``"multi"``, ``"aashto_cda"``).
         method_parameters: Method-specific parameters, merged with per-method
             defaults so every parameter has a value.
         preprocessing_config: Optional preprocessing configuration. ``None`` means
@@ -337,6 +339,22 @@ def load_and_resolve_run_spec(spec_path: str | os.PathLike[str], *, validate: bo
             if not isinstance(secondary_params, dict):
                 raise RunSpecError("preprocessing.secondary_parameters must be an object")
             
+            # Validate each method is permitted in the stage it is assigned to
+            for pp_method_key, stage_name in (
+                (pre_gap_method, "pre_gap"),
+                (primary_method, "primary"),
+                (secondary_method, "secondary"),
+            ):
+                if pp_method_key is None:
+                    continue
+                method_cfg = get_preprocessing_method(pp_method_key)
+                if method_cfg.allowed_stages is not None and stage_name not in method_cfg.allowed_stages:
+                    allowed = ", ".join(f'"{s}"' for s in method_cfg.allowed_stages)
+                    raise RunSpecError(
+                        f"Preprocessing method '{pp_method_key}' cannot be used in the '{stage_name}' slot "
+                        f"(allowed stages: {allowed})."
+                    )
+
             # Create PreprocessingRunConfig if any method is specified
             if pre_gap_method or primary_method or secondary_method:
                 preprocessing_config = PreprocessingRunConfig(
@@ -405,8 +423,11 @@ def _convert_columns_for_analysis(df: pd.DataFrame, *, x_column: str, y_column: 
     Mirrors the GUI data-load pipeline so the CLI produces identical input to
     the analysis methods. Key behaviors:
 
-    - ``x_column`` and ``y_column`` are coerced to numeric; rows where either is
-      non-numeric or missing are dropped.
+    - ``x_column`` is coerced to numeric; rows where it is non-numeric or missing raise
+      ``RunSpecError`` (wrong column choice is always fatal).
+    - ``y_column`` is coerced to numeric; rows with non-numeric or missing Y values are
+      left in the DataFrame as ``NaN`` with a warning logged. Configure the
+      ``invalid_data_handler`` pre-gap preprocessing method to clean these before analysis.
     - ``route_column`` (when present) is normalized to stripped strings.
     - All other columns undergo safe numeric coercion: if every non-null value
       can be parsed as a number, the column becomes numeric. Columns that contain
@@ -468,17 +489,23 @@ def _convert_columns_for_analysis(df: pd.DataFrame, *, x_column: str, y_column: 
             continue
         df[col] = _safe_to_numeric(df[col])
 
-    # Validate that X/Y have numeric values
+    # Validate X column — non-numeric X is always fatal (wrong column choice).
     if pd.to_numeric(df[x_column], errors="coerce").isna().any():
         bad = df.loc[pd.to_numeric(df[x_column], errors="coerce").isna(), x_column].iloc[0]
         raise RunSpecError(f"X column {x_column!r} contains non-numeric values (example: {bad!r})")
 
-    if pd.to_numeric(df[y_column], errors="coerce").isna().any():
-        bad = df.loc[pd.to_numeric(df[y_column], errors="coerce").isna(), y_column].iloc[0]
-        raise RunSpecError(f"Y column {y_column!r} contains non-numeric values (example: {bad!r})")
+    # Warn on non-numeric Y — NaN-Y rows pass through for the Invalid Data Handler to clean.
+    nan_y_mask = pd.to_numeric(df[y_column], errors="coerce").isna()
+    if nan_y_mask.any():
+        n = int(nan_y_mask.sum())
+        _logger.warning(
+            "Y column %r has %d row%s with missing or non-numeric values. "
+            "Configure 'invalid_data_handler' in pre_gap_method to handle these before analysis.",
+            y_column, n, "s" if n != 1 else "",
+        )
 
-    # Drop rows where X/Y are missing
-    required_cols = [x_column, y_column]
+    # Drop rows where X or route column are missing; leave NaN-Y rows for preprocessing.
+    required_cols = [x_column]
     if route_column and route_column in df.columns:
         required_cols.append(route_column)
 
@@ -547,7 +574,7 @@ def _merge_method_defaults(method_key: str, overrides: Dict[str, Any]) -> Dict[s
       must not be passed as a method parameter.
 
     Args:
-        method_key: Analysis method identifier (e.g., ``"single_objective"``).
+        method_key: Analysis method identifier (e.g., ``"single"``).
         overrides: Parameter values from the run spec's ``method.method_parameters``
             block. Missing keys fall back to the method's declared defaults.
 
@@ -776,6 +803,17 @@ def _run_analysis_from_resolved_spec(
                     ]
                     for r in preprocess_results
                 ]
+
+        # Enrich data_summary with attribute break analysis (mirrors controller post-processing)
+        if not res.data_summary:
+            res.data_summary = {}
+        from data_loader import build_attribute_break_analysis, build_secondary_attribute_break_analysis
+        attr_analysis = build_attribute_break_analysis(route_analysis)
+        if attr_analysis:
+            res.data_summary['attribute_break_analysis'] = attr_analysis
+        sec_attr_analysis = build_secondary_attribute_break_analysis(route_analysis)
+        if sec_attr_analysis:
+            res.data_summary['secondary_attribute_break_analysis'] = sec_attr_analysis
 
         _normalize_analysis_result_for_json_parity(res, method_params=method_params)
         results.append(res)

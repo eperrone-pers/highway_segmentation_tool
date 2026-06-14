@@ -24,16 +24,17 @@ import time
 import random
 import numpy as np
 from datetime import datetime
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Optional
 
 from ..base import AnalysisMethodBase, AnalysisResult
 from ..utils.ga_utilities import (
+    build_ga_data_summary,
     crossover_with_retries,
     mutation_with_retries,
+    tournament_select,
 )
 from ..utils.segment_metrics import average_length_excluding_gap_segments
 from ..utils.genetic_algorithm import HighwaySegmentGA
-from config import get_optimization_method
 
 
 class SingleObjectiveMethod(AnalysisMethodBase):
@@ -86,8 +87,7 @@ class SingleObjectiveMethod(AnalysisMethodBase):
         Returns:
             AnalysisResult with optimization results and statistics
         """
-        method_config = get_optimization_method('single')
-        param_defaults = {param.name: param.default_value for param in method_config.parameters}
+        param_defaults = self.get_param_defaults()
 
         min_length = kwargs.get('min_length', param_defaults['min_length'])
         max_length = kwargs.get('max_length', param_defaults['max_length'])
@@ -142,12 +142,12 @@ class SingleObjectiveMethod(AnalysisMethodBase):
         generation_times = [] if enable_performance_stats else None
         diversity_history = [] if enable_performance_stats else None
 
-        log("\\nStarting single-objective evolution...")
+        log("\nStarting single-objective evolution...")
         log("Progress: [" + "-" * 50 + "]")
 
         for gen in range(num_generations):
             if stop_callback and stop_callback():
-                log(f"\\n[STOPPED] Optimization stopped by user at generation {gen+1}")
+                log(f"\n[STOPPED] Optimization stopped by user at generation {gen+1}")
                 break
 
             gen_start_time = time.time()
@@ -173,7 +173,7 @@ class SingleObjectiveMethod(AnalysisMethodBase):
                     getattr(data, 'gap_segments', []),
                 )
                 
-                log(f"\\nGen {gen+1}: Best fitness = {fitnesses[best_idx]:.6f}")
+                log(f"\nGen {gen+1}: Best fitness = {fitnesses[best_idx]:.6f}")
                 log(f"  Segments: {segment_count}")
                 log(f"  Average length: {avg_length:.3f} miles")
                 log(f"  Population fitness: avg={np.mean(fitnesses):.6f}, std={np.std(fitnesses):.6f}")
@@ -188,7 +188,11 @@ class SingleObjectiveMethod(AnalysisMethodBase):
                 ga.report_constraint_statistics(gen + 1, log_callback)
             
             # ===== GENETIC OPERATIONS =====
-            parents = self._select_parents_tournament(population, fitnesses, population_size // 2, ga)
+            parents = tournament_select(
+                population,
+                population_size // 2,
+                comparator=lambda i, j: fitnesses[i] > fitnesses[j],
+            )
 
             offspring = []
             attempts = 0
@@ -245,11 +249,11 @@ class SingleObjectiveMethod(AnalysisMethodBase):
         best_chromosome = population[best_idx]
         best_fitness = final_fitnesses[best_idx]
 
-        segment_count = len(best_chromosome) + 1
+        segment_count = len(best_chromosome) - 1
         stats = ga.calculate_detailed_statistics(best_chromosome, data)
         avg_length = stats.avg_length if hasattr(stats, 'avg_length') else 0
         
-        log("\\n=== SINGLE-OBJECTIVE RESULTS ===")
+        log("\n=== SINGLE-OBJECTIVE RESULTS ===")
         log(f"Best fitness: {best_fitness:.6f}")
         log(f"Segments: {segment_count}")
         log(f"Average length: {avg_length:.3f} miles")
@@ -291,39 +295,8 @@ class SingleObjectiveMethod(AnalysisMethodBase):
             'gap_threshold': gap_threshold
         }
         
-        actual_data = data.route_data
+        data_summary = build_ga_data_summary(ga, data.route_data, x_column, y_column)
 
-        if hasattr(ga, 'route_analysis') and ga.route_analysis and hasattr(ga.route_analysis, 'data_range'):
-            data_range = ga.route_analysis.data_range
-        else:
-            data_range = {
-                'x_min': float(actual_data[x_column].min()),
-                'x_max': float(actual_data[x_column].max()),
-                'y_min': float(actual_data[y_column].min()),
-                'y_max': float(actual_data[y_column].max())
-            }
-        
-        data_summary = {
-            'total_data_points': len(actual_data),
-            'data_range': data_range,
-            'mandatory_breakpoints': list(ga.mandatory_breakpoints),
-            'gap_analysis': {
-                'total_gaps': len(ga.route_analysis.gap_segments) if hasattr(ga, 'route_analysis') and ga.route_analysis else 0,
-                'gap_segments': [{'start': gap[0], 'end': gap[1], 'length': gap[1] - gap[0]} for gap in ga.route_analysis.gap_segments] if hasattr(ga, 'route_analysis') and ga.route_analysis else [],
-                'total_gap_length': ga.route_analysis.route_stats.get('gap_total_length', 0.0) if hasattr(ga, 'route_analysis') and ga.route_analysis else 0.0
-            }
-        }
-
-        # Optional: attribute-based must-break metadata for visualization/reporting
-        try:
-            from data_loader import build_attribute_break_analysis
-
-            attr_block = build_attribute_break_analysis(ga.route_analysis)
-            if attr_block:
-                data_summary['attribute_break_analysis'] = attr_block
-        except Exception:
-            pass
-        
         route_id = getattr(data, 'route_id', 'Unknown')
 
         # Average length excluding gap-only segments (method-owned export convention)
@@ -362,7 +335,7 @@ class SingleObjectiveMethod(AnalysisMethodBase):
             }] + [{
                 'chromosome': population[i],
                 'fitness': final_fitnesses[i],
-                'segment_count': len(population[i]) + 1
+                'segment_count': len(population[i]) - 1
             } for i in range(1, len(population))],
             optimization_stats=optimization_stats,
             mandatory_breakpoints=sorted(list(ga.mandatory_breakpoints)),
@@ -372,42 +345,6 @@ class SingleObjectiveMethod(AnalysisMethodBase):
             timestamp=datetime.now().isoformat(),
             analysis_version="1.95.0"
         )
-    
-    def _select_parents_tournament(self, population: List[List[float]], fitnesses: List[float], 
-                                 num_parents: int, ga: HighwaySegmentGA) -> List[List[float]]:
-        """
-        Tournament selection for single-objective optimization.
-        
-        Args:
-            population: Current population
-            fitnesses: Fitness values 
-            num_parents: Number of parents to select
-            ga: GA instance for tournament size config
-            
-        Returns:
-            Selected parent chromosomes
-        """
-        parents = []
-        tournament_size = 3  # Standard tournament size
-
-        population_size = len(population)
-        if population_size == 0 or num_parents <= 0:
-            return parents
-
-        tournament_size = min(tournament_size, population_size)
-
-        for _ in range(num_parents):
-            tournament_indices = random.sample(range(population_size), k=tournament_size)
-            best_idx = tournament_indices[0]
-            best_fitness = fitnesses[best_idx]
-            for idx in tournament_indices[1:]:
-                if fitnesses[idx] > best_fitness:
-                    best_idx = idx
-                    best_fitness = fitnesses[idx]
-
-            parents.append(population[best_idx])
-            
-        return parents
     
     def _collect_cache_stats(self, ga: HighwaySegmentGA) -> Optional[Dict[str, Any]]:
         """

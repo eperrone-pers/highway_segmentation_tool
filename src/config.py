@@ -691,26 +691,6 @@ def get_method_parameters(method_key: str) -> List[ParameterDefinition]:
     method = get_optimization_method(method_key)
     return method.parameters
 
-def get_parameter_groups(method_key: str) -> Dict[str, List[ParameterDefinition]]:
-    """Get parameters organized by group for a specific method."""
-    parameters = get_method_parameters(method_key)
-    groups = {}
-    for param in parameters:
-        if param.group not in groups:
-            groups[param.group] = []
-        groups[param.group].append(param)
-    
-    # Sort parameters within each group by order
-    for group_params in groups.values():
-        group_params.sort(key=lambda p: p.order)
-    
-    return groups
-
-def get_parameter_defaults(method_key: str) -> Dict[str, Any]:
-    """Get dictionary of default parameter values for a method."""
-    parameters = get_method_parameters(method_key)
-    return {param.name: param.default_value for param in parameters}
-
 def is_multi_objective_method(method_key: str) -> bool:
     """Check if method returns multi-objective results (controls visualization).
     
@@ -741,6 +721,7 @@ class PreprocessingMethodConfig:
     description: str                         # Detailed description for tooltips/help
     parameters: List[ParameterDefinition]    # Complete parameter list for this method
     method_class_path: str                   # Import path (e.g., "preprocessing.methods.tukey_fences.TukeyFencesPreprocessor")
+    allowed_stages: Optional[List[str]] = None  # Restricts to specific pipeline stages ("pre_gap", "primary", "secondary"). None = all stages.
 
 
 @dataclass
@@ -779,9 +760,68 @@ class PreprocessingRunConfig:
             self.secondary_parameters = {}
 
 
-# Preprocessing methods registry - currently empty, methods will be added as framework develops
-# Future methods: Tukey Fences, Moving Average, Savitzky-Golay, etc.
+INVALID_DATA_HANDLER_PARAMETERS = [
+    SelectParameter(
+        name="y_strategy",
+        display_name="Missing Y Strategy",
+        description="How to handle rows with missing or non-numeric Y values",
+        group="01_strategy",
+        order=1,
+        default_value="drop",
+        options=[
+            ("Drop Row", "drop"),
+            ("Moving Average", "moving_average"),
+            ("Linear Interpolate", "linear_interpolate"),
+        ],
+    ),
+    NumericParameter(
+        name="window_size",
+        display_name="Moving Average Window",
+        description="Number of valid neighbors to collect on each side when using Moving Average (ignored for other strategies)",
+        group="02_options",
+        order=2,
+        default_value=3,
+        min_value=1,
+        max_value=None,
+        decimal_places=0,
+        widget_width=10,
+    ),
+    BoolParameter(
+        name="enable_threshold",
+        display_name="Enable Bad Data Threshold",
+        description="Skip the route if the fraction of bad Y rows exceeds the threshold (protects against wrong column selection)",
+        group="03_threshold",
+        order=3,
+        default_value=False,
+    ),
+    NumericParameter(
+        name="threshold_percent",
+        display_name="Threshold (%)",
+        description="Maximum allowed percentage of missing/non-numeric Y rows before the route is skipped (requires Enable Bad Data Threshold)",
+        group="03_threshold",
+        order=4,
+        default_value=10.0,
+        min_value=1.0,
+        max_value=50.0,
+        decimal_places=1,
+        widget_width=10,
+    ),
+]
+
+
+# Preprocessing methods registry
 PREPROCESSING_METHODS: List[PreprocessingMethodConfig] = [
+    PreprocessingMethodConfig(
+        method_key="invalid_data_handler",
+        display_name="Invalid Data Handler",
+        description=(
+            "Handles missing or non-numeric Y values before analysis. "
+            "Must be configured in the Pre-Gap preprocessing slot."
+        ),
+        parameters=INVALID_DATA_HANDLER_PARAMETERS,
+        method_class_path="preprocessing.methods.invalid_data_handler.InvalidDataHandlerPreprocessor",
+        allowed_stages=["pre_gap"],
+    ),
     PreprocessingMethodConfig(
         method_key="tukey_fences",
         display_name="Tukey Fences Outlier Detection",
@@ -945,10 +985,30 @@ def get_preprocessing_method_names() -> List[str]:
     return [method.display_name for method in PREPROCESSING_METHODS]
 
 
+def get_preprocessing_method_names_for_stage(stage: str) -> List[str]:
+    """
+    Get preprocessing method display names that are compatible with a specific pipeline stage.
+
+    Methods with ``allowed_stages=None`` are included in all stages (no restriction).
+    Methods with a non-None ``allowed_stages`` list are only included if ``stage`` is in that list.
+
+    Args:
+        stage: Pipeline stage name — one of ``"pre_gap"``, ``"primary"``, ``"secondary"``.
+
+    Returns:
+        List of display names compatible with the given stage.
+    """
+    return [
+        method.display_name
+        for method in PREPROCESSING_METHODS
+        if method.allowed_stages is None or stage in method.allowed_stages
+    ]
+
+
 def get_preprocessing_method_key_from_display_name(display_name: str) -> str:
     """
     Get method key from display name.
-    
+
     Args:
         display_name: Human-readable method name
         
@@ -978,15 +1038,3 @@ def get_preprocessing_parameters(method_key: str) -> List[ParameterDefinition]:
     return method.parameters
 
 
-# Helper function to get all config instances
-def get_all_configs():
-    """Get dictionary of all configuration instances."""
-    return {
-        'optimization': optimization_config,
-        'ui': ui_config,
-        'plotting': plotting_config,
-        'constraint': constraint_config,
-        'cache': cache_config,
-        'constrained_optimization': constrained_optimization_config,
-        'validation': validation_config
-    }

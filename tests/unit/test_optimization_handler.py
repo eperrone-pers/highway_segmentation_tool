@@ -40,7 +40,7 @@ class FakeApp:
         self.parameter_manager = MagicMock()
         self.parameter_manager.validate_and_show_errors.return_value = True
         self.root = MagicMock()
-        self.root.after = MagicMock(side_effect=lambda delay, fn: fn())
+        self.root.after = MagicMock(side_effect=lambda _delay, fn: fn())
         self.optimization_method = "multi"
         self._active_method_key = "multi"
         self.settings = {}

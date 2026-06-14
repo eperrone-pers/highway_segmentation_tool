@@ -52,10 +52,6 @@ from ..base import AnalysisMethodBase, AnalysisResult
 from ..utils.segment_metrics import average_length_excluding_gap_segments
 from config import get_optimization_method
 
-try:
-    from data_loader import build_attribute_break_analysis
-except Exception:  # pragma: no cover
-    build_attribute_break_analysis = None
 
 
 def aashto_cda(y: np.ndarray,
@@ -625,15 +621,6 @@ class AashtoCdaMethod(AnalysisMethodBase):
                     'total_analyzable_length': route_analysis.route_stats.get('total_analyzable_length', 0.0)
                 }
             }
-
-            # Optional: attribute-based must-break metadata for visualization/reporting
-            try:
-                if build_attribute_break_analysis is not None:
-                    attr_block = build_attribute_break_analysis(route_analysis)
-                    if attr_block:
-                        data_summary['attribute_break_analysis'] = attr_block
-            except Exception:
-                pass
 
             return AnalysisResult(
                 method_name=self.method_name,

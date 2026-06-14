@@ -22,10 +22,6 @@ from ..base import AnalysisMethodBase, AnalysisResult
 from ..utils.segment_metrics import average_length_excluding_gap_segments
 from config import get_optimization_method
 
-try:
-    from data_loader import build_attribute_break_analysis
-except Exception:  # pragma: no cover
-    build_attribute_break_analysis = None
 
 
 def _rolling_smooth(values: np.ndarray, window_pts: int, method: str) -> np.ndarray:
@@ -485,15 +481,6 @@ class PeltSegmentationMethod(AnalysisMethodBase):
                 ),
             },
         }
-
-        # Optional: attribute-based must-break metadata for visualization/reporting
-        try:
-            if build_attribute_break_analysis is not None:
-                attr_block = build_attribute_break_analysis(route_analysis)
-                if attr_block:
-                    data_summary["attribute_break_analysis"] = attr_block
-        except Exception:
-            pass
 
         return AnalysisResult(
             method_name=self.method_name,

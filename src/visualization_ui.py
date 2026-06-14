@@ -2053,26 +2053,21 @@ class EnhancedVisualizationWindow:
             except Exception:
                 pass
 
-            # Control preprocessing changes toggle visibility based on whether preprocessing was used
+            # Enable preprocessing toggle only when the run used a preprocessing method.
+            # The button is always visible (packed at build time); enable/disable signals availability.
             try:
                 preprocessing_log = route_results.get('preprocessing_modification_log') if isinstance(route_results, dict) else None
                 has_preprocessing = isinstance(preprocessing_log, list) and len(preprocessing_log) > 0
-                
+
                 if hasattr(self, 'preprocessing_changes_button'):
                     if has_preprocessing:
-                        # Show if currently hidden
-                        if self.preprocessing_changes_button.winfo_manager() != 'pack':
-                            self.preprocessing_changes_button.pack(**getattr(self, '_preprocessing_changes_pack_opts', {}))
+                        self.preprocessing_changes_button.configure(state='normal')
                     else:
-                        # Hide and force off
                         try:
                             self._show_preprocessing_changes_var.set(False)
                         except Exception:
                             pass
-                        try:
-                            self.preprocessing_changes_button.pack_forget()
-                        except Exception:
-                            pass
+                        self.preprocessing_changes_button.configure(state='disabled')
             except Exception:
                 pass
 

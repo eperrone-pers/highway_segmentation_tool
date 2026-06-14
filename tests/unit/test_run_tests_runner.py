@@ -46,7 +46,7 @@ def test_run_matrix_updates_summary_after_each_lane(tmp_path, monkeypatch):
     summary_calls = []
     original_write_matrix_summary = run_tests.write_matrix_summary
 
-    def fake_run_lane(lane_name, lane_spec, *, log_dir, continue_on_failure=False):
+    def fake_run_lane(lane_name, _lane_spec, **_kwargs):
         return lane_results[lane_name]
 
     def tracking_write_matrix_summary(results, log_dir, *, lane_names=None, run_status="completed", current_lane=None):
@@ -113,7 +113,7 @@ def test_run_matrix_exits_nonzero_when_any_lane_fails(tmp_path, monkeypatch):
     monkeypatch.setattr(
         run_tests,
         "run_lane",
-        lambda lane_name, lane_spec, *, log_dir, continue_on_failure=False: lane_results[lane_name],
+        lambda lane_name, _lane_spec, **_kwargs: lane_results[lane_name],
     )
     monkeypatch.setattr(run_tests, "print_matrix_summary", lambda results, summary_path: None)
 

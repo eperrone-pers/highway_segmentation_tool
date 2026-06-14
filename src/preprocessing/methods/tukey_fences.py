@@ -8,6 +8,7 @@ also known as Tukey's Fences. Identifies outliers as values beyond
 Reference: Tukey, J.W. (1977). Exploratory Data Analysis.
 """
 
+import logging
 from typing import TYPE_CHECKING
 import numpy as np
 
@@ -20,6 +21,7 @@ from preprocessing.base import (
 if TYPE_CHECKING:
     from data_loader import RouteAnalysis
 
+_logger = logging.getLogger(__name__)
 
 # Statistical constant: minimum points needed to calculate quartiles reliably
 MIN_POINTS_FOR_IQR = 4
@@ -79,13 +81,13 @@ class TukeyFencesPreprocessor(PreprocessingMethodBase):
             x_column: Name of X-axis column (e.g., "Milepoint")
             y_column: Name of Y-axis column (e.g., "IRI")
             log_callback: Optional callable for progress messages. Use like:
-                ``log = log_callback or print; log("Processing...")``.
+                ``log = log_callback or _logger.debug; log("Processing...")``.
             **parameters: Method parameters (k_factor, action)
 
         Returns:
             PreprocessingResult with modified route analysis and complete modification log
         """
-        log = log_callback or print
+        log = log_callback or _logger.debug
 
         # Extract parameters (with defaults)
         k_factor = parameters.get('k_factor', 1.5)

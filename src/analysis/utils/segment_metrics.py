@@ -61,20 +61,6 @@ def normalize_gap_segments(gap_segments: Iterable[GapLike]) -> List[Tuple[float,
     return normalized
 
 
-def average_length_including_gaps(breakpoints: Sequence[float]) -> float:
-    """Mean segment length over all consecutive breakpoint intervals."""
-    bps = normalize_breakpoints(breakpoints)
-    if len(bps) < 2:
-        return 0.0
-
-    lengths = []
-    for a, b in zip(bps, bps[1:]):
-        L = float(b - a)
-        if L > 0:
-            lengths.append(L)
-    return float(sum(lengths) / len(lengths)) if lengths else 0.0
-
-
 def average_length_excluding_gap_segments(
     breakpoints: Sequence[float],
     gap_segments: Iterable[GapLike],

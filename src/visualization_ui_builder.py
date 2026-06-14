@@ -324,13 +324,15 @@ class VisualizationUIBuilder:
         right_bottom_bar = ttk.Frame(right_frame)
         right_bottom_bar.pack(side='bottom', fill='x')
 
+        # Pack controls first so they claim their natural width before the
+        # toolbar expands to fill the rest of the bar.
+        right_controls_container = ttk.Frame(right_bottom_bar)
+        right_controls_container.pack(side='right')
+
         right_toolbar_container = ttk.Frame(right_bottom_bar)
         right_toolbar_container.pack(side='left', fill='x', expand=True)
         toolbar_right = _QuietToolbar(win.canvas_right, right_toolbar_container)
         toolbar_right.update()
-
-        right_controls_container = ttk.Frame(right_bottom_bar)
-        right_controls_container.pack(side='right')
 
         win.coord_label = ttk.Label(
             right_controls_container,
@@ -392,15 +394,17 @@ class VisualizationUIBuilder:
             variable=win._show_preprocessing_changes_var,
             command=win.update_visualizations,
             takefocus=False,
+            state='disabled',
         )
         try:
             win.preprocessing_changes_button.configure(cursor='arrow')
         except Exception:
             pass
-        win._preprocessing_changes_pack_opts = dict(side='left', padx=(8, 0), pady=2)
+        win.preprocessing_changes_button.pack(side='right', padx=(0, 8), pady=2)
         attach_tooltip(win.preprocessing_changes_button,
                        "Show or hide markers for data points that were modified or "
-                       "removed during preprocessing (outlier detection, etc.).")
+                       "removed during preprocessing (outlier detection, etc.). "
+                       "Enabled only when the current run used a preprocessing method.")
 
         try:
             win.break_lanes_button.pack_forget()

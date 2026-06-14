@@ -23,11 +23,14 @@ from typing import Any
 
 from ..base import AnalysisMethodBase, AnalysisResult
 from ..utils.ga_utilities import (
-    nsga2_tournament_selection, crossover_with_retries, mutation_with_retries, analyze_population_diversity
+    build_ga_data_summary,
+    nsga2_tournament_selection,
+    crossover_with_retries,
+    mutation_with_retries,
+    analyze_population_diversity,
 )
 from ..utils.segment_metrics import average_length_excluding_gap_segments
 from ..utils.genetic_algorithm import HighwaySegmentGA
-from config import get_optimization_method
 
 _logger = logging.getLogger(__name__)
 
@@ -93,11 +96,7 @@ class MultiObjectiveMethod(AnalysisMethodBase):
                 "Use analyze_route_gaps(...) to build one from a DataFrame."
             )
 
-        method_config = get_optimization_method('multi')
-        if not method_config:
-            raise ValueError("Multi-objective method configuration not found")
-
-        param_defaults = {param.name: param.default_value for param in method_config.parameters}
+        param_defaults = self.get_param_defaults()
 
         min_length = kwargs.get('min_length', param_defaults['min_length'])
         max_length = kwargs.get('max_length', param_defaults['max_length'])
@@ -356,17 +355,34 @@ class MultiObjectiveMethod(AnalysisMethodBase):
         else:
             # Fallback: no Pareto solutions found
             log("Warning: No Pareto solutions found, using best population member")
-            best_idx = min(range(len(final_fitness_values)), key=lambda i: final_fitness_values[i][0])
+            best_idx = max(range(len(final_fitness_values)), key=lambda i: final_fitness_values[i][0])
             chromosome = population[best_idx]
-            deviation_fitness, segment_count = final_fitness_values[best_idx]
-            
+            negative_deviation, avg_segment_length = final_fitness_values[best_idx]  # GA convention: (-deviation, +avg_length)
+
+            segments = [chromosome[i + 1] - chromosome[i] for i in range(len(chromosome) - 1)]
+            segment_count = len(segments)
+            calculated_avg_length = average_length_excluding_gap_segments(
+                chromosome,
+                getattr(data, 'gap_segments', []),
+            )
+
             primary_solution = {
                 'chromosome': chromosome,
-                'fitness': [deviation_fitness, segment_count],
-                'deviation_fitness': deviation_fitness,
-                'segment_fitness': segment_count, 
+                'fitness': [negative_deviation, avg_segment_length],  # Raw GA values
+                'objective_values': [negative_deviation, avg_segment_length],
+                'deviation_fitness': negative_deviation,
+                'segment_fitness': avg_segment_length,
                 'num_segments': segment_count,
-                'avg_segment_length': sum(chromosome[i+1] - chromosome[i] for i in range(len(chromosome)-1)) / max(1, len(chromosome)-1)
+                'avg_segment_length': calculated_avg_length,
+                'segment_lengths': segments,
+                'segmentation': {
+                    'breakpoints': chromosome,
+                    'segment_count': segment_count,
+                    'segment_lengths': segments,
+                    'total_length': (chromosome[-1] - chromosome[0]) if len(chromosome) >= 2 else 0.0,
+                    'average_segment_length': float(calculated_avg_length),
+                    'segment_details': [],
+                },
             }
             all_solutions = [primary_solution]
         
@@ -400,39 +416,8 @@ class MultiObjectiveMethod(AnalysisMethodBase):
             'enable_performance_stats': enable_performance_stats
         }
         
-        actual_data = data.route_data
+        data_summary = build_ga_data_summary(ga, data.route_data, x_column, y_column)
 
-        if hasattr(ga, 'route_analysis') and ga.route_analysis and hasattr(ga.route_analysis, 'data_range'):
-            data_range = ga.route_analysis.data_range
-        else:
-            data_range = {
-                'x_min': float(actual_data[x_column].min()),
-                'x_max': float(actual_data[x_column].max()),
-                'y_min': float(actual_data[y_column].min()),
-                'y_max': float(actual_data[y_column].max())
-            }
-        
-        data_summary = {
-            'total_data_points': len(actual_data),
-            'data_range': data_range,
-            'mandatory_breakpoints': list(ga.mandatory_breakpoints),
-            'gap_analysis': {
-                'total_gaps': len(ga.route_analysis.gap_segments) if hasattr(ga, 'route_analysis') and ga.route_analysis else 0,
-                'gap_segments': [{'start': gap[0], 'end': gap[1], 'length': gap[1] - gap[0]} for gap in ga.route_analysis.gap_segments] if hasattr(ga, 'route_analysis') and ga.route_analysis else [],
-                'total_gap_length': ga.route_analysis.route_stats.get('gap_total_length', 0.0) if hasattr(ga, 'route_analysis') and ga.route_analysis else 0.0
-            }
-        }
-
-        # Optional: attribute-based must-break metadata for visualization/reporting
-        try:
-            from data_loader import build_attribute_break_analysis
-
-            attr_block = build_attribute_break_analysis(ga.route_analysis)
-            if attr_block:
-                data_summary['attribute_break_analysis'] = attr_block
-        except Exception:
-            pass
-        
         route_id = getattr(data, 'route_id', 'Unknown')
 
         log("\\n=== MULTI-OBJECTIVE RESULTS ===")

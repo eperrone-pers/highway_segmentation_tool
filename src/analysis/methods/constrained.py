@@ -33,13 +33,15 @@ import numpy as np
 
 from ..base import AnalysisMethodBase, AnalysisResult
 from ..utils.ga_utilities import (
+    build_ga_data_summary,
+    calculate_gap_aware_target,
     crossover_with_retries,
     mutation_with_retries,
     analyze_population_diversity,
+    tournament_select,
 )
 from ..utils.segment_metrics import average_length_excluding_gap_segments
 from ..utils.genetic_algorithm import HighwaySegmentGA
-from config import get_optimization_method
 
 
 class ConstrainedMethod(AnalysisMethodBase):
@@ -104,8 +106,7 @@ class ConstrainedMethod(AnalysisMethodBase):
         
         log = log_callback or print
         
-        method_config = get_optimization_method('constrained')
-        param_defaults = {param.name: param.default_value for param in method_config.parameters}
+        param_defaults = self.get_param_defaults()
 
         # Merge: defaults → input_parameters → direct kwargs
         parameters = param_defaults.copy()
@@ -149,8 +150,8 @@ class ConstrainedMethod(AnalysisMethodBase):
         mandatory_breakpoints = sorted(list(ga.mandatory_breakpoints))
         
         # Calculate realistic target segments considering gap constraints
-        target_segments = self._calculate_gap_aware_target(
-            mandatory_breakpoints, total_distance, target_avg_length, 
+        target_segments = calculate_gap_aware_target(
+            mandatory_breakpoints, total_distance, target_avg_length,
             min_length, max_length, log
         )
         
@@ -166,7 +167,7 @@ class ConstrainedMethod(AnalysisMethodBase):
         log(f"[OK] Generated {len(population)} valid chromosomes")
         
         # ===== EVOLUTION LOOP =====
-        log("\\nStarting constrained evolution...")
+        log("\nStarting constrained evolution...")
         log("Progress: [" + "-" * 50 + "]")
         
         best_fitness_history = []
@@ -175,7 +176,7 @@ class ConstrainedMethod(AnalysisMethodBase):
         
         for generation in range(num_generations):
             if stop_callback and stop_callback():
-                log(f"\\n[STOPPED] Constrained optimization stopped by user at generation {generation+1}")
+                log(f"\n[STOPPED] Constrained optimization stopped by user at generation {generation+1}")
                 break
             
             gen_start_time = time.time()
@@ -205,13 +206,17 @@ class ConstrainedMethod(AnalysisMethodBase):
                 avg_length_pop = np.mean(avg_lengths)
                 target_compliance = sum(1 for dev in length_deviations if dev <= length_tolerance) / len(length_deviations)
                 
-                log(f"\\nGen {generation+1}: Best constrained fitness = {constrained_fitnesses[best_idx]:.6f}")
+                log(f"\nGen {generation+1}: Best constrained fitness = {constrained_fitnesses[best_idx]:.6f}")
                 log(f"  Base fitness = {base_fitnesses[best_idx]:.6f}")
                 log(f"  Length: {avg_lengths[best_idx]:.3f} miles (target: {target_avg_length:.3f}, dev: {length_deviations[best_idx]:.3f})")
                 log(f"  Population avg length: {avg_length_pop:.3f}, compliance: {target_compliance:.1%}")
                 log(f"  Diversity: {diversity_stats['unique_segment_counts']} types, Range: {diversity_stats['min_segments']}-{diversity_stats['max_segments']} segments")
             
-            parents = self._select_parents_tournament(population, constrained_fitnesses, population_size // 2)
+            parents = tournament_select(
+                population,
+                population_size // 2,
+                comparator=lambda i, j: constrained_fitnesses[i] > constrained_fitnesses[j],
+            )
 
             offspring = []
             attempts = 0
@@ -343,41 +348,12 @@ class ConstrainedMethod(AnalysisMethodBase):
             'tolerance_used': length_tolerance
         }
         
-        route_data = data.route_data
+        data_summary = build_ga_data_summary(
+            ga, data.route_data, x_column, y_column,
+            extra_fields={'target_segments_calculated': target_segments},
+        )
 
-        if hasattr(ga, 'route_analysis') and ga.route_analysis and hasattr(ga.route_analysis, 'data_range'):
-            data_range = ga.route_analysis.data_range
-        else:
-            data_range = {
-                'x_min': float(route_data[x_column].min()),
-                'x_max': float(route_data[x_column].max()),
-                'y_min': float(route_data[y_column].min()),
-                'y_max': float(route_data[y_column].max())
-            }
-
-        data_summary = {
-            'total_data_points': len(route_data),
-            'data_range': data_range,
-            'mandatory_breakpoints': list(ga.mandatory_breakpoints),
-            'target_segments_calculated': target_segments,
-            'gap_analysis': {
-                'total_gaps': len(ga.route_analysis.gap_segments) if hasattr(ga, 'route_analysis') and ga.route_analysis else 0,
-                'gap_segments': [{'start': gap[0], 'end': gap[1], 'length': gap[1] - gap[0]} for gap in ga.route_analysis.gap_segments] if hasattr(ga, 'route_analysis') and ga.route_analysis else [],
-                'total_gap_length': ga.route_analysis.route_stats.get('gap_total_length', 0.0) if hasattr(ga, 'route_analysis') and ga.route_analysis else 0.0
-            }
-        }
-
-        # Optional: attribute-based must-break metadata for visualization/reporting
-        try:
-            from data_loader import build_attribute_break_analysis
-
-            attr_block = build_attribute_break_analysis(ga.route_analysis)
-            if attr_block:
-                data_summary['attribute_break_analysis'] = attr_block
-        except Exception:
-            pass
-        
-        log("\\n=== CONSTRAINED SINGLE-OBJECTIVE RESULTS ===")
+        log("\n=== CONSTRAINED SINGLE-OBJECTIVE RESULTS ===")
         log(f"Best constrained fitness: {best_solution['fitness']:.6f}")
         log(f"Base deviation fitness: {best_solution['unconstrained_fitness']:.6f}")
         log(f"Segments: {best_solution['num_segments']}")
@@ -406,56 +382,6 @@ class ConstrainedMethod(AnalysisMethodBase):
             input_parameters={**parameters, 'gap_threshold': gap_threshold},
             data_summary=data_summary
         )
-    
-    def _calculate_gap_aware_target(self, mandatory_breakpoints, total_distance, 
-                                   target_avg_length, min_length, max_length, log):
-        """Calculate realistic target segments considering mandatory breakpoints."""
-        
-        if len(mandatory_breakpoints) > 2:  # More than just start/end points
-            # Calculate distances of segments forced by mandatory breakpoints
-            mandatory_distances = []
-            for i in range(len(mandatory_breakpoints) - 1):
-                mandatory_dist = mandatory_breakpoints[i + 1] - mandatory_breakpoints[i]
-                mandatory_distances.append(mandatory_dist)
-            
-            mandatory_total_distance = sum(mandatory_distances)
-            num_mandatory_segments = len(mandatory_distances)
-            
-            # Calculate what regular segments need to average
-            remaining_distance = total_distance - mandatory_total_distance
-            
-            if remaining_distance > 0:
-                total_segments_needed = total_distance / target_avg_length
-                target_regular_segments = max(0, int(round(total_segments_needed - num_mandatory_segments)))
-                target_segments = num_mandatory_segments + target_regular_segments
-                
-                if target_regular_segments > 0:
-                    required_regular_avg = remaining_distance / target_regular_segments
-                else:
-                    required_regular_avg = target_avg_length
-                
-                log("Gap-aware calculation:")
-                log(f"  Mandatory segments: {num_mandatory_segments} covering {mandatory_total_distance:.2f} miles")
-                log(f"  Remaining distance: {remaining_distance:.2f} miles for regular segments")
-                log(f"  Target regular segments: {target_regular_segments}")
-                log(f"  Required regular avg: {required_regular_avg:.3f} miles to achieve overall {target_avg_length:.2f}")
-                
-                # Warn if target is unrealistic
-                if required_regular_avg > max_length * 0.9:
-                    log(f"  WARNING: Required regular segment avg ({required_regular_avg:.2f}) is near max_length ({max_length:.2f})")
-                    log(f"           Target {target_avg_length:.2f} may be unrealistic with current gap pattern")
-                elif required_regular_avg < min_length * 1.1:
-                    log(f"  WARNING: Required regular segment avg ({required_regular_avg:.2f}) is near min_length ({min_length:.2f})")
-                    log("           Consider lower target length")
-            else:
-                target_segments = num_mandatory_segments
-                log(f"  All distance covered by mandatory segments: {num_mandatory_segments} segments")
-        else:
-            # Simple case: no significant mandatory breakpoints
-            target_segments = max(2, int(round(total_distance / target_avg_length)))
-            log(f"Simple calculation (no gaps): {target_segments} segments for {total_distance:.2f} miles")
-        
-        return max(2, target_segments)
     
     def _constrained_fitness(self, chromosome, ga, target_avg_length, tolerance, penalty_weight):
         """Calculate constrained fitness combining deviation minimization with length penalty."""
@@ -490,37 +416,3 @@ class ConstrainedMethod(AnalysisMethodBase):
         selected_indices = sorted_indices[:len(population)]
 
         return [combined_population[i] for i in selected_indices]
-    
-    def _select_parents_tournament(self, population, fitnesses, num_parents):
-        """
-        Tournament selection for constrained optimization.
-        
-        Args:
-            population: Current population
-            fitnesses: Fitness values 
-            num_parents: Number of parents to select
-            
-        Returns:
-            Selected parent chromosomes
-        """
-        parents = []
-        tournament_size = 3  # Standard tournament size
-
-        population_size = len(population)
-        if population_size == 0 or num_parents <= 0:
-            return parents
-
-        tournament_size = min(tournament_size, population_size)
-
-        for _ in range(num_parents):
-            tournament_indices = random.sample(range(population_size), k=tournament_size)
-            best_idx = tournament_indices[0]
-            best_fitness = fitnesses[best_idx]
-            for idx in tournament_indices[1:]:
-                if fitnesses[idx] > best_fitness:
-                    best_idx = idx
-                    best_fitness = fitnesses[idx]
-
-            parents.append(population[best_idx])
-            
-        return parents
