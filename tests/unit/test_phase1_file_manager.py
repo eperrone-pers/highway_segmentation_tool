@@ -36,7 +36,8 @@ class TestFileManagerRouteProcessing:
         """Create a mock app with route-related attributes."""
         app = Mock()
         app.available_routes = []
-        app.selected_routes = []
+        app.selected_routes = None
+        app._active_data_source = None
         app.route_column = Mock()
         app.route_column.get.return_value = "route"
         app.log_message = Mock()
@@ -113,23 +114,23 @@ SR-123,0.1,4.2"""
         # Execute
         file_manager.detect_available_routes()
         
-        # Verify results - should clear routes
+        # Verify results - should clear routes; None = no filter, not "user selected nothing"
         assert file_manager.app.available_routes == []
-        assert file_manager.app.selected_routes == []
-    
+        assert file_manager.app.selected_routes is None
+
     @pytest.mark.unit
     def test_detect_available_routes_no_route_column(self, file_manager, temp_multi_route_csv):
         """Test route detection when no route column is selected."""
         # Set up mocks
         file_manager.get_data_file_path = Mock(return_value=temp_multi_route_csv)
         file_manager.app.route_column.get.return_value = ROUTE_COLUMN_NONE_SENTINEL
-        
+
         # Execute
         file_manager.detect_available_routes()
-        
+
         # Verify results - should clear routes
         assert file_manager.app.available_routes == []
-        assert file_manager.app.selected_routes == []
+        assert file_manager.app.selected_routes is None
     
     @pytest.mark.unit
     @patch('file_manager.messagebox')  # Mock messagebox to prevent dialogs during testing
@@ -151,7 +152,7 @@ SR-123,0.1,4.2"""
         
         # Verify routes were cleared on error
         assert file_manager.app.available_routes == []
-        assert file_manager.app.selected_routes == []
+        assert file_manager.app.selected_routes is None
     
     @pytest.mark.unit
     def test_detect_available_routes_with_nulls(self, file_manager):

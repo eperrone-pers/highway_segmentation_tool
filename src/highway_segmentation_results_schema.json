@@ -51,31 +51,68 @@
         },
         "input_file_info": {
           "type": "object",
-          "title": "Input Data File Metadata",
-          "required": ["data_file_name", "total_data_rows", "total_routes_available", "column_info"],
+          "title": "Input Data Source Metadata",
+          "required": ["total_data_rows", "total_routes_available", "column_info"],
           "properties": {
+            "source_type": {
+              "type": "string",
+              "enum": ["file", "database"],
+              "description": "Type of data source used for this analysis"
+            },
             "data_file_path": {
               "type": "string",
-              "description": "Complete path to input data file"
+              "description": "Complete path to input data file (file sources only)"
             },
             "data_file_name": {
               "type": "string",
-              "description": "Data file name without path"
+              "description": "Data file name without path (file sources only)"
             },
             "data_file_size_bytes": {
               "type": "integer",
               "minimum": 0,
-              "description": "File size in bytes"
+              "description": "File size in bytes (file sources only)"
             },
             "data_file_modified": {
               "type": "string",
               "format": "date-time",
-              "description": "File last modification timestamp"
+              "description": "File last modification timestamp (file sources only)"
+            },
+            "driver": {
+              "type": "string",
+              "description": "Database driver key, e.g. 'postgresql', 'oracle', 'sqlite' (database sources only)"
+            },
+            "connection_name": {
+              "type": "string",
+              "description": "Human-readable label for the saved connection, e.g. 'State DOT Oracle Prod' (database sources only)"
+            },
+            "host": {
+              "type": "string",
+              "description": "Database server hostname or IP address (database sources only)"
+            },
+            "port": {
+              "type": "integer",
+              "description": "Database server port (database sources only)"
+            },
+            "database": {
+              "type": "string",
+              "description": "Database or catalog name (database sources only)"
+            },
+            "schema": {
+              "type": "string",
+              "description": "Schema name within the database (database sources only)"
+            },
+            "table_or_view": {
+              "type": "string",
+              "description": "Table or view name used as input (database sources only)"
+            },
+            "username": {
+              "type": "string",
+              "description": "Database username (database sources only — password is never recorded)"
             },
             "total_data_rows": {
               "type": "integer",
               "minimum": 1,
-              "description": "Total rows in input data file"
+              "description": "Total rows in input dataset"
             },
             "total_routes_available": {
               "type": "integer",

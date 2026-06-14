@@ -311,7 +311,39 @@ class EnhancedVisualizationWindow:
             except Exception as e:
                 _safe_print(f"[ERROR] Failed to load original data: {e}")
                 
-        # Show error message if data not found
+        # If data came from a database, no file exists — show a neutral status rather than an error.
+        input_file_info = (
+            self.json_results.get('analysis_metadata', {}).get('input_file_info', {})
+            if self.json_results else {}
+        )
+        if isinstance(input_file_info, dict) and input_file_info.get('source_type') == 'database':
+            driver = input_file_info.get('driver', '')
+            table = input_file_info.get('table_or_view', '')
+            db_label = f"{driver} / {table}" if driver and table else table or driver or "database"
+            try:
+                self.data_status_label.config(text="Source: database", foreground='gray')
+                self.data_path_var.set(db_label)
+            except Exception:
+                pass
+            _safe_print(f"[INFO] Data source is a database ({db_label}); no file to reload.")
+            # The in-memory data was already passed in via the constructor — use it directly.
+            if self.original_data is not None:
+                route_processing = self.json_results.get('input_parameters', {}).get('route_processing', {})
+                route_column = route_processing.get('route_column')
+                self._route_column_name = route_column
+                self.original_data_by_route = group_original_data_by_route(
+                    self.original_data,
+                    self.routes,
+                    route_column,
+                )
+                _safe_print(f"[INFO] Populated route data from in-memory DB DataFrame ({len(self.original_data_by_route)} routes).")
+            try:
+                self._refresh_secondary_column_options()
+            except Exception:
+                pass
+            return
+
+        # Show error message if file not found
         missing_path_display = str(data_file_path or data_file_name or "")
         try:
             self.data_status_label.config(text="Original data file not found:", foreground='red')

@@ -364,7 +364,7 @@ fields apply uniformly to every file in the batch.
 
 **`input` section:**
 
-- `data_file_path`: Path to input CSV/XLSX file
+- Exactly one of `data_file_path` **or** `data_source` (see [Database Input](#database-input))
 - `x_column`: Column name for x-axis values (typically milepoints)
 - `y_column`: Column name for y-axis values (the metric to analyze, e.g., IRI, rutting)
 - `gap_threshold`: Positive gap threshold used to create mandatory breakpoints
@@ -584,6 +584,121 @@ If you've installed the package (see above), you can equivalently run:
 ```bash
 highway-seg run --spec path/to/your.run_spec.json
 ```
+
+## Database Input
+
+Instead of `data_file_path`, you can use a `data_source` block to load data directly from a relational database. The two are mutually exclusive — exactly one must be present in the `input` block.
+
+### Supported drivers
+
+| Driver key | Database |
+| --- | --- |
+| `postgresql` | PostgreSQL / PostGIS |
+| `oracle` | Oracle Database |
+| `sqlserver` | Microsoft SQL Server / Azure SQL |
+| `mysql` | MySQL / MariaDB |
+| `snowflake` | Snowflake |
+| `bigquery` | Google BigQuery |
+| `redshift` | Amazon Redshift |
+| `azuresynapse` | Azure Synapse Analytics |
+| `sqlite` | SQLite (local file, no server) |
+| `custom` | Any database via a full SQLAlchemy URL |
+
+The required Python packages for each driver must be installed separately (e.g. `pip install psycopg2-binary` for PostgreSQL). A clear error message is shown if a required package is missing.
+
+### Password security
+
+**Never put a password in the run spec file.** Set the `HST_DB_PASSWORD` environment variable before running:
+
+```bash
+# macOS / Linux
+export HST_DB_PASSWORD="your_password_here"
+highway-seg run --spec path/to/spec.json
+
+# Windows (PowerShell)
+$env:HST_DB_PASSWORD = "your_password_here"
+highway-seg run --spec path/to/spec.json
+```
+
+The runner reads `HST_DB_PASSWORD` at connection time. If the env var is not set and no saved keyring entry is found, the connection attempt will fail with a descriptive error.
+
+### Run spec example — PostgreSQL
+
+```json
+{
+  "spec_version": "1.0.0",
+  "input": {
+    "data_source": {
+      "driver": "postgresql",
+      "host": "db.agency.gov",
+      "port": 5432,
+      "database": "pavement",
+      "schema": "public",
+      "table_or_view": "iri_survey_2026",
+      "username": "analyst"
+    },
+    "x_column": "MILEPOINT",
+    "y_column": "IRI",
+    "route_column": "ROUTE_ID",
+    "gap_threshold": 0.1
+  },
+  "method": {
+    "method_key": "aashto_cda",
+    "method_parameters": {
+      "alpha": 0.05,
+      "method": 2
+    }
+  },
+  "output": {
+    "output_json_path": "results/iri_survey_2026.json"
+  }
+}
+```
+
+### Run spec example — SQLite (no server, no password)
+
+```json
+{
+  "spec_version": "1.0.0",
+  "input": {
+    "data_source": {
+      "driver": "sqlite",
+      "database": "data/local.db",
+      "table_or_view": "pavement_condition"
+    },
+    "x_column": "STATION",
+    "y_column": "PCI",
+    "gap_threshold": 0.25
+  },
+  "method": {
+    "method_key": "single",
+    "method_parameters": {
+      "population_size": 50,
+      "num_generations": 100,
+      "min_length": 0.25,
+      "max_length": 5.0
+    }
+  },
+  "output": {
+    "output_json_path": "results/pci_results.json"
+  }
+}
+```
+
+### `data_source` field reference
+
+| Field | Required | Description |
+| --- | --- | --- |
+| `driver` | Yes | Driver key from the table above |
+| `table_or_view` | Yes | Table or view name to query |
+| `host` | Driver-dependent | Server hostname / IP (or `.db` file path for SQLite) |
+| `port` | Optional | Server port (defaults to driver's standard port) |
+| `database` | Driver-dependent | Database / catalog name |
+| `schema` | Optional | Schema name (omit to use driver default) |
+| `username` | Optional | Database username |
+| `connection_name` | Optional | Human-readable label used for system-keyring lookup when running interactively via the GUI |
+
+> **Note:** Batch mode (`--input-dir`) substitutes `data_file_path` per file and does not support the `data_source` block. Database runs are single-spec only.
 
 ## Understanding the Output
 

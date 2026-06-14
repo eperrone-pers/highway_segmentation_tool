@@ -76,6 +76,9 @@ class FileManager:
         """
         if full_path:
             self.app._data_file_path = full_path
+            # Selecting a file supersedes any active database connection.
+            if hasattr(self.app, '_active_data_source'):
+                self.app._active_data_source = None
             # Extract and display just the filename
             filename = os.path.basename(full_path)
             
@@ -196,7 +199,8 @@ class FileManager:
             df = pd.read_csv(data_path, nrows=0)
             columns = df.columns.tolist()
             self.app.available_columns = columns
-            
+            self.app.data = None  # stale data from previous source must not carry over
+
             self.app.log_message(f"Found {len(columns)} columns: {columns}")
 
             # Remove any must-break / secondary-break column selections that don't
@@ -230,7 +234,7 @@ class FileManager:
             
             # Reset route state when loading new file
             self.app.available_routes = []
-            self.app.selected_routes = []
+            self.app.selected_routes = None
             if hasattr(self.app, 'route_info_label'):
                 self.app.route_info_label.config(text="")
             if hasattr(self.app, 'filter_routes_button'):
@@ -293,6 +297,74 @@ class FileManager:
         except Exception as e:
             self.app.log_message(f"Error loading CSV columns: {str(e)}")
     
+    def populate_columns_from_list(self, columns: list) -> None:
+        """Update all column-selection widgets from a pre-fetched column list.
+
+        Performs the same state reset and combo population as
+        ``load_csv_columns`` but accepts the column list directly instead
+        of reading it from a file. Used by the database connection dialog
+        after a table/view is selected.
+
+        Args:
+            columns: Ordered list of column name strings from the data source.
+        """
+        self.app.available_columns = columns
+        self.app.log_message(f"Found {len(columns)} columns: {columns}")
+
+        # Clear stale data so the auto-load in start_optimization() runs fresh.
+        # Without this, switching to a new table keeps the old DataFrame and the
+        # x/y column names no longer match the stale data, causing KeyErrors.
+        self.app.data = None
+
+        # Clear attribute break selections — a new data source means a fresh start;
+        # columns that share a name across sources may have different semantics.
+        try:
+            self.app.must_break_columns = []
+            if hasattr(self.app, '_update_must_break_columns_display'):
+                self.app._update_must_break_columns_display()
+        except (AttributeError, TypeError):
+            pass
+
+        try:
+            self.app.secondary_break_columns = []
+            if hasattr(self.app, '_update_secondary_break_columns_display'):
+                self.app._update_secondary_break_columns_display()
+        except (AttributeError, TypeError):
+            pass
+
+        # Reset route state. None means "no filter applied — use all routes".
+        # An empty list [] would be interpreted as "user selected nothing" and raise an error.
+        self.app.available_routes = []
+        self.app.selected_routes = None
+        if hasattr(self.app, 'route_info_label'):
+            self.app.route_info_label.config(text="")
+        if hasattr(self.app, 'filter_routes_button'):
+            self.app.filter_routes_button.config(state="disabled")
+        if hasattr(self.app, 'route_column'):
+            self.app.route_column.set(ROUTE_COLUMN_NONE_SENTINEL)
+        if hasattr(self.app, 'optimization_controller'):
+            self.app.optimization_controller.reset_state()
+
+        # Update combos.
+        if hasattr(self.app, 'x_column_combo'):
+            self.app.x_column_combo['values'] = columns
+            current_x = self.app.x_column.get()
+            if current_x == "Load data first..." or current_x not in columns:
+                self.app.x_column.set("")
+        if hasattr(self.app, 'y_column_combo'):
+            self.app.y_column_combo['values'] = columns
+            current_y = self.app.y_column.get()
+            if current_y == "Load data first..." or current_y not in columns:
+                self.app.y_column.set("")
+        if hasattr(self.app, 'route_column_combo'):
+            self.app.route_column_combo['values'] = [ROUTE_COLUMN_NONE_SENTINEL] + columns
+
+        self.app.log_message("Column selections cleared — please select X and Y columns manually")
+        try:
+            self.app.on_parameter_change()
+        except Exception:
+            pass
+
     def load_data_file(self):
         """Load and process the selected data file."""
         data_path = self.get_data_file_path()
@@ -340,251 +412,418 @@ class FileManager:
                 self.app.log_message(f"Created route column from filename: '{filename}'")
                 user_selected_route_column = False
 
-            # Treat the route column as categorical (string) regardless of CSV type inference.
-            # This keeps route matching consistent across UI selection, optimization, export, etc.
-            try:
-                data[actual_route_column] = data[actual_route_column].astype("string").str.strip()
-            except Exception as e:
-                self.app.log_message(f"Warning: Could not normalize route column '{actual_route_column}' to string: {e}")
-
-            # Convert X/Y to numeric for downstream calculations.
-            # Also attempt to convert other columns to numeric when it is lossless,
-            # but NEVER convert the active route column.
-            def _has_leading_zero_integers(series: pd.Series) -> bool:
-                try:
-                    s = series.astype("string")
-                    s = s.dropna().str.strip()
-                    if s.empty:
-                        return False
-                    # Leading-zero integers like "00123" should remain strings.
-                    return bool(s.str.match(r"^0\d+$").any())
-                except (AttributeError, TypeError, ValueError):
-                    return False
-
-            def _safe_to_numeric(series: pd.Series) -> pd.Series:
-                numeric = pd.to_numeric(series, errors="coerce")
-                invalid_mask = series.notna() & numeric.isna()
-                if invalid_mask.any():
-                    return series
-                return numeric
-
-            for col in list(data.columns):
-                if col == actual_route_column:
-                    continue
-                if col == x_col or col == y_col:
-                    data[col] = pd.to_numeric(data[col], errors="coerce")
-                    continue
-                if _has_leading_zero_integers(data[col]):
-                    continue
-                data[col] = _safe_to_numeric(data[col])
-
-            # B1 behavior: if a user selected a real route column, exclude rows with
-            # missing/invalid route IDs from the analysis.
-            if user_selected_route_column:
-                normalized_routes = data[actual_route_column].apply(normalize_route_id)
-                invalid_route_mask = normalized_routes.isna()
-                invalid_route_count = int(invalid_route_mask.sum())
-
-                if invalid_route_count > 0:
-                    self.app.log_message(
-                            f"Route column '{actual_route_column}' contains {invalid_route_count} record(s) "
-                            "with missing route IDs. "
-                        "Those records will be excluded from multi-route analysis."
-                    )
-
-                if invalid_route_count == len(data):
-                    show_error_message(
-                        "No Valid Routes",
-                            f"All records in the selected route column '{actual_route_column}' are missing.\n\n"
-                        "Multi-route analysis cannot proceed.\n\n"
-                        "Choose a different route column, or select 'None - treat as single route'.",
-                        self.app.log_message,
-                    )
-                    return
-
-                if invalid_route_count > 0:
-                    filtered = data.loc[~invalid_route_mask].copy()
-                    filtered[actual_route_column] = normalized_routes.loc[~invalid_route_mask].astype("string")
-                    data = filtered
-            
-            # Keep the full dataset in memory.
-            # Rationale: users may change the selected route column after loading the file.
-            # If we trim to only [X, Y, route] here, later selecting a real route column
-            # (e.g., 'RDB') can cause KeyErrors during route processing / saving.
-            required_columns = [x_col, y_col, actual_route_column]
-            
-            # Validate that X and Y columns contain numeric data
-            try:
-                # Check X column for numeric values
-                non_numeric_x = data[x_col].isna() | (~pd.to_numeric(data[x_col], errors='coerce').notna())
-                if non_numeric_x.any():
-                    sample_invalid = data.loc[non_numeric_x, x_col].iloc[0]
-                    messagebox.showerror("Invalid X Column", 
-                                       f"X column '{x_col}' contains non-numeric values.\n"
-                                       f"Example invalid value: '{sample_invalid}'\n"
-                                       f"Please select a column with numeric distance/position data.")
-                    return
-                
-                # Check Y column for numeric values  
-                non_numeric_y = data[y_col].isna() | (~pd.to_numeric(data[y_col], errors='coerce').notna())
-                if non_numeric_y.any():
-                    sample_invalid = data.loc[non_numeric_y, y_col].iloc[0]
-                    messagebox.showerror("Invalid Y Column", 
-                                       f"Y column '{y_col}' contains non-numeric values.\n"
-                                       f"Example invalid value: '{sample_invalid}'\n"
-                                       f"Please select a column with numeric measurement data.")
-                    return
-                    
-            except Exception as e:
-                show_error_message("Data Validation Error", f"Error validating numeric columns: {str(e)}", self.app.log_message)
+            if not self._process_dataframe(
+                data, x_col, y_col, actual_route_column, user_selected_route_column,
+                source_label=os.path.basename(data_path),
+            ):
                 return
-            
-            # Clean the data - remove rows with missing values in required columns only.
-            # (If we keep all columns, a full dropna() could remove many valid rows due
-            #  to unrelated columns containing NaNs.)
-            initial_count = len(data)
-            data = data.dropna(subset=required_columns)
-            final_count = len(data)
-            
-            if final_count < initial_count:
-                self.app.log_message(f"Removed {initial_count - final_count} rows with missing values")
-            
-            # Sort by X column (position/distance)
-            data = data.sort_values(x_col).reset_index(drop=True)
 
-            # Duplicate milepoint detection (per route).
-            # Only meaningful when the user selected a real route column; in single-route
-            # mode the route column is synthetic (filename) so rows that came from
-            # different routes in the source file share the same synthetic route ID and
-            # can legitimately repeat milepoints.
-            # Exact duplicates (same x AND same y) are dropped automatically.
-            # Conflicting duplicates (same x, different y) are a data error — collect
-            # all occurrences before stopping so the user can fix everything at once.
-            dup_mask = (
-                data.duplicated(subset=[actual_route_column, x_col], keep=False)
-                if user_selected_route_column
-                else pd.Series(False, index=data.index)
-            )
-            if dup_mask.any():
-                dup_data = data[dup_mask]
-                conflict_messages = []
-                exact_dup_count = 0
-
-                exact_dup_messages = []
-                for (route_val, x_val), group in dup_data.groupby(
-                    [actual_route_column, x_col], sort=False
-                ):
-                    distinct_y = group[y_col].nunique(dropna=True)
-                    if distinct_y <= 1:
-                        dropped = len(group) - 1
-                        exact_dup_count += dropped
-                        exact_dup_messages.append(
-                            f"  Route '{route_val}', {x_col}={x_val}: dropped {dropped} duplicate row(s)"
-                        )
-                    else:
-                        y_list = group[y_col].tolist()
-                        conflict_messages.append(
-                            f"  Route '{route_val}', {x_col}={x_val}: {y_col} values = {y_list}"
-                        )
-
-                if conflict_messages:
-                    self.app.log_message(
-                        f"ERROR: {len(conflict_messages)} milepoint(s) have the same X value "
-                        "but different Y values — cannot auto-resolve:"
-                    )
-                    for msg in conflict_messages:
-                        self.app.log_message(msg)
-                    self.app.log_message("Fix the data in your CSV and reload.")
-                    messagebox.showerror(
-                        "Duplicate Milepoint Conflicts",
-                        f"Found {len(conflict_messages)} milepoint(s) with duplicate X values "
-                        f"but conflicting {y_col} values.\n\n"
-                        "These cannot be resolved automatically. "
-                        "See the log for the full list of affected rows, then fix your CSV and reload.",
-                    )
-                    return
-
-                if exact_dup_count > 0:
-                    data = data.drop_duplicates(
-                        subset=[actual_route_column, x_col], keep="first"
-                    ).reset_index(drop=True)
-                    self.app.log_message(
-                        f"Removed {exact_dup_count} exact duplicate row(s) "
-                        f"(identical {x_col} and {y_col} within the same route):"
-                    )
-                    for msg in exact_dup_messages:
-                        self.app.log_message(msg)
-
-            # Validate we have enough data
-            if len(data) < 3:
-                show_error_message("Insufficient Data", "Need at least 3 data points for segmentation.", self.app.log_message)
-                return
-            
-            # Perform gap analysis on the cleaned data (combined analysis for route detection)
-            from data_loader import analyze_route_gaps
-            effective_gap_threshold = float(self.app.gap_threshold.get())
-            if effective_gap_threshold <= 0:
-                raise ValueError(f"gap_threshold must be > 0 (got {effective_gap_threshold})")
-
-            route_analysis = analyze_route_gaps(
-                data,
-                x_col,
-                y_col,
-                route_id="_COMBINED_DATA_",
-                gap_threshold=effective_gap_threshold,
-                must_break_columns=(
-                    [str(c).strip() for c in getattr(self.app, 'must_break_columns', None) if str(c).strip()]
-                    if isinstance(getattr(self.app, 'must_break_columns', None), (list, tuple))
-                    else None
-                ),
-                secondary_break_columns=(
-                    [str(c).strip() for c in getattr(self.app, 'secondary_break_columns', None) if str(c).strip()]
-                    if isinstance(getattr(self.app, 'secondary_break_columns', None), (list, tuple))
-                    else None
-                ),
-            )
-            self.app.log_message(f"Gap analysis: {len(route_analysis.gap_segments)} gaps detected, {len(route_analysis.mandatory_breakpoints)} mandatory breakpoints")
-            
-            # Store the RouteAnalysis object (contains both data and gap info)
-            self.app.data = route_analysis
-
-            # Reset optimization controller state to prevent stale thread/progress state,
-            # but preserve route selection (it is owned by the GUI/user).
-            if hasattr(self.app, 'optimization_controller'):
-                self.app.optimization_controller.reset_state()
-
-            # Re-detect routes after load so available_routes stays in sync with the file.
-            # This also preserves any existing user selection by intersecting it with
-            # the newly detected distinct routes.
-            try:
-                if (hasattr(self.app, 'route_column') and
-                    normalize_route_column_selection(self.app.route_column.get()) is not None):
-                    self.detect_available_routes()
-            except Exception as e:
-                self.app.log_message(f"Warning: Could not re-detect routes after load: {e}")
-                
-            filepath = self.get_data_file_path()
-            self.app.log_message(f"Data loaded: {len(route_analysis.route_data)} points from {os.path.basename(filepath)} (X: {x_col}, Y: {y_col})")
-            self.app.log_message(f"Data columns available: {list(route_analysis.route_data.columns)}")
-            
-            # Enable optimization controls
-            if hasattr(self.app, 'start_button'):
-                self.app.start_button.config(state="normal")
-            
         except Exception as e:
-            self.app.log_message(f"Error loading data: {str(e)}")    
+            self.app.log_message(f"Error loading data: {str(e)}")
             show_error_message("Data Loading Error", f"Error loading data: {str(e)}", self.app.log_message)
+
+    def _process_dataframe(
+        self,
+        data: pd.DataFrame,
+        x_col: str,
+        y_col: str,
+        actual_route_column: str,
+        user_selected_route_column: bool,
+        source_label: str,
+    ) -> bool:
+        """Shared post-read processing pipeline for file and database sources.
+
+        Validates, cleans, and runs gap analysis on a DataFrame that has already
+        been read from its source and has ``actual_route_column`` present.
+        Sets ``app.data`` on success.
+
+        Args:
+            data: Raw DataFrame with all columns as strings (or mixed after
+                ``load_data_file`` numeric coercion — both are handled).
+            x_col: Distance/milepoint column name.
+            y_col: Condition measurement column name.
+            actual_route_column: Name of the route column already in ``data``.
+            user_selected_route_column: ``True`` if the user chose a real route
+                column; ``False`` if it was synthesised from the source label.
+            source_label: Human-readable source name for log messages
+                (filename for CSV, display_name for DB).
+
+        Returns:
+            ``True`` on success (``app.data`` has been set).
+            ``False`` on any validation error (error already shown to user).
+        """
+        # Normalise route column to string so route matching is consistent.
+        try:
+            data[actual_route_column] = data[actual_route_column].astype("string").str.strip()
+        except Exception as e:
+            self.app.log_message(f"Warning: Could not normalize route column '{actual_route_column}' to string: {e}")
+
+        # Convert X/Y to numeric for downstream calculations.
+        # Also attempt to convert other columns to numeric when it is lossless,
+        # but NEVER convert the active route column.
+        def _has_leading_zero_integers(series: pd.Series) -> bool:
+            try:
+                s = series.astype("string")
+                s = s.dropna().str.strip()
+                if s.empty:
+                    return False
+                # Leading-zero integers like "00123" should remain strings.
+                return bool(s.str.match(r"^0\d+$").any())
+            except (AttributeError, TypeError, ValueError):
+                return False
+
+        def _safe_to_numeric(series: pd.Series) -> pd.Series:
+            numeric = pd.to_numeric(series, errors="coerce")
+            invalid_mask = series.notna() & numeric.isna()
+            if invalid_mask.any():
+                return series
+            return numeric
+
+        for col in list(data.columns):
+            if col == actual_route_column:
+                continue
+            if col == x_col or col == y_col:
+                data[col] = pd.to_numeric(data[col], errors="coerce")
+                continue
+            if _has_leading_zero_integers(data[col]):
+                continue
+            data[col] = _safe_to_numeric(data[col])
+
+        # B1 behavior: if a user selected a real route column, exclude rows with
+        # missing/invalid route IDs from the analysis.
+        if user_selected_route_column:
+            normalized_routes = data[actual_route_column].apply(normalize_route_id)
+            invalid_route_mask = normalized_routes.isna()
+            invalid_route_count = int(invalid_route_mask.sum())
+
+            if invalid_route_count > 0:
+                self.app.log_message(
+                    f"Route column '{actual_route_column}' contains {invalid_route_count} record(s) "
+                    "with missing route IDs. "
+                    "Those records will be excluded from multi-route analysis."
+                )
+
+            if invalid_route_count == len(data):
+                show_error_message(
+                    "No Valid Routes",
+                    f"All records in the selected route column '{actual_route_column}' are missing.\n\n"
+                    "Multi-route analysis cannot proceed.\n\n"
+                    "Choose a different route column, or select 'None - treat as single route'.",
+                    self.app.log_message,
+                )
+                return False
+
+            if invalid_route_count > 0:
+                filtered = data.loc[~invalid_route_mask].copy()
+                filtered[actual_route_column] = normalized_routes.loc[~invalid_route_mask].astype("string")
+                data = filtered
+
+        # Keep the full dataset in memory so the user can change route/attribute
+        # column selections after loading without triggering KeyErrors.
+        required_columns = [x_col, y_col, actual_route_column]
+
+        # Validate that X and Y columns contain numeric data.
+        try:
+            non_numeric_x = data[x_col].isna() | (~pd.to_numeric(data[x_col], errors='coerce').notna())
+            if non_numeric_x.any():
+                sample_invalid = data.loc[non_numeric_x, x_col].iloc[0]
+                messagebox.showerror("Invalid X Column",
+                                     f"X column '{x_col}' contains non-numeric values.\n"
+                                     f"Example invalid value: '{sample_invalid}'\n"
+                                     f"Please select a column with numeric distance/position data.")
+                return False
+
+            non_numeric_y = data[y_col].isna() | (~pd.to_numeric(data[y_col], errors='coerce').notna())
+            if non_numeric_y.any():
+                sample_invalid = data.loc[non_numeric_y, y_col].iloc[0]
+                messagebox.showerror("Invalid Y Column",
+                                     f"Y column '{y_col}' contains non-numeric values.\n"
+                                     f"Example invalid value: '{sample_invalid}'\n"
+                                     f"Please select a column with numeric measurement data.")
+                return False
+
+        except Exception as e:
+            show_error_message("Data Validation Error", f"Error validating numeric columns: {str(e)}", self.app.log_message)
+            return False
+
+        # Remove rows with missing values in required columns only.
+        initial_count = len(data)
+        data = data.dropna(subset=required_columns)
+        final_count = len(data)
+        if final_count < initial_count:
+            self.app.log_message(f"Removed {initial_count - final_count} rows with missing values")
+
+        # Sort by X column (position/distance).
+        data = data.sort_values(x_col).reset_index(drop=True)
+
+        # Duplicate milepoint detection (per route).
+        # Only meaningful when the user selected a real route column; in single-route
+        # mode the route column is synthetic so repeated milepoints are legitimate.
+        # Exact duplicates (same x AND same y) are dropped automatically.
+        # Conflicting duplicates (same x, different y) are a data error.
+        dup_mask = (
+            data.duplicated(subset=[actual_route_column, x_col], keep=False)
+            if user_selected_route_column
+            else pd.Series(False, index=data.index)
+        )
+        if dup_mask.any():
+            dup_data = data[dup_mask]
+            conflict_messages = []
+            exact_dup_count = 0
+            exact_dup_messages = []
+
+            for (route_val, x_val), group in dup_data.groupby(
+                [actual_route_column, x_col], sort=False
+            ):
+                distinct_y = group[y_col].nunique(dropna=True)
+                if distinct_y <= 1:
+                    dropped = len(group) - 1
+                    exact_dup_count += dropped
+                    exact_dup_messages.append(
+                        f"  Route '{route_val}', {x_col}={x_val}: dropped {dropped} duplicate row(s)"
+                    )
+                else:
+                    y_list = group[y_col].tolist()
+                    conflict_messages.append(
+                        f"  Route '{route_val}', {x_col}={x_val}: {y_col} values = {y_list}"
+                    )
+
+            if conflict_messages:
+                self.app.log_message(
+                    f"ERROR: {len(conflict_messages)} milepoint(s) have the same X value "
+                    "but different Y values — cannot auto-resolve:"
+                )
+                for msg in conflict_messages:
+                    self.app.log_message(msg)
+                self.app.log_message("Fix the data in your source and reload.")
+                messagebox.showerror(
+                    "Duplicate Milepoint Conflicts",
+                    f"Found {len(conflict_messages)} milepoint(s) with duplicate X values "
+                    f"but conflicting {y_col} values.\n\n"
+                    "These cannot be resolved automatically. "
+                    "See the log for the full list of affected rows, then fix your data and reload.",
+                )
+                return False
+
+            if exact_dup_count > 0:
+                data = data.drop_duplicates(
+                    subset=[actual_route_column, x_col], keep="first"
+                ).reset_index(drop=True)
+                self.app.log_message(
+                    f"Removed {exact_dup_count} exact duplicate row(s) "
+                    f"(identical {x_col} and {y_col} within the same route):"
+                )
+                for msg in exact_dup_messages:
+                    self.app.log_message(msg)
+
+        if len(data) < 3:
+            show_error_message("Insufficient Data", "Need at least 3 data points for segmentation.", self.app.log_message)
+            return False
+
+        # Gap analysis.
+        from data_loader import analyze_route_gaps
+        effective_gap_threshold = float(self.app.gap_threshold.get())
+        if effective_gap_threshold <= 0:
+            raise ValueError(f"gap_threshold must be > 0 (got {effective_gap_threshold})")
+
+        route_analysis = analyze_route_gaps(
+            data,
+            x_col,
+            y_col,
+            route_id="_COMBINED_DATA_",
+            gap_threshold=effective_gap_threshold,
+            must_break_columns=(
+                [str(c).strip() for c in getattr(self.app, 'must_break_columns', None) if str(c).strip()]
+                if isinstance(getattr(self.app, 'must_break_columns', None), (list, tuple))
+                else None
+            ),
+            secondary_break_columns=(
+                [str(c).strip() for c in getattr(self.app, 'secondary_break_columns', None) if str(c).strip()]
+                if isinstance(getattr(self.app, 'secondary_break_columns', None), (list, tuple))
+                else None
+            ),
+        )
+        self.app.log_message(
+            f"Gap analysis: {len(route_analysis.gap_segments)} gaps detected, "
+            f"{len(route_analysis.mandatory_breakpoints)} mandatory breakpoints"
+        )
+
+        self.app.data = route_analysis
+
+        if hasattr(self.app, 'optimization_controller'):
+            self.app.optimization_controller.reset_state()
+
+        try:
+            if (hasattr(self.app, 'route_column') and
+                    normalize_route_column_selection(self.app.route_column.get()) is not None):
+                self.detect_available_routes()
+        except Exception as e:
+            self.app.log_message(f"Warning: Could not re-detect routes after load: {e}")
+
+        self.app.log_message(
+            f"Data loaded: {len(route_analysis.route_data)} points from {source_label} "
+            f"(X: {x_col}, Y: {y_col})"
+        )
+        self.app.log_message(f"Data columns available: {list(route_analysis.route_data.columns)}")
+
+        if hasattr(self.app, 'start_button'):
+            self.app.start_button.config(state="normal")
+
+        return True
+
+    def load_from_active_source(self) -> None:
+        """Load data from the active non-file data source (e.g. a database connection).
+
+        Calls ``_active_data_source.load_data()`` with the current column
+        selections and route filter, then runs the same post-read processing
+        pipeline as ``load_data_file()`` via ``_process_dataframe()``.
+
+        Raises:
+            Nothing — errors are shown in message boxes and logged.
+        """
+        from data_sources.base import DataSourceError
+
+        source = getattr(self.app, '_active_data_source', None)
+        if source is None:
+            show_error_message(
+                "No Data Source",
+                "No database connection is active. Use 'Connect / Open' to connect first.",
+                self.app.log_message,
+            )
+            return
+
+        x_col = self.app.x_column.get()
+        y_col = self.app.y_column.get()
+        if not x_col or not y_col:
+            show_error_message(
+                "Column Selection Required",
+                "Please select both X and Y columns before loading data.",
+                self.app.log_message,
+            )
+            return
+
+        route_col = getattr(self.app, 'route_column', None)
+        route_col_name = normalize_route_column_selection(
+            route_col.get() if route_col else None
+        )
+
+        selected_routes = getattr(self.app, 'selected_routes', None) or None
+
+        # Large-table guard: warn the user before loading a very large table.
+        if hasattr(source, 'get_row_count') and not is_test_environment():
+            try:
+                from app_constants import ValidationConfig
+                _threshold = ValidationConfig().large_table_row_threshold
+                _count = source.get_row_count()
+                if _count > _threshold:
+                    proceed = messagebox.askyesno(
+                        "Large Table Warning",
+                        f"The table '{source._config.table_or_view}' contains "
+                        f"{_count:,} rows, which may take a long time to load.\n\n"
+                        f"Consider connecting to a view or query that limits the "
+                        f"data to the routes or time period you need.\n\n"
+                        "Continue loading anyway?",
+                        icon="warning",
+                    )
+                    if not proceed:
+                        return
+            except Exception:
+                pass  # fail-open: never block the load due to count failure
+
+        self.app.log_message(
+            f"Loading data from {source.display_name}..."
+            + (f" (route filter: {selected_routes})" if selected_routes else "")
+        )
+
+        try:
+            available_columns = source.get_available_columns()
+            user_selected_route_column = bool(
+                route_col_name and route_col_name in available_columns
+            )
+            data = source.load_data(
+                x_col=x_col,
+                y_col=y_col,
+                route_col=route_col_name,
+                selected_routes=selected_routes,
+            )
+        except DataSourceError as exc:
+            show_error_message("Data Load Failed", str(exc), self.app.log_message)
+            return
+        except Exception as exc:
+            show_error_message("Data Load Failed", f"Unexpected error: {exc}", self.app.log_message)
+            return
+
+        if x_col not in data.columns:
+            show_error_message("Column Error", f"Column '{x_col}' not found in source data.", self.app.log_message)
+            return
+        if y_col not in data.columns:
+            show_error_message("Column Error", f"Column '{y_col}' not found in source data.", self.app.log_message)
+            return
+
+        # Add synthetic route column when no real route column is selected.
+        actual_route_column = route_col_name if user_selected_route_column else 'route'
+        if not user_selected_route_column:
+            data['route'] = source.display_name
+            self.app.log_message(f"Created route column from source name: '{source.display_name}'")
+        else:
+            self.app.log_message(f"Using user-selected route column: '{route_col_name}'")
+
+        try:
+            self._process_dataframe(
+                data, x_col, y_col, actual_route_column, user_selected_route_column,
+                source_label=source.display_name,
+            )
+        except Exception as e:
+            self.app.log_message(f"Error processing data: {str(e)}")
+            show_error_message("Data Loading Error", f"Error processing data: {str(e)}", self.app.log_message)
     
+    def _detect_routes_from_db_source(self, source, route_col: str) -> None:
+        """Populate available_routes from a live DatabaseDataSource."""
+        try:
+            distinct_routes = source.detect_routes(route_col)
+            if not distinct_routes:
+                self.app.log_message(
+                    f"No valid route IDs found in database column '{route_col}'."
+                )
+                self.app.available_routes = []
+                self.app.selected_routes = None
+                return
+            self.app.available_routes = distinct_routes
+            current = getattr(self.app, 'selected_routes', None)
+            if not current:
+                self.app.selected_routes = None  # no filter = use all
+            else:
+                valid = [r for r in current if r in distinct_routes]
+                self.app.selected_routes = valid if valid else None
+            self.app._update_route_info_display()
+            self.app.log_message(
+                f"Found {len(distinct_routes)} routes in DB column '{route_col}': {distinct_routes}"
+            )
+        except Exception as e:
+            self.app.log_message(f"Error detecting routes from database: {e}")
+            self.app.available_routes = []
+            self.app.selected_routes = None
+
     def detect_available_routes(self):
         """Detect and populate available routes based on selected route column."""
         data_path = self.get_data_file_path()
+        active_source = getattr(self.app, '_active_data_source', None)
         route_col = normalize_route_column_selection(self.app.route_column.get())
 
-        if not data_path or route_col is None:
+        if route_col is None:
             self.app.available_routes = []
-            self.app.selected_routes = []
+            self.app.selected_routes = None
             return
-            
+
+        if not data_path and active_source is not None:
+            self._detect_routes_from_db_source(active_source, route_col)
+            return
+
+        if not data_path:
+            self.app.available_routes = []
+            self.app.selected_routes = None
+            return
+
         try:
             # First, read the CSV headers to verify the column exists
             df_headers = pd.read_csv(data_path, nrows=0)
@@ -606,9 +845,9 @@ class FileManager:
                     self.app.log_message
                 )
                 self.app.available_routes = []
-                self.app.selected_routes = []
+                self.app.selected_routes = None
                 return
-            
+
             # Load just the route column to get distinct values
             df = pd.read_csv(data_path, usecols=[route_col], dtype={route_col: str})
 
@@ -640,39 +879,38 @@ class FileManager:
                 )
                 self.app.route_column.set(ROUTE_COLUMN_NONE_SENTINEL)
                 self.app.available_routes = []
-                self.app.selected_routes = []
+                self.app.selected_routes = None
                 return
-            
+
             self.app.available_routes = distinct_routes
-            
-            # Default: select all routes
-            if not self.app.selected_routes:
-                self.app.selected_routes = distinct_routes.copy()
+
+            # Default: no filter (use all routes). Preserve an explicit prior selection
+            # only if every selected route still exists in the new data.
+            current = getattr(self.app, 'selected_routes', None)
+            if not current:
+                self.app.selected_routes = None  # no filter = use all
             else:
-                # Remove any previously selected routes that no longer exist
-                self.app.selected_routes = [r for r in self.app.selected_routes if r in distinct_routes]
-                # If no valid routes remain, select all
-                if not self.app.selected_routes:
-                    self.app.selected_routes = distinct_routes.copy()
-            
+                valid = [r for r in current if r in distinct_routes]
+                self.app.selected_routes = valid if valid else None
+
             self.app._update_route_info_display()
             self.app.log_message(f"Found {len(distinct_routes)} routes in column '{route_col}': {distinct_routes}")
-            
+
         except FileNotFoundError:
             self.app.log_message(f"ERROR: Data file not found: {data_path}")
             show_error_message("File Not Found", f"The selected data file could not be found:\n{data_path}", self.app.log_message)
             self.app.available_routes = []
-            self.app.selected_routes = []
+            self.app.selected_routes = None
         except pd.errors.EmptyDataError:
             self.app.log_message(f"ERROR: Data file is empty: {data_path}")
             show_error_message("Empty File", "The selected data file is empty or contains no data.", self.app.log_message)
             self.app.available_routes = []
-            self.app.selected_routes = []
+            self.app.selected_routes = None
         except Exception as e:
             self.app.log_message(f"ERROR: Unexpected error detecting routes: {str(e)}")
             show_error_message("Route Detection Error", f"An unexpected error occurred while reading routes:\n\n{str(e)}", self.app.log_message)
             self.app.available_routes = []
-            self.app.selected_routes = []
+            self.app.selected_routes = None
 
     def ensure_route_column_is_string(self, route_col: str):
         """Ensure the in-memory dataset treats the given route column as string.
@@ -1238,7 +1476,8 @@ class FileManager:
                     if 'route_column' in ui_state and hasattr(self.app, 'route_column'):
                         self.app.route_column.set(ui_state.get('route_column') or '')
                     if 'selected_routes' in ui_state:
-                        self.app.selected_routes = ui_state.get('selected_routes') or []
+                        saved = ui_state.get('selected_routes')
+                        self.app.selected_routes = list(saved) if isinstance(saved, list) else None
                     if 'window_geometry' in ui_state and ui_state.get('window_geometry'):
                         try:
                             self.app.root.geometry(ui_state.get('window_geometry'))

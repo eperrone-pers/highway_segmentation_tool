@@ -174,6 +174,7 @@ class ValidationConfig:
     min_segment_length: float = 0.01
     max_segment_length: float = 100.0
     max_timeout_ms: int = 30000
+    large_table_row_threshold: int = 100_000
 
 
 # ---------------------------------------------------------------------------

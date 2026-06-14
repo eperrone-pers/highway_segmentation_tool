@@ -484,7 +484,7 @@ class AashtoCdaMethod(AnalysisMethodBase):
 
                 # Run AASHTO CDA on this segmentable section only
                 try:
-                    uniform_sections, cda_nodes, section_start_indices, section_end_indices, mu = aashto_cda(
+                    uniform_sections, cda_nodes, _section_start_indices, _section_end_indices, mu = aashto_cda(
                         section_y,
                         alpha=alpha,
                         num_sections=max_segments,

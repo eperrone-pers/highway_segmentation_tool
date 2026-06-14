@@ -24,14 +24,6 @@ def _iso_utc_now() -> str:
     return _dt.datetime.now(tz=_dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
-def default_output_json_path(custom_save_name: str) -> Path:
-    """Return a reasonable default output json path when the GUI has none."""
-    name = (custom_save_name or "highway_segmentation").strip()
-    if not name.lower().endswith(".json"):
-        name = name + ".json"
-    return Path("Results") / name
-
-
 def default_run_spec_path_for_output(output_json_path: os.PathLike[str] | str) -> Path:
     out = Path(output_json_path)
     base = out.with_suffix("")

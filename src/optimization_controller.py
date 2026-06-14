@@ -68,18 +68,29 @@ class OptimizationController:
         """
         if self.app.data is None:
             data_path = self.app.file_manager.get_data_file_path()
+            active_source = getattr(self.app, '_active_data_source', None)
             if data_path and os.path.exists(data_path):
-                self.app.log_message("No data loaded, attempting to load from configured file...")
+                self.app.log_message("No data loaded — auto-loading from configured file...")
                 try:
                     self.app.load_data_file()
                     if self.app.data is None:
-                        messagebox.showerror("Data Required", "No data is loaded and could not load data from the configured file. Please load data first.")
+                        messagebox.showerror("Data Required", "Could not load data from the configured file. Please load data first.")
                         return
                 except Exception as e:
                     messagebox.showerror("Data Loading Error", f"Could not load data from configured file:\n{str(e)}")
                     return
+            elif active_source is not None:
+                self.app.log_message("No data loaded — auto-loading from active database connection...")
+                try:
+                    self.app.load_from_active_source()
+                    if self.app.data is None:
+                        messagebox.showerror("Data Required", "Could not load data from the database connection. Check column selections and try again.")
+                        return
+                except Exception as e:
+                    messagebox.showerror("Data Loading Error", f"Could not load data from database:\n{str(e)}")
+                    return
             else:
-                messagebox.showerror("Data Required", "No data is loaded and no valid data file is configured. Please load data first.")
+                messagebox.showerror("Data Required", "No data is loaded. Use 'Connect / Open' to load a CSV file or connect to a database.")
                 return
         
         if not self.app.parameter_manager.validate_and_show_errors():
@@ -172,8 +183,15 @@ class OptimizationController:
                 is_single_route_mode = True
             
             if is_single_route_mode:
-                filename = os.path.basename(self.app.file_manager.get_data_file_path() or "unknown.csv")
-                route_name = filename.replace('.csv', '').replace('.xlsx', '')
+                data_path = self.app.file_manager.get_data_file_path()
+                if data_path:
+                    route_name = os.path.basename(data_path).replace('.csv', '').replace('.xlsx', '')
+                else:
+                    active_source = getattr(self.app, '_active_data_source', None)
+                    route_name = (
+                        getattr(active_source, '_config', None) and active_source._config.table_or_view
+                        or (active_source.display_name if active_source else "data")
+                    )
                 all_routes = [route_name]
             else:
                 if actual_route_column in self.app.data.route_data.columns:

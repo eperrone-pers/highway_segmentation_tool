@@ -725,45 +725,6 @@ def _validate_route_endpoints(gaps: List[Tuple[float, float]], route_start: floa
             raise ValueError(f"FATAL: Gap at route end ({route_end:.3f}). Cannot optimize.")
 
 
-def prepare_route_processing(data, route_column=None, selected_routes=None, data_filename=None):
-    """
-    Prepare route processing information for optimization.
-    
-    Args:
-        data: DataFrame with highway data
-        route_column: Name of the route column (if any)
-        selected_routes: List of route identifiers to process
-        data_filename: Filename when using filename-as-route mode
-    
-    Returns:
-        dict: Route processing information
-    """
-    if route_column and route_column in data.columns and selected_routes:
-        # Multi-route column-based processing 
-        return {
-            'processing_mode': 'multi_route_column',
-            'routes_to_process': selected_routes,
-            'route_column': route_column,
-            'data': data
-        }
-    elif data_filename:
-        # Single route using filename
-        return {
-            'processing_mode': 'single_route_filename', 
-            'routes_to_process': [data_filename],
-            'route_column': None,
-            'data': data
-        }
-    else:
-        # Default single route processing
-        return {
-            'processing_mode': 'single_route',
-            'routes_to_process': ['default'],
-            'route_column': None,
-            'data': data
-        }
-
-
 def load_highway_data(file_path: str) -> Optional[pd.DataFrame]:
     """Load highway data from a CSV file.
 

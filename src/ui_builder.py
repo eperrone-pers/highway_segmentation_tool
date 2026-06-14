@@ -15,6 +15,7 @@ from config import (
     get_preprocessing_method_key_from_display_name,
     get_optimization_method
 )
+from data_sources.type_registry import get_display_names as get_source_type_display_names
 from value_parsing import parse_optional_float, parse_optional_int
 from route_utils import ROUTE_COLUMN_NONE_SENTINEL
 from parameter_tree_view import ParameterTreeView, DEFAULT_TREEVIEW_HEIGHT
@@ -402,65 +403,87 @@ class UIBuilder:
         setup_frame.grid(row=row, column=0, sticky="ew", pady=3)
         setup_frame.columnconfigure(1, weight=1)
         
-        # Input Data File
-        ttk.Label(setup_frame, text="Input Data File:").grid(row=0, column=0, sticky="w")
-        self.app.data_entry = ttk.Entry(setup_frame, textvariable=self.app.data_file, 
-                                       width=ui_config.entry_field_width_large)
-        self.app.data_entry.grid(row=0, column=1, sticky="ew", padx=ui_config.standard_padding_x)
-        ttk.Button(setup_frame, text="Browse...", 
-                  command=self.app.browse_data_file).grid(row=0, column=2, padx=ui_config.standard_padding_x, sticky="w")
-        
-        # Route column selection (for multi-route data files)
-        ttk.Label(setup_frame, text="Route Column (Optional):").grid(row=1, column=0, sticky="w", pady=(5, 0))
+        # Row 0: Data source type selector + Connect / Open button
+        ttk.Label(setup_frame, text="Data Source:").grid(row=0, column=0, sticky="w")
+        source_names = get_source_type_display_names()
+        self.app.data_source_type_combo = ttk.Combobox(
+            setup_frame, textvariable=self.app.data_source_type_var,
+            values=source_names, state="readonly", width=20,
+        )
+        self.app.data_source_type_combo.set(source_names[0])
+        self.app.data_source_type_var.set(source_names[0])
+        self.app.data_source_type_combo.grid(
+            row=0, column=1, sticky="w", padx=ui_config.standard_padding_x,
+        )
+        ttk.Button(
+            setup_frame, text="Connect / Open",
+            command=self.app.connect_or_open,
+        ).grid(row=0, column=2, padx=ui_config.standard_padding_x, sticky="w")
+
+        # Row 1: Status label showing what is currently connected.
+        # Uses a Label (not an Entry) so it is visually non-editable.
+        ttk.Label(setup_frame, text="Connected to:").grid(
+            row=1, column=0, sticky="w", pady=(3, 0),
+        )
+        self.app.data_entry = ttk.Label(
+            setup_frame, textvariable=self.app.data_file,
+            anchor="w",
+        )
+        self.app.data_entry.grid(
+            row=1, column=1, columnspan=2, sticky="ew",
+            padx=ui_config.standard_padding_x, pady=(3, 0),
+        )
+
+        # Row 2: Route column selection (for multi-route data)
+        ttk.Label(setup_frame, text="Route Column (Optional):").grid(row=2, column=0, sticky="w", pady=(5, 0))
         route_controls_frame = ttk.Frame(setup_frame)
-        route_controls_frame.grid(row=1, column=1, columnspan=2, sticky="w", pady=(5, 0), padx=ui_config.standard_padding_x)
-        
+        route_controls_frame.grid(row=2, column=1, columnspan=2, sticky="w", pady=(5, 0), padx=ui_config.standard_padding_x)
+
         self.app.route_column_combo = ttk.Combobox(route_controls_frame, textvariable=self.app.route_column,
                                                   width=20, state="readonly")
         self.app.route_column_combo.set(ROUTE_COLUMN_NONE_SENTINEL)
         self.app.route_column_combo.grid(row=0, column=0, sticky="w")
         self.app.route_column_combo.bind('<<ComboboxSelected>>', self.app.on_route_column_change)
-        
-        self.app.filter_routes_button = ttk.Button(route_controls_frame, text="Filter", 
+
+        self.app.filter_routes_button = ttk.Button(route_controls_frame, text="Filter",
                                                   command=self.app.open_route_filter_dialog,
                                                   state="disabled")
         self.app.filter_routes_button.grid(row=0, column=1, padx=(3, 0))
-        
-        self.app.route_info_label = ttk.Label(route_controls_frame, text="", foreground="blue")
+
+        self.app.route_info_label = ttk.Label(route_controls_frame, text="", foreground="steelblue")
         self.app.route_info_label.grid(row=0, column=2, padx=(5, 0), sticky="w")
-        
-        # X Column (Distance)
-        ttk.Label(setup_frame, text="X Column (Distance):").grid(row=2, column=0, sticky="w", pady=(5, 0))
-        self.app.x_column_combo = ttk.Combobox(setup_frame, textvariable=self.app.x_column, 
+
+        # Row 3: X Column (Distance)
+        ttk.Label(setup_frame, text="X Column (Distance):").grid(row=3, column=0, sticky="w", pady=(5, 0))
+        self.app.x_column_combo = ttk.Combobox(setup_frame, textvariable=self.app.x_column,
                                               width=20, state="readonly")
         self.app.x_column_combo.set("Load data first...")
-        self.app.x_column_combo.grid(row=2, column=1, sticky="w", padx=ui_config.standard_padding_x, pady=(5, 0))
+        self.app.x_column_combo.grid(row=3, column=1, sticky="w", padx=ui_config.standard_padding_x, pady=(5, 0))
         self.app.x_column_combo.bind('<<ComboboxSelected>>', self.app.on_column_change)
-        
-        # Y Column (Data Values)
-        ttk.Label(setup_frame, text="Y Column (Data Values):").grid(row=3, column=0, sticky="w", pady=(5, 0))
-        self.app.y_column_combo = ttk.Combobox(setup_frame, textvariable=self.app.y_column, 
+
+        # Row 4: Y Column (Data Values)
+        ttk.Label(setup_frame, text="Y Column (Data Values):").grid(row=4, column=0, sticky="w", pady=(5, 0))
+        self.app.y_column_combo = ttk.Combobox(setup_frame, textvariable=self.app.y_column,
                                               width=20, state="readonly")
         self.app.y_column_combo.set("Load data first...")
-        self.app.y_column_combo.grid(row=3, column=1, sticky="w", padx=ui_config.standard_padding_x, pady=(5, 0))
+        self.app.y_column_combo.grid(row=4, column=1, sticky="w", padx=ui_config.standard_padding_x, pady=(5, 0))
         self.app.y_column_combo.bind('<<ComboboxSelected>>', self.app.on_column_change)
-        
-        # Output Data File (Results)
-        ttk.Label(setup_frame, text="Output Data File:").grid(row=4, column=0, sticky="w", pady=(10, 0))
+
+        # Row 5: Output Data File (Results)
+        ttk.Label(setup_frame, text="Output Data File:").grid(row=5, column=0, sticky="w", pady=(10, 0))
         self.app.save_name_entry = ttk.Entry(setup_frame, textvariable=self.app.custom_save_name,
                                        width=ui_config.entry_field_width_large)
-        self.app.save_name_entry.grid(row=4, column=1, sticky="ew", padx=ui_config.standard_padding_x, pady=(10, 0))
+        self.app.save_name_entry.grid(row=5, column=1, sticky="ew", padx=ui_config.standard_padding_x, pady=(10, 0))
         ttk.Button(setup_frame, text="Browse...",
-                  command=self.app.browse_save_location).grid(row=4, column=2, padx=ui_config.standard_padding_x, pady=(10, 0), sticky="w")
-        
-        # Reset button
-        ttk.Button(setup_frame, text="Reset to Defaults", 
-                  command=self.app.reset_parameters).grid(row=5, column=0, sticky="w", pady=(10, 0))
-        
-        # Info about auto-save
-        info_label = ttk.Label(setup_frame, text="Parameters auto-save when optimization starts and on exit.", 
+                  command=self.app.browse_save_location).grid(row=5, column=2, padx=ui_config.standard_padding_x, pady=(10, 0), sticky="w")
+
+        # Row 6: Reset button + auto-save info
+        ttk.Button(setup_frame, text="Reset to Defaults",
+                  command=self.app.reset_parameters).grid(row=6, column=0, sticky="w", pady=(10, 0))
+
+        info_label = ttk.Label(setup_frame, text="Parameters auto-save when optimization starts and on exit.",
                               font=("Arial", 8), foreground="gray")
-        info_label.grid(row=5, column=1, columnspan=2, sticky="w", pady=(10, 0))
+        info_label.grid(row=6, column=1, columnspan=2, sticky="w", pady=(10, 0))
         
         return row + 1
     
@@ -506,7 +529,7 @@ class UIBuilder:
         columns_frame = ttk.Frame(attr_frame)
         columns_frame.grid(row=0, column=1, sticky="w", padx=ui_config.standard_padding_x)
         
-        self.app.must_break_columns_summary = ttk.Label(columns_frame, text="None selected", foreground="blue")
+        self.app.must_break_columns_summary = ttk.Label(columns_frame, text="None selected", foreground="steelblue")
         self.app.must_break_columns_summary.grid(row=0, column=0, sticky="w")
         
         ttk.Button(columns_frame, text="Select...",
@@ -537,7 +560,7 @@ class UIBuilder:
         columns_frame.grid(row=0, column=1, sticky="w", padx=ui_config.standard_padding_x)
         
         # Secondary attribute breaks selection
-        self.app.secondary_break_columns_summary = ttk.Label(columns_frame, text="None", foreground="blue")
+        self.app.secondary_break_columns_summary = ttk.Label(columns_frame, text="None", foreground="steelblue")
         self.app.secondary_break_columns_summary.grid(row=0, column=0, sticky="w")
         
         ttk.Button(columns_frame, text="Select...",
