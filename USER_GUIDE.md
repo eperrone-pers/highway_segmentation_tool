@@ -176,10 +176,11 @@ The left panel follows the 7-step processing pipeline shown in the diagram above
 #### Step 1: Pre-Gap Preprocessing (optional)
 
 - **Panel Title**: "1. Pre-Gap Preprocessing (optional)"
-- **What you do**: Expand this panel only if you need preprocessing before gap detection.
+- **What you do**: Expand this panel to configure data cleaning that must happen before gap detection.
 - **What it affects**: Runs on raw data before Step 2.
-- **Typical use**: Most users leave this at "None".
-- **Current options**: Uses the same preprocessing method list as other preprocessing panels (for example, Tukey Fences Outlier Detection).
+- **Primary use case**: If your CSV has rows with missing or non-numeric Y values (blank condition readings), configure **Invalid Data Handler** here. It cleans those rows before gap detection and analysis run.
+- **Available method**: Invalid Data Handler (the only method available in this slot). Tukey Fences and other methods appear in Steps 4 and 6 instead.
+- **When to skip**: Leave at "None" if all Y values in your data are valid numeric readings.
 
 #### Step 2: Gap Analysis
 
@@ -375,6 +376,7 @@ The preprocessing framework provides optional data cleaning and outlier detectio
 
 **Problem**: Raw pavement condition data often contains:
 
+- **Missing values**: Blank or non-numeric condition readings from equipment dropout, data gaps, or manual entry errors
 - **Outliers**: Equipment errors, sensor spikes, GPS positioning errors
 - **Noise**: Random measurement variation that doesn't represent true pavement condition
 - **Anomalies**: Bridge approaches, construction zones, temporary conditions
@@ -387,6 +389,7 @@ The preprocessing framework provides optional data cleaning and outlier detectio
 
 **When to use preprocessing**:
 
+- ✅ Input data has missing or blank condition values (use Invalid Data Handler in Step 1)
 - ✅ Data collected from equipment prone to sensor errors
 - ✅ Known data quality issues (GPS drift, calibration problems)
 - ✅ Visual inspection shows obvious outliers or spikes
@@ -398,9 +401,9 @@ The preprocessing framework provides optional data cleaning and outlier detectio
 
 The framework provides three optional preprocessing phases:
 
-1. **Pre-Gap Preprocessing** (Step 1 - rare): Applied to raw data before gap detection. Use case: initial data validation or format conversion. Method selection uses the same preprocessing method list as Steps 4 and 6.
+1. **Pre-Gap Preprocessing** (Step 1): Applied to raw data before gap detection. Primary use case: **Invalid Data Handler**, which handles rows with missing or non-numeric Y values before analysis runs. Only the Invalid Data Handler is available in this slot.
 2. **Primary Preprocessing** (Step 4 - most common): Applied after gaps and early attribute breaks. Use case: outlier detection, noise reduction, and data cleaning. It operates **within** segments defined by structural boundaries. Available method: Tukey Fences Outlier Detection. This is the main preprocessing phase most users will configure.
-3. **Postprocessing** (Step 6 - rare): Applied after all attribute breaks. Use case: final transformations before analysis. Method selection uses the same preprocessing method list as Steps 1 and 4.
+3. **Postprocessing** (Step 6 - rare): Applied after all attribute breaks. Use case: final transformations before analysis.
 
 ### Early vs. Late Attribute Breaks for Preprocessing
 
@@ -427,6 +430,59 @@ The two-stage attribute break system is crucial for proper preprocessing:
 - **Why**: These don't affect data distribution, so preprocessing doesn't need to respect them
 
 ### Available Preprocessing Methods
+
+#### Invalid Data Handler
+
+**Purpose**: Handles rows with missing or non-numeric Y values before analysis runs. Only available in the Pre-Gap slot (Step 1).
+
+**When to use**: When your input data has blank or non-numeric values in the condition column (IRI, PCI, rutting, etc.). Without this method, the tool displays a hard error if any Y values are missing and analysis cannot proceed.
+
+**How it works**:
+
+Three strategies for handling rows with missing or non-numeric Y values:
+
+1. Rows with valid X but missing/non-numeric Y are identified before gap detection.
+2. The configured strategy decides what to do with each such row.
+3. Mandatory breakpoints (route start, route end, gap boundaries) are always preserved — they cannot be removed even if their Y values are missing.
+
+**Strategy options**:
+
+- **Drop** (default): Remove the row entirely. Simplest approach; reduces data density.
+- **Moving Average**: Replace the missing value with the mean of up to N valid neighboring readings on each side. Preserves data density.
+- **Linear Interpolate**: Estimate by linear interpolation between the nearest valid readings before and after the problem row. Most accurate for gradually changing conditions.
+
+If a row has no valid neighbor on one side (e.g., a gap at the start or end of the route), Moving Average and Linear Interpolate fall back to Drop for that row.
+
+**Parameters**:
+
+- **Y Strategy**: How to handle rows with missing/non-numeric Y values
+  - **Drop** (default): Remove the row
+  - **Moving Average**: Replace with mean of valid neighbors
+  - **Linear Interpolate**: Estimate from nearest valid readings on each side
+- **Window Size** (for Moving Average only): Number of valid neighbors to collect on each side (minimum 1, no upper limit; default 3). Higher values produce a smoother estimate but draw from further away.
+- **Enable Threshold**: When checked, the route is skipped and an error is raised if the fraction of bad-Y rows exceeds the configured threshold. Useful to catch data files with systematic data loss before analysis runs.
+- **Threshold Percent**: Maximum allowed percentage of bad-Y rows before the route is skipped (requires Enable Threshold; default 10%). For example, if set to 5.0 and 6% of your Y values are missing, the route is skipped rather than producing results from degraded data.
+
+**Example configuration**:
+
+```text
+Step 1: Pre-Gap Preprocessing = Invalid Data Handler
+  - y_strategy = linear_interpolate
+  - enable_threshold = yes
+  - threshold_percent = 5.0
+```
+
+**Result**: Rows with missing or non-numeric Y values are estimated from neighboring readings before analysis. If more than 5% of Y values are bad, the route is skipped with an informative error rather than producing unreliable results.
+
+**Typical use cases**:
+
+- ✅ CSV export from data collection equipment with occasional sensor-dropout rows
+- ✅ Manual data entry with some blank cells in the condition column
+- ✅ Merged datasets where some segments have no condition readings
+- ❌ Data that is fully clean and validated (leave Step 1 as "None")
+- ❌ Removing statistical outliers (use Tukey Fences in Step 4 instead)
+
+---
 
 #### Tukey Fences Outlier Detection
 
@@ -476,9 +532,17 @@ Step 4: Primary Preprocessing = Tukey Fences
 
 ### Configuring Preprocessing in the GUI
 
-**Basic setup (most common)**:
+**If your data has missing or non-numeric Y values**:
 
-1. **Leave Step 1 as "None"** (pre-gap preprocessing rarely needed)
+1. **Configure Step 1 - Pre-Gap Preprocessing**: expand the collapsible panel, select **Invalid Data Handler** from the dropdown, and choose a strategy (`y_strategy`). Start with "Drop" for simplicity, or "Linear Interpolate" for better data density when conditions change gradually.
+
+2. **Run analysis** — the Invalid Data Handler cleans bad Y rows before gap detection and segmentation.
+
+3. **Check results** — the JSON output includes a `preprocessing_modification_log` showing exactly which rows were cleaned and what values were substituted.
+
+**Basic setup for outlier detection (most common)**:
+
+1. **Leave Step 1 as "None"** (unless your data has missing Y values — see above)
 
 2. **Configure Step 3 - Early Attribute Breaks** (if needed for preprocessing): click **Select...**, choose structural columns such as `PAVEMENT_TYPE`, `LANES`, and `FUNCTIONAL_CLASS`, then apply them so preprocessing runs independently within those segments.
 
@@ -535,6 +599,19 @@ Step 4: Primary Preprocessing = Tukey Fences
 - Step 5: Late breaks = ["COUNTY"] if needed for reporting
 
 **Result**: No preprocessing applied, analysis uses raw data
+
+#### Scenario 4: Data with missing condition readings
+
+**Problem**: CSV export contains rows where the IRI column is blank due to equipment dropout or sensor malfunction during data collection
+
+**Configuration**:
+
+- Step 1: Invalid Data Handler, y_strategy=linear_interpolate, enable_threshold=yes, threshold_percent=10.0
+- Step 3: Early breaks = ["PAVEMENT_TYPE"]
+- Step 4: Tukey Fences, k=1.5, action=interpolate
+- Step 5: Late breaks = ["COUNTY"]
+
+**Result**: Missing Y values are estimated from neighboring readings before gap detection runs. If more than 10% of Y values are missing, the route is flagged rather than producing unreliable results. Remaining outliers in valid data are handled by Tukey Fences in Step 4. Final segmentation is unaffected by the original data quality issues.
 
 ### Preprocessing Output and Verification
 

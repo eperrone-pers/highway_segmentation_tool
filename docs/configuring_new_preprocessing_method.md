@@ -646,6 +646,7 @@ PREPROCESSING_METHODS = [
       description="IQR-based outlier detection with configurable thresholds and actions",
         parameters=TUKEY_FENCES_PARAMETERS,
         method_class_path="preprocessing.methods.tukey_fences.TukeyFencesPreprocessor"
+        # allowed_stages not set → method appears in all three slots
     ),
     # ... other methods
 ]
@@ -658,6 +659,37 @@ PREPROCESSING_METHODS = [
 - **`description`**: Help text shown in UI
 - **`parameters`**: Your parameter list (drives UI + validation)
 - **`method_class_path`**: Import path to your implementation class
+- **`allowed_stages`** *(optional)*: List of pipeline slots where this method may be used. Valid values: `"pre_gap"`, `"primary"`, `"secondary"`. Omit or set to `None` to allow the method in all slots.
+
+#### 3.1a `allowed_stages` — restricting a method to specific pipeline slots
+
+By default, every preprocessing method appears in all three slot dropdowns (pre-gap, primary, secondary) and can be assigned to any slot in a CLI run spec. Set `allowed_stages` to limit where a method can run:
+
+```python
+PreprocessingMethodConfig(
+    method_key="invalid_data_handler",
+    display_name="Invalid Data Handler",
+    description="Handles missing or non-numeric Y values. Must be configured in the Pre-Gap slot.",
+    parameters=INVALID_DATA_HANDLER_PARAMETERS,
+    method_class_path="preprocessing.methods.invalid_data_handler.InvalidDataHandlerPreprocessor",
+    allowed_stages=["pre_gap"],   # Only appears in the Step 1 dropdown; rejected elsewhere
+)
+```
+
+**GUI enforcement**: Each preprocessing panel knows its own stage name and filters the method dropdown to exclude entries whose `allowed_stages` does not include that panel's stage. Incompatible methods simply don't appear in the dropdown.
+
+**CLI enforcement**: When parsing a run spec, the CLI validates each configured method against its `allowed_stages`. If the assigned slot is not in the list, a `RunSpecError` is raised before any analysis runs:
+
+```text
+RunSpecError: Preprocessing method 'invalid_data_handler' cannot be used in the 'primary' slot
+(allowed stages: "pre_gap").
+```
+
+**When to use `allowed_stages`**:
+
+- Your method depends on raw, unprocessed data (e.g., it cleans NaN values before gap detection)
+- Your method would produce incorrect results in certain phases (e.g., per-segment statistics don't make sense before segments exist)
+- You want to prevent user misconfiguration rather than silently producing wrong output
 
 #### 3.2 Setting `method_class_path` for config-driven dispatch
 
@@ -745,7 +777,7 @@ class TukeyFencesPreprocessor(PreprocessingMethodBase):
             y_column: Name of Y-axis column (e.g., "IRI")
             log_callback: Optional callable for progress messages routed to the GUI
                 right panel (or stdout in CLI/test contexts). Use like:
-                ``log = log_callback or print; log("Processing segment 3/17...")``.
+                ``log = log_callback or _logger.debug; log("Processing segment 3/17...")``.
             **parameters: Method-specific parameters from user/config
 
         Returns:
@@ -1080,7 +1112,7 @@ def create_processed_route_analysis(
 ```python
 def process(self, route_analysis, x_column, y_column, log_callback=None, **parameters):
     start_time = time.time()
-    log = log_callback or print
+    log = log_callback or _logger.debug
 
     # ... algorithm implementation ...
   
@@ -1177,7 +1209,7 @@ def process(self, route_analysis, x_column, y_column, log_callback=None, **param
 
   Stdlib `WARNING+` records are automatically forwarded to the GUI right panel by the framework.
 
-- **`log_callback` falls back to `print`** — unit tests that call `process()` directly without passing `log_callback` get clean stdout output automatically.
+- **`log_callback` falls back to `_logger.debug`** — unit tests that call `process()` directly without passing `log_callback` produce no visible output (debug level); add a `log_callback` argument when you need to capture progress in test assertions.
 
 **What NOT to do:**
 
@@ -1291,6 +1323,7 @@ Copy this checklist when implementing a new preprocessing method:
   - [ ] Informative `description` (help text)
   - [ ] Reference your parameter list
   - [ ] Set `method_class_path` pointing to your implementation
+  - [ ] Set `allowed_stages` if the method must only run in specific pipeline slots (omit for unrestricted)
 
 ### Implementation
 
@@ -1996,7 +2029,8 @@ PREPROCESSING_METHODS = [
         display_name="<Your Method Name>",
         description="<Brief description for GUI>",
         parameters=YOUR_METHOD_PARAMETERS,
-        method_class_path="preprocessing.methods.your_method.YourMethodPreprocessor"
+        method_class_path="preprocessing.methods.your_method.YourMethodPreprocessor",
+        # allowed_stages=["pre_gap"],  # Uncomment to restrict to a specific slot
     ),
 ]
 ```

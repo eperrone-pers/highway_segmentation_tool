@@ -340,7 +340,7 @@ class ExtensibleJsonResultsManager:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         
         with open(output_path, 'w', encoding='utf-8') as f:
-            json.dump(json_data, f, indent=2, ensure_ascii=False, cls=SetEncoder)
+            json.dump(json_data, f, indent=2, ensure_ascii=False, allow_nan=False, cls=SetEncoder)
 
         return str(output_path)
     

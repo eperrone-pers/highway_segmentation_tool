@@ -14,60 +14,13 @@ transformed representation where the best solution has the largest value.
 import random
 import bisect
 import numpy as np
-from typing import List, Tuple, Dict, Any, Optional
+from typing import Callable, List, Tuple, Dict, Any, Optional
 
 import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 from config import optimization_config
-
-
-def tournament_selection(population: List[List[float]],
-                        fitness_values: List[Tuple[float, float]],
-                        tournament_size: int = None) -> List[List[float]]:
-    """Simple tournament selection for single-objective optimization.
-
-    Selects two parents by running independent tournaments. The individual
-    with the **higher** fitness value wins each tournament (maximization
-    semantics — see module docstring).
-
-    For multi-objective fitness tuples, only the first element is compared.
-    Use ``nsga2_tournament_selection`` when Pareto rank and crowding distance
-    should both govern selection.
-
-    Args:
-        population: List of chromosomes (breakpoint lists).
-        fitness_values: Fitness value per chromosome. Each entry may be a
-            plain ``float`` (single-objective) or a ``Tuple[float, float]``
-            (multi-objective); only the first element is used in the latter case.
-        tournament_size: Number of candidates drawn per tournament. Defaults to
-            ``optimization_config.tournament_size`` when ``None``.
-
-    Returns:
-        List of two selected parent chromosomes.
-    """
-    if tournament_size is None:
-        tournament_size = optimization_config.tournament_size
-
-    parents = []
-    for _ in range(2):
-        tournament_indices = random.sample(range(len(population)), tournament_size)
-        best_idx = tournament_indices[0]
-        best_fitness = fitness_values[best_idx]
-
-        for idx in tournament_indices[1:]:
-            candidate_fitness = fitness_values[idx]
-            # For single objective, compare directly; for multi-objective, use first value
-            candidate_value = candidate_fitness[0] if isinstance(candidate_fitness, tuple) else candidate_fitness
-            best_value = best_fitness[0] if isinstance(best_fitness, tuple) else best_fitness
-
-            if candidate_value > best_value:  # Higher value wins (maximization)
-                best_idx = idx
-                best_fitness = candidate_fitness
-
-        parents.append(population[best_idx])
-
-    return parents
+from app_constants import AlgorithmConstants
 
 
 def nsga2_tournament_selection(population: List[List[float]], 
@@ -684,30 +637,165 @@ def analyze_population_diversity(population: List[List[float]]) -> Dict[str, Any
     }
 
 
-def batch_fitness_evaluation(population: List[List[float]],
-                           fitness_function: callable) -> List[float]:
-    """Evaluate single-objective fitness for every chromosome in the population.
+def tournament_select(
+    population: List[List[float]],
+    num_parents: int,
+    comparator: Callable[[int, int], bool],
+    tournament_size: int = AlgorithmConstants.tournament_size,
+) -> List[List[float]]:
+    """Tournament selection driven by a caller-supplied comparator.
 
     Args:
-        population: List of chromosomes (sorted breakpoint lists).
-        fitness_function: Callable with signature ``(chromosome: List[float]) -> float``.
+        population: Current population of chromosomes.
+        num_parents: Number of parent chromosomes to select.
+        comparator: ``comparator(i, j)`` returns True if candidate at index
+            ``i`` is strictly better than the candidate at index ``j``.
+            Callers bind their fitness/violation state in a closure.
+        tournament_size: Number of candidates sampled per tournament.
+            Clamped to ``[2, pop_size]`` to ensure competitive selection.
 
     Returns:
-        List of fitness values in the same order as ``population``.
+        List of selected parent chromosomes (length == num_parents).
     """
-    return [fitness_function(chrom) for chrom in population]
+    parents: List[List[float]] = []
+    pop_size = len(population)
+    if pop_size == 0 or num_parents <= 0:
+        return parents
+
+    t_size = min(max(2, tournament_size), pop_size)
+
+    for _ in range(num_parents):
+        indices = random.sample(range(pop_size), k=t_size)
+        winner = indices[0]
+        for idx in indices[1:]:
+            if comparator(idx, winner):
+                winner = idx
+        parents.append(population[winner])
+
+    return parents
 
 
-def batch_multi_objective_fitness(population: List[List[float]],
-                                 multi_objective_fitness_function: callable) -> List[Tuple[float, float]]:
-    """Evaluate multi-objective fitness for every chromosome in the population.
+def calculate_gap_aware_target(
+    mandatory_breakpoints: List[float],
+    total_distance: float,
+    target_avg_length: float,
+    min_length: float,
+    max_length: float,
+    log: Callable[[str], None],
+) -> int:
+    """Calculate a realistic target segment count accounting for mandatory breakpoints.
+
+    When mandatory breakpoints subdivide the route (e.g. data gaps or attribute
+    boundaries), some segments are pre-determined. This function factors those
+    in when deriving how many additional segments the GA should target, and logs
+    advisory warnings when the requested average length is physically unreachable.
 
     Args:
-        population: List of chromosomes (sorted breakpoint lists).
-        multi_objective_fitness_function: Callable with signature
-            ``(chromosome: List[float]) -> Tuple[float, float]``.
+        mandatory_breakpoints: Sorted list of mandatory breakpoint x-values
+            (must include route start and end).
+        total_distance: Full route length (last x − first x).
+        target_avg_length: Desired average segment length.
+        min_length: Minimum allowed segment length (for warning threshold).
+        max_length: Maximum allowed segment length (for warning threshold).
+        log: Callable used for progress/warning messages.
 
     Returns:
-        List of two-element fitness tuples in the same order as ``population``.
+        int: Target segment count (always >= 2).
     """
-    return [multi_objective_fitness_function(chrom) for chrom in population]
+    if len(mandatory_breakpoints) > 2:
+        mandatory_distances = [
+            mandatory_breakpoints[i + 1] - mandatory_breakpoints[i]
+            for i in range(len(mandatory_breakpoints) - 1)
+        ]
+        mandatory_total_distance = float(sum(mandatory_distances))
+        num_mandatory_segments = len(mandatory_distances)
+
+        remaining_distance = float(total_distance - mandatory_total_distance)
+        if remaining_distance > 0:
+            total_segments_needed = float(total_distance / max(target_avg_length, 1e-9))
+            target_regular_segments = max(0, int(round(total_segments_needed - num_mandatory_segments)))
+            target_segments = num_mandatory_segments + target_regular_segments
+
+            required_regular_avg = (
+                remaining_distance / target_regular_segments
+                if target_regular_segments > 0
+                else target_avg_length
+            )
+
+            log("Gap-aware calculation:")
+            log(f"  Mandatory segments: {num_mandatory_segments} covering {mandatory_total_distance:.2f} miles")
+            log(f"  Remaining distance: {remaining_distance:.2f} miles for regular segments")
+            log(f"  Target regular segments: {target_regular_segments}")
+            log(f"  Required regular avg: {required_regular_avg:.3f} miles to achieve overall {target_avg_length:.2f}")
+
+            if required_regular_avg > max_length * 0.9:
+                log(
+                    f"  WARNING: Required regular segment avg ({required_regular_avg:.2f}) is near "
+                    f"max_length ({max_length:.2f})"
+                )
+            elif required_regular_avg < min_length * 1.1:
+                log(
+                    f"  WARNING: Required regular segment avg ({required_regular_avg:.2f}) is near "
+                    f"min_length ({min_length:.2f})"
+                )
+        else:
+            target_segments = num_mandatory_segments
+            log(f"  All distance covered by mandatory segments: {num_mandatory_segments} segments")
+    else:
+        target_segments = max(2, int(round(total_distance / max(target_avg_length, 1e-9))))
+        log(f"Simple calculation (no gaps): {target_segments} segments for {total_distance:.2f} miles")
+
+    return max(2, int(target_segments))
+
+
+def build_ga_data_summary(
+    ga: Any,
+    route_data: Any,
+    x_column: str,
+    y_column: str,
+    extra_fields: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Build the standard data_summary dict used by all GA analysis methods.
+
+    Args:
+        ga: HighwaySegmentGA instance (post-run, has .route_analysis etc.).
+        route_data: Route DataFrame (``data.route_data``).
+        x_column: Name of the x-axis column.
+        y_column: Name of the y-axis column.
+        extra_fields: Optional additional key-value pairs merged into the
+            top-level dict (e.g. ``{'target_segments_calculated': n}`` for
+            constrained methods).
+
+    Returns:
+        data_summary dict ready for inclusion in AnalysisResult.
+    """
+    if hasattr(ga, 'route_analysis') and ga.route_analysis and hasattr(ga.route_analysis, 'data_range'):
+        data_range = ga.route_analysis.data_range
+    else:
+        data_range = {
+            'x_min': float(route_data[x_column].min()),
+            'x_max': float(route_data[x_column].max()),
+            'y_min': float(route_data[y_column].min()),
+            'y_max': float(route_data[y_column].max()),
+        }
+
+    has_route_analysis = hasattr(ga, 'route_analysis') and ga.route_analysis
+    data_summary: Dict[str, Any] = {
+        'total_data_points': len(route_data),
+        'data_range': data_range,
+        'mandatory_breakpoints': list(ga.mandatory_breakpoints),
+        'gap_analysis': {
+            'total_gaps': len(ga.route_analysis.gap_segments) if has_route_analysis else 0,
+            'gap_segments': [
+                {'start': gap[0], 'end': gap[1], 'length': gap[1] - gap[0]}
+                for gap in ga.route_analysis.gap_segments
+            ] if has_route_analysis else [],
+            'total_gap_length': ga.route_analysis.route_stats.get('gap_total_length', 0.0)
+            if has_route_analysis else 0.0,
+        },
+    }
+
+    if extra_fields:
+        data_summary.update(extra_fields)
+
+    return data_summary

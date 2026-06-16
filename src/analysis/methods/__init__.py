@@ -32,10 +32,3 @@ __all__ = [
     'DebFeasibilityConstrainedMethod',
 ]
 
-# Available methods for easy access
-AVAILABLE_METHODS = {
-    'single': SingleObjectiveMethod,
-    'multi': MultiObjectiveMethod,
-    'constrained': ConstrainedMethod,
-    'constrained_deb': DebFeasibilityConstrainedMethod,
-}

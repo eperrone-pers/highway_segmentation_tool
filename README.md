@@ -12,6 +12,10 @@ This tool provides a framework for segmenting highway and pavement network data 
   - Enhanced AASHTO Cumulative Difference Approach (CDA) for Pavement Data Segmentation Method: Statistical change-point detection (Katicha, S., Flintsch, G. (2025), "Enhanced AASHTO Cumulative Difference Approach (CDA) for Pavement Data Segmentation" Transportation Research Record, Accepted.)
   - PELT Segmentation (ruptures): Deterministic change-point detection using PELT (Pruned Exact Linear Time). Penalty parameter controls sensitivity; supports optional smoothing and minimum segment length constraints.
 
+- **Preprocessing Methods (config-driven):**
+  - Invalid Data Handler: Cleans rows with missing or non-numeric Y values before gap detection and analysis run. Supports drop, moving-average, and linear-interpolation strategies. Runs in the Pre-Gap slot (Step 1) so data is clean before gap boundaries are computed. Configurable threshold to skip routes with excessive missing data.
+  - Tukey Fences Outlier Detection: IQR-based outlier detection applied after gap and attribute-break analysis. Configurable k-factor and action (remove, cap, or interpolate).
+
 ## Quick Start
 
 Prereq: install dependencies (see **Developer Quickstart** below).

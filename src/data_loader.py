@@ -1,7 +1,7 @@
 import pandas as pd
 from dataclasses import dataclass
 import logging
-from typing import List, Set, Dict, Tuple, Optional, TYPE_CHECKING
+from typing import Any, List, Set, Dict, Tuple, Optional, TYPE_CHECKING
 
 from config import get_preprocessing_method, resolve_preprocessing_class
 
@@ -225,13 +225,17 @@ def analyze_route_gaps(
         logger.info("Valid X values (excluding merged gap interiors): %s", len(valid_x_values))
         logger.info("Mandatory breakpoints: %s", len(mandatory_breakpoints))
     
-    # Calculate data range bounds for visualization and schema compliance
-    y_values = df_valid[y_column].tolist()
+    # Calculate data range bounds for visualization and schema compliance.
+    # Use pandas skipna=True so NaN Y values (present before pre-gap preprocessing runs)
+    # don't produce position-dependent wrong results via Python's built-in min/max.
+    y_series = df_valid[y_column]
+    y_min_val = y_series.min(skipna=True)
+    y_max_val = y_series.max(skipna=True)
     data_range = {
-        'x_min': float(x_values[0]),   # Route start (mandatory breakpoint) 
-        'x_max': float(x_values[-1]),  # Route end (mandatory breakpoint)
-        'y_min': float(min(y_values)), # Minimum Y value across route
-        'y_max': float(max(y_values))  # Maximum Y value across route
+        'x_min': float(x_values[0]),
+        'x_max': float(x_values[-1]),
+        'y_min': float(y_min_val) if pd.notna(y_min_val) else None,
+        'y_max': float(y_max_val) if pd.notna(y_max_val) else None,
     }
     
     # Create route statistics
@@ -308,27 +312,23 @@ def analyze_route_gaps(
     )
 
 
-def build_attribute_break_analysis(route_analysis: RouteAnalysis) -> Optional[Dict[str, object]]:
-    """Build a JSON-friendly attribute-break analysis block.
-
-    This is optional metadata intended for visualization/reporting so users can
-    distinguish mandatory breakpoints caused by data gaps vs attribute changes.
-
-    Returns None when there are no must-break columns configured.
-    """
-
-    cols = getattr(route_analysis, "must_break_columns_used", None)
+def _build_attribute_break_analysis_impl(
+    route_analysis: RouteAnalysis,
+    columns_attr: str,
+    events_attr: str,
+) -> Optional[Dict[str, object]]:
+    """Shared implementation for primary and secondary attribute-break analysis blocks."""
+    cols = getattr(route_analysis, columns_attr, None)
     if cols is None:
         cols = []
     if not isinstance(cols, list):
         cols = []
     cols_clean = [str(c).strip() for c in cols if str(c).strip()]
 
-    # If no must-break columns were configured, omit the block entirely.
     if len(cols_clean) == 0:
         return None
 
-    events = getattr(route_analysis, "attribute_break_events", None)
+    events = getattr(route_analysis, events_attr, None)
     if events is None:
         events = []
     if not isinstance(events, list):
@@ -348,6 +348,21 @@ def build_attribute_break_analysis(route_analysis: RouteAnalysis) -> Optional[Di
         "breakpoints": breakpoints,
         "total_attribute_breaks": int(len(breakpoints)),
     }
+
+
+def build_attribute_break_analysis(route_analysis: RouteAnalysis) -> Optional[Dict[str, object]]:
+    """Build a JSON-friendly attribute-break analysis block.
+
+    This is optional metadata intended for visualization/reporting so users can
+    distinguish mandatory breakpoints caused by data gaps vs attribute changes.
+
+    Returns None when there are no must-break columns configured.
+    """
+    return _build_attribute_break_analysis_impl(
+        route_analysis,
+        columns_attr="must_break_columns_used",
+        events_attr="attribute_break_events",
+    )
 
 
 def build_secondary_attribute_break_analysis(route_analysis: RouteAnalysis) -> Optional[Dict[str, object]]:
@@ -358,38 +373,11 @@ def build_secondary_attribute_break_analysis(route_analysis: RouteAnalysis) -> O
 
     Returns None when there are no secondary must-break columns configured.
     """
-
-    cols = getattr(route_analysis, "secondary_break_columns_used", None)
-    if cols is None:
-        cols = []
-    if not isinstance(cols, list):
-        cols = []
-    cols_clean = [str(c).strip() for c in cols if str(c).strip()]
-
-    # If no secondary must-break columns were configured, omit the block entirely.
-    if len(cols_clean) == 0:
-        return None
-
-    events = getattr(route_analysis, "secondary_attribute_break_events", None)
-    if events is None:
-        events = []
-    if not isinstance(events, list):
-        events = []
-
-    breakpoints: List[float] = []
-    for e in events:
-        try:
-            x = float(e.get("x"))
-            breakpoints.append(x)
-        except (TypeError, ValueError):
-            continue
-
-    return {
-        "columns_used": cols_clean,
-        "break_events": events,
-        "breakpoints": breakpoints,
-        "total_attribute_breaks": int(len(breakpoints)),
-    }
+    return _build_attribute_break_analysis_impl(
+        route_analysis,
+        columns_attr="secondary_break_columns_used",
+        events_attr="secondary_attribute_break_events",
+    )
 
 
 def apply_secondary_attribute_breaks(
@@ -432,7 +420,7 @@ def apply_secondary_attribute_breaks(
 def apply_preprocessing_phase(
     route_analysis: RouteAnalysis,
     method_key: Optional[str],
-    parameters: Dict[str, any],
+    parameters: Dict[str, Any],
     x_column: str,
     y_column: str,
     log_callback=None
@@ -538,7 +526,6 @@ def process_route_with_preprocessing(
 
         df_sorted = route_df.sort_values(x_column).reset_index(drop=True).copy()
         x_values = df_sorted[x_column].tolist()
-        y_values = df_sorted[y_column].tolist()
 
         return RouteAnalysis(
             route_id=route_id,
@@ -549,8 +536,8 @@ def process_route_with_preprocessing(
             data_range={
                 'x_min': float(min(x_values)),
                 'x_max': float(max(x_values)),
-                'y_min': float(min(y_values)),
-                'y_max': float(max(y_values)),
+                'y_min': float(df_sorted[y_column].min(skipna=True)),
+                'y_max': float(df_sorted[y_column].max(skipna=True)),
             },
             route_stats={
                 'raw_points': len(df_sorted),

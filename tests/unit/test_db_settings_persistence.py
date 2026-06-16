@@ -11,8 +11,6 @@ No Tkinter dependency — these functions operate on plain dicts only.
 """
 from __future__ import annotations
 
-import pytest
-
 from data_sources.base import DataSourceConfig
 from database_connection_dialog import (
     build_connection_record,

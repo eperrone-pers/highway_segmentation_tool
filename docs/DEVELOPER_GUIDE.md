@@ -77,7 +77,7 @@ The system is designed around three extensibility principles:
 | --- | --- |
 | `analysis/base.py` | `AnalysisResult` dataclass (result contract for all methods) and `AnalysisMethodBase` ABC. `AnalysisResult.to_route_result_dict()` handles all method-specific serialization. |
 | `analysis/methods/` | Concrete method implementations (`single_objective.py`, `multi_objective.py`, `constrained.py`, `aashto_cda.py`, `constrained_deb.py`, `pelt_segmentation.py`). |
-| `analysis/utils/` | Shared GA utilities: `HighwaySegmentGA` engine (`genetic_algorithm.py`), NSGA-II helpers (`ga_utilities.py`). |
+| `analysis/utils/` | Shared GA utilities: `HighwaySegmentGA` engine (`genetic_algorithm.py`), shared GA operators and helpers (`ga_utilities.py` — `tournament_select`, `build_ga_data_summary`, `calculate_gap_aware_target`, NSGA-II helpers). |
 | `plugins/` | Method-specific result plugins that extend `ExtensibleJsonResultsManager` with per-method JSON statistics. |
 
 ### Results and export
@@ -207,6 +207,15 @@ All preprocessing methods return `PreprocessingResult` (defined in `preprocessin
 This object carries the modified `RouteAnalysis` plus modification traceability data (modification log, metadata, original values, summary). Route preparation collects these per-phase results and passes them forward with each prepared route.
 
 **Consequence:** preprocessing extensions follow one return shape regardless of algorithm internals. Downstream consumers can rely on a stable structure for auditability and visualization support.
+
+**Stage restrictions (`allowed_stages`)**: `PreprocessingMethodConfig` accepts an optional `allowed_stages: Optional[List[str]]` field. When set, the framework enforces that the method is only used in the named pipeline slot(s) (`"pre_gap"`, `"primary"`, `"secondary"`). The GUI dropdown for each slot is filtered to only show compatible methods. The CLI validates slot assignments before any analysis runs and raises `RunSpecError` on a mismatch. A value of `None` (the default) means no restriction — the method may be used in any slot. This mechanism is currently used by `invalid_data_handler`, which must run in `pre_gap` so NaN-Y rows are cleaned before gap detection.
+
+**Built-in preprocessing methods**:
+
+| Method Key | Stage Restriction | Description |
+| --- | --- | --- |
+| `invalid_data_handler` | `pre_gap` only | Handles missing/non-numeric Y values before gap detection |
+| `tukey_fences` | None (any slot) | IQR-based outlier detection and handling |
 
 ### 4.4 Declarative parameters
 

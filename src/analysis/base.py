@@ -35,7 +35,7 @@ Phase: 1.95.1 - Common Analysis Interface Design
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Dict, List, Any, Union, Tuple, TYPE_CHECKING, cast
+from typing import Dict, List, Any, Optional, Union, Tuple, TYPE_CHECKING, cast
 import pandas as pd
 from datetime import datetime
 
@@ -301,14 +301,30 @@ class AnalysisMethodBase(ABC):
         - "single": Single-objective GA
         - "multi": Multi-objective NSGA-II
         - "constrained": Constrained single-objective GA
+        - "constrained_deb": Deb feasibility constrained GA
         - "aashto_cda": Deterministic statistical CDA analysis
+        - "pelt_segmentation": PELT cost-minimization segmentation
         
         Returns:
             str: Method key
         """
         pass
     
-    @property  
+    def get_param_defaults(self) -> Dict[str, Any]:
+        """Return a dict of parameter name → default value for this method.
+
+        Reads from the registered OptimizationMethodConfig so defaults stay in
+        sync with config.py automatically. All GA methods call this at the top
+        of ``run_analysis`` instead of repeating the lookup inline.
+
+        Returns:
+            Dict mapping each parameter name to its declared default value.
+        """
+        from config import get_optimization_method
+        method_config = get_optimization_method(self.method_key)
+        return {p.name: p.default_value for p in method_config.parameters}
+
+    @property
     def supports_multi_route(self) -> bool:
         """
         Whether this method supports multi-route processing.
@@ -324,7 +340,11 @@ class AnalysisMethodBase(ABC):
         """
         Schema defining expected parameters for this method.
         Override to provide method-specific parameter validation.
-        
+
+        The base implementation is advisory/illustrative only. The values here
+        may not match the actual bounds defined in the ParameterDefinition entries
+        in config.py. Subclasses should override with their specific constraints.
+
         Returns:
             dict: Parameter schema with types, defaults, and validation rules
         """
@@ -462,7 +482,11 @@ class AnalysisMethodBase(ABC):
         if data[x_column].isna().any():
             return False, f"Milepoint column '{x_column}' contains null values"
         if data[y_column].isna().any():
-            return False, f"Value column '{y_column}' contains null values"
+            return False, (
+                f"Y column '{y_column}' contains null or non-numeric values so the analysis cannot continue. "
+                "Configure the 'Invalid Data Handler' preprocessing method in the Pre-Gap slot to configure "
+                "options for handling invalid Y value data prior to running analysis."
+            )
         
         return True, "Valid"
     
@@ -487,11 +511,11 @@ class AnalysisMethodBase(ABC):
         x_series = cast(pd.Series, pd.to_numeric(x_raw, errors="coerce"))
         y_series = cast(pd.Series, pd.to_numeric(y_raw, errors="coerce"))
 
-        def _safe_float(value: Any) -> float:
+        def _safe_float(value: Any) -> Optional[float]:
             try:
-                return float(value) if pd.notna(value) else float("nan")
+                return float(value) if pd.notna(value) else None
             except Exception:
-                return float("nan")
+                return None
 
         x_min = x_series.min(skipna=True)
         x_max = x_series.max(skipna=True)
@@ -499,13 +523,13 @@ class AnalysisMethodBase(ABC):
         y_std = y_series.std(skipna=True)
         y_min = y_series.min(skipna=True)
         y_max = y_series.max(skipna=True)
-        
+
         return {
             'data_points': len(data),
             'milepoint_range': {
                 'start': _safe_float(x_min),
                 'end': _safe_float(x_max),
-                'span': _safe_float(x_max - x_min) if pd.notna(x_min) and pd.notna(x_max) else float("nan"),
+                'span': _safe_float(x_max - x_min) if pd.notna(x_min) and pd.notna(x_max) else None,
             },
             'value_statistics': {
                 'mean': _safe_float(y_mean),

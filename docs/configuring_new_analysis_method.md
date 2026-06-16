@@ -746,12 +746,11 @@ class AashtoCdaMethod(AnalysisMethodBase):
 
 #### 4.1 Pull parameter defaults from config
 
-AASHTO CDA reads defaults from `config.py`:
+AASHTO CDA reads defaults via the base-class helper:
 
 ```python
 # src/analysis/methods/aashto_cda.py
-method_config = get_optimization_method('aashto_cda')
-param_defaults = {param.name: param.default_value for param in method_config.parameters}
+param_defaults = self.get_param_defaults()  # looks up self.method_key in the registry
 
 alpha = kwargs.get('alpha', param_defaults['alpha'])
 method = kwargs.get('method', param_defaults['method'])
@@ -1012,22 +1011,26 @@ Multi-objective methods in this repo call shared utility modules for common oper
 
 #### Shared operators and NSGA-II helpers
 
-`src/analysis/utils/ga_utilities.py` contains reusable functions used by `MultiObjectiveMethod`:
+`src/analysis/utils/ga_utilities.py` contains reusable functions shared across all GA methods:
 
 ```python
-# src/analysis/methods/multi_objective.py
 from ..utils.ga_utilities import (
-    nsga2_tournament_selection,
+    tournament_select,            # single-objective tournament selection with caller-supplied comparator
+    nsga2_tournament_selection,   # NSGA-II dominance-aware selection
     crossover_with_retries,
     mutation_with_retries,
-    analyze_population_diversity
+    analyze_population_diversity,
+    build_ga_data_summary,        # builds the data_summary dict for AnalysisResult
+    calculate_gap_aware_target,   # gap-aware segment count target for constrained methods
 )
 ```
 
 Those utilities implement common pieces like:
 
-- NSGA-II tournament selection (`nsga2_tournament_selection`)
+- General tournament selection (`tournament_select`) — pass a comparator closure; used by single-objective, constrained, and Deb methods
+- NSGA-II dominance-aware selection (`nsga2_tournament_selection`)
 - Retry-based operators (`crossover_with_retries`, `mutation_with_retries`)
+- Unified `data_summary` construction (`build_ga_data_summary`) — preferred over inline dict blocks
 
 #### The core GA engine
 
@@ -1137,14 +1140,10 @@ class <NewMethodClass>(AnalysisMethodBase):
         - passed via **kwargs and should map to ParameterDefinition names.
         """
         start_time = time.time()
-        log = kwargs.get('log_callback') or print
+        log = kwargs.get('log_callback') or _logger.debug
 
         # 1) Resolve parameter defaults from config (single source of truth)
-        method_config = get_optimization_method(self.method_key)
-        if not method_config:
-            raise ValueError(f"Method configuration not found for '{self.method_key}'")
-
-        param_defaults = {p.name: p.default_value for p in method_config.parameters}
+        param_defaults = self.get_param_defaults()
 
         # 2) Read method parameters (example placeholders)
         # NOTE: Keep these in sync with the config parameter list.
@@ -1291,12 +1290,9 @@ class <NewMethodClass>(AnalysisMethodBase):
         **kwargs,
     ) -> AnalysisResult:
         start_time = time.time()
-        log = kwargs.get('log_callback') or print
+        log = kwargs.get('log_callback') or _logger.debug
 
-        method_config = get_optimization_method(self.method_key)
-        if not method_config:
-            raise ValueError(f"Method configuration not found for '{self.method_key}'")
-        param_defaults = {p.name: p.default_value for p in method_config.parameters}
+        param_defaults = self.get_param_defaults()
 
         # Example placeholders — update to your actual parameters.
         min_length = kwargs.get("min_length", param_defaults.get("min_length"))

@@ -18,24 +18,34 @@ _WRAPLENGTH = 280
 def _tooltip_colors(widget: tk.Widget) -> tuple[str, str]:
     """Return (background, foreground) suited to the current light/dark theme.
 
-    Uses winfo_rgb() to resolve the ttk TFrame background to actual RGB values.
-    This correctly handles macOS system color names (e.g. 'systemWindowBackgroundColor')
-    that simple string comparison cannot detect, making the result reliable across
-    platforms and both light and dark OS appearances.
+    On macOS, checks ::tk::mac::isDark first — this is set by the Tk framework
+    itself and is immune to the winfo_rgb/system-color-name resolution bug that
+    causes dark mode to be misdetected on newer macOS releases.
+
+    On other platforms, falls back to resolving the ttk TFrame background via
+    winfo_rgb() and computing luminance.
 
     Returns:
         (bg_hex, fg_hex) — explicit color strings safe to pass to tk.Label.
     """
+    is_dark = False
     try:
-        style = ttk.Style(widget)
-        bg_name = style.lookup('TFrame', 'background') or 'white'
-        r16, g16, b16 = widget.winfo_rgb(bg_name)   # 0–65535 range
-        luminance = (0.299 * r16 + 0.587 * g16 + 0.114 * b16) / 65535
-        if luminance < 0.45:
-            # Dark mode: near-black background, warm cream text
-            return '#1e1e18', '#f5f5dc'
-    except Exception:
-        pass
+        # Reliable on macOS: Tk sets this variable when the OS is in dark mode.
+        is_dark = bool(widget.tk.getvar("::tk::mac::isDark"))
+    except tk.TclError:
+        # Not macOS — fall back to luminance check on the TFrame background.
+        try:
+            style = ttk.Style(widget)
+            bg_name = style.lookup('TFrame', 'background') or 'white'
+            r16, g16, b16 = widget.winfo_rgb(bg_name)   # 0–65535 range
+            luminance = (0.299 * r16 + 0.587 * g16 + 0.114 * b16) / 65535
+            is_dark = luminance < 0.45
+        except Exception:
+            pass
+
+    if is_dark:
+        # Dark mode: near-black background, warm cream text
+        return '#1e1e18', '#f5f5dc'
     # Light mode: classic tooltip yellow, near-black text (never inherit from OS)
     return '#ffffe0', '#1a1a1a'
 

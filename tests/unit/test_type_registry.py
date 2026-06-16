@@ -3,7 +3,6 @@
 import pytest
 
 from data_sources.type_registry import (
-    DataSourceTypeConfig,
     DATA_SOURCE_TYPES,
     TYPE_BY_KEY,
     get_source_type,

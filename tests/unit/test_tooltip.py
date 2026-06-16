@@ -109,7 +109,7 @@ class TestParameterTreeTooltipMotion:
 
         captured = {}
 
-        def fake_after(delay, fn):
+        def fake_after(_delay, fn):
             captured["fn"] = fn
             return "after-id"
 

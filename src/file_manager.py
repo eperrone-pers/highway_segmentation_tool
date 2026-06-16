@@ -518,11 +518,7 @@ class FileManager:
                 filtered[actual_route_column] = normalized_routes.loc[~invalid_route_mask].astype("string")
                 data = filtered
 
-        # Keep the full dataset in memory so the user can change route/attribute
-        # column selections after loading without triggering KeyErrors.
-        required_columns = [x_col, y_col, actual_route_column]
-
-        # Validate that X and Y columns contain numeric data.
+        # Validate X column and warn on Y column non-numeric values.
         try:
             non_numeric_x = data[x_col].isna() | (~pd.to_numeric(data[x_col], errors='coerce').notna())
             if non_numeric_x.any():
@@ -535,23 +531,24 @@ class FileManager:
 
             non_numeric_y = data[y_col].isna() | (~pd.to_numeric(data[y_col], errors='coerce').notna())
             if non_numeric_y.any():
-                sample_invalid = data.loc[non_numeric_y, y_col].iloc[0]
-                messagebox.showerror("Invalid Y Column",
-                                     f"Y column '{y_col}' contains non-numeric values.\n"
-                                     f"Example invalid value: '{sample_invalid}'\n"
-                                     f"Please select a column with numeric measurement data.")
-                return False
+                n = int(non_numeric_y.sum())
+                self.app.log_message(
+                    f"Warning: {n} row{'s' if n != 1 else ''} in Y column '{y_col}' have missing or "
+                    f"non-numeric values. Configure the 'Invalid Data Handler' preprocessing method "
+                    f"in the Pre-Gap slot to handle these before running analysis."
+                )
 
         except Exception as e:
             show_error_message("Data Validation Error", f"Error validating numeric columns: {str(e)}", self.app.log_message)
             return False
 
-        # Remove rows with missing values in required columns only.
+        # Remove rows with missing X or route values; leave NaN-Y rows for preprocessing.
+        required_columns_for_drop = [x_col, actual_route_column]
         initial_count = len(data)
-        data = data.dropna(subset=required_columns)
+        data = data.dropna(subset=required_columns_for_drop)
         final_count = len(data)
         if final_count < initial_count:
-            self.app.log_message(f"Removed {initial_count - final_count} rows with missing values")
+            self.app.log_message(f"Removed {initial_count - final_count} rows with missing X or route values")
 
         # Sort by X column (position/distance).
         data = data.sort_values(x_col).reset_index(drop=True)

@@ -156,9 +156,9 @@ Optional overrides (all have working base implementations):
 - `validate_data(df, x_col, y_col)` — pre-run data validation
 - `prepare_data_summary(df, x_col, y_col)` — summary stats for result traceability
 
-### Why the controller never branches per-method
+### Why the controller rarely branches per-method
 
-`AnalysisResult.to_route_result_dict()` (`src/analysis/base.py:118`) centralizes all method-specific key logic. It detects multi-objective results via `is_multi_objective()`, constrained results by inspecting solution fields, and AASHTO-specific stats by `method_key`. The controller calls this one method and gets a flat dict that works for any method — present and future. **Adding a new method never requires touching `optimization_controller.py` or `cli_runner.py`.**
+`AnalysisResult.to_route_result_dict()` (`src/analysis/base.py:118`) centralizes all method-specific key logic. It detects multi-objective results via `is_multi_objective()`, constrained results by inspecting solution fields, and AASHTO-specific stats by `method_key`. The controller calls this one method and gets a flat dict that works for any method — present and future. **Adding a new method never requires touching `optimization_controller.py` or `cli_runner.py`** — with one exception: the `return_type` field in `OptimizationMethodConfig` controls which visualization tab is shown, and the controller dispatches on it at `optimization_controller.py:605`. Adding a new `return_type` value would require a small addition there.
 
 ### The `PreprocessingMethodBase` contract (`src/preprocessing/base.py`)
 

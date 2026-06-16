@@ -390,9 +390,11 @@ fields apply uniformly to every file in the batch.
 **`preprocessing` section:**
 
 - `enabled`: Master switch for preprocessing stages
-- `pre_gap_method` / `pre_gap_parameters`: Optional method applied before gap analysis
-- `primary_method` / `primary_parameters`: Optional main preprocessing method
+- `pre_gap_method` / `pre_gap_parameters`: Optional method applied before gap analysis. Only methods restricted to the `pre_gap` stage can be used here (currently: `invalid_data_handler`).
+- `primary_method` / `primary_parameters`: Optional main preprocessing method (currently: `tukey_fences`)
 - `secondary_method` / `secondary_parameters`: Optional later-stage preprocessing method
+
+Assigning a method to a slot it is not allowed in raises a `RunSpecError` before any analysis runs. Use `highway-seg validate-spec` to catch this upfront.
 
 ## Available Methods
 
@@ -551,6 +553,60 @@ The following `method_key` values are available (must match entries in `OPTIMIZA
   }
 }
 ```
+
+### Example 5: Handling missing Y values with Invalid Data Handler
+
+Use `pre_gap_method` to clean missing or non-numeric Y values before gap detection and analysis run. The `invalid_data_handler` method is only valid in the `pre_gap_method` slot.
+
+```json
+{
+  "input": {
+    "data_file_path": "data/pavement_data_with_gaps.csv",
+    "route_column": "ROUTE_ID",
+    "x_column": "MILEPOINT",
+    "y_column": "IRI",
+    "gap_threshold": 0.5,
+    "must_break_columns": ["PAVEMENT_TYPE"]
+  },
+  "preprocessing": {
+    "enabled": true,
+    "pre_gap_method": "invalid_data_handler",
+    "pre_gap_parameters": {
+      "y_strategy": "linear_interpolate",
+      "window_size": 3,
+      "enable_threshold": true,
+      "threshold_percent": 10.0
+    },
+    "primary_method": "tukey_fences",
+    "primary_parameters": {
+      "k_factor": 1.5,
+      "action": "interpolate"
+    }
+  },
+  "method": {
+    "method_key": "aashto_cda",
+    "method_parameters": {
+      "alpha": 0.05,
+      "method": 2,
+      "use_segment_length": true,
+      "min_segment_datapoints": 3,
+      "max_segments": null,
+      "min_section_difference": 0.0
+    }
+  },
+  "output": {
+    "output_json_path": "results/aashto_cleaned.json",
+    "overwrite": true
+  }
+}
+```
+
+**Parameter notes for `invalid_data_handler`**:
+
+- `y_strategy`: `"drop"` (default), `"moving_average"`, or `"linear_interpolate"`
+- `window_size`: Valid neighbors per side for moving average (integer ≥ 1, default 3; ignored for other strategies)
+- `enable_threshold`: `true` or `false` (default `false`). When `true`, raises an error if bad-Y fraction exceeds `threshold_percent`.
+- `threshold_percent`: Float 0–100 (default 10.0). Only checked when `enable_threshold` is `true`.
 
 **Constrained GA Parameters:**
 

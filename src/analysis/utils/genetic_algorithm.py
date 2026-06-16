@@ -286,43 +286,6 @@ class HighwaySegmentGA:
             for i, (start, end) in enumerate(self.route_analysis.gap_segments, 1):
                 _logger.debug("    Gap %d: %.3f to %.3f miles (%.3f miles)", i, start, end, end - start)
     
-    def _merge_nearby_breakpoints_for_constraints(self, breakpoints):
-        """
-        Apply additional merging based on min_length constraints.
-        
-        This is applied after our comprehensive gap analysis to ensure
-        no mandatory breakpoints create segments shorter than min_length.
-        """
-        if len(breakpoints) <= 2:  # Just start/end
-            return breakpoints
-        
-        merged = [breakpoints[0]]  # Always keep start point
-        
-        for i in range(1, len(breakpoints) - 1):  # Don't process the last point yet
-            current_bp = breakpoints[i]
-            distance_to_last = current_bp - merged[-1]
-            
-            if distance_to_last < self.min_length:
-                # This breakpoint would create a segment too short - skip it
-                _logger.debug("Constraint merging: skipping breakpoint %.3f (too close to %.3f, distance: %.3f < %.3f)", current_bp, merged[-1], distance_to_last, self.min_length)
-                continue
-            else:
-                # Check if adding this breakpoint would make the next segment too short
-                next_bp = breakpoints[i + 1] if i + 1 < len(breakpoints) else breakpoints[-1]
-                distance_to_next = next_bp - current_bp
-                
-                if distance_to_next < self.min_length and i + 1 < len(breakpoints) - 1:
-                    # Next segment would be too short - merge by skipping current breakpoint
-                    _logger.debug("Constraint merging: skipping breakpoint %.3f (would make next segment too short: %.3f < %.3f)", current_bp, distance_to_next, self.min_length)
-                    continue
-                else:
-                    merged.append(current_bp)
-        
-        merged.append(breakpoints[-1])  # Always keep end point
-        
-        return merged
-    
-
     def generate_chromosome(self):
         """
         Generate a valid random chromosome respecting all constraints.
@@ -898,13 +861,8 @@ class HighwaySegmentGA:
         if hasattr(self, 'route_analysis') and self.route_analysis and hasattr(self.route_analysis, 'gap_segments'):
             gap_segments = self.route_analysis.gap_segments or []
 
-        # Normalize gap segments to float tuples
-        gap_set = set()
-        for g in gap_segments:
-            try:
-                gap_set.add((float(g[0]), float(g[1])))
-            except Exception:
-                continue
+        # Normalize gap segments to float tuples (RouteAnalysis guarantees List[Tuple[float, float]])
+        gap_set = {(float(g[0]), float(g[1])) for g in gap_segments}
 
         def _is_gap_segment(a: float, b: float, eps: float = 1e-9) -> bool:
             if not gap_set:
@@ -1031,51 +989,6 @@ class HighwaySegmentGA:
                 x_to_idx[xp] = idx
         self._x_to_idx_map = x_to_idx
     
-    def _get_segment_stats_cached(self, start_mp, end_mp):
-        """Get cached segment statistics or compute and cache if not found"""
-        self._segment_cache_stats['total_calls'] += 1
-        
-        # Convert X values to indices
-        if self._x_to_idx_map is None:
-            self._build_x_value_index_map()
-            
-        start_idx = self._x_to_idx_map.get(start_mp)
-        end_idx = self._x_to_idx_map.get(end_mp) 
-        
-        if start_idx is None or end_idx is None:
-            # Fallback to binary search if exact match not found
-            start_idx = np.searchsorted(self.sorted_x_data, start_mp, side='left')
-            end_idx = np.searchsorted(self.sorted_x_data, end_mp, side='left')
-        
-        # Check cache
-        cache_key = (start_idx, end_idx)
-        if cache_key in self._segment_cache:
-            self._segment_cache_stats['hits'] += 1
-            return self._segment_cache[cache_key]
-        
-        # Cache miss - compute segment statistics
-        self._segment_cache_stats['misses'] += 1
-        
-        if start_idx >= end_idx:
-            # Empty segment
-            stats = (0.0, 0.0, 0)
-        else:
-            point_count = int(end_idx - start_idx)
-            if point_count <= 0:
-                stats = (0.0, 0.0, 0)
-            else:
-                sum_y = float(self._sorted_y_prefix_sum[end_idx] - self._sorted_y_prefix_sum[start_idx])
-                sum_y2 = float(self._sorted_y2_prefix_sum[end_idx] - self._sorted_y2_prefix_sum[start_idx])
-                deviation = sum_y2 - (sum_y * sum_y) / point_count
-                if deviation < 0.0:
-                    deviation = 0.0
-                length = end_mp - start_mp
-                stats = (float(deviation), float(length), point_count)
-        
-        # Cache the result
-        self._segment_cache[cache_key] = stats
-        return stats
-    
     def _fitness_with_segment_cache_internal(self, chromosome):
         """INTERNAL: Segment-cached fitness calculation (used by hybrid method)"""
         # Segment-level caching adds overhead from Python loops and dict lookups.
@@ -1122,14 +1035,6 @@ class HighwaySegmentGA:
         self._segment_cache = {}
         self._segment_cache_stats = {'hits': 0, 'misses': 0, 'total_calls': 0}
         # Clear segment cache
-    
-    def batch_fitness_evaluation(self, population):
-        """Evaluate fitness for multiple chromosomes efficiently"""
-        return [self.fitness(chrom) for chrom in population]
-    
-    def batch_multi_objective_fitness(self, population):
-        """Evaluate multi-objective fitness for multiple chromosomes efficiently"""
-        return [self.multi_objective_fitness(chrom) for chrom in population]
     
     def clear_cache(self):
         """
@@ -1279,43 +1184,6 @@ class HighwaySegmentGA:
                     ) / obj_range
         
         return distances
-    
-    def nsga2_selection(self, population, offspring):
-        """
-        NSGA-II environmental selection
-        """        
-        combined = population + offspring
-        fronts, fitness_values = self.fast_non_dominated_sort(combined)
-        
-        new_population = []
-        front_idx = 0
-        
-        while len(new_population) + len(fronts[front_idx]) <= self.population_size:
-            new_population.extend([combined[i] for i in fronts[front_idx]])
-            front_idx += 1
-        
-        if len(new_population) < self.population_size:
-            # Need to select some individuals from the next front
-            remaining = self.population_size - len(new_population)
-            distances = self.calculate_crowding_distance(fronts[front_idx], fitness_values)
-            
-            # Sort by crowding distance (descending)
-            sorted_indices = sorted(range(len(fronts[front_idx])), 
-                                  key=lambda i: distances[i], reverse=True)
-            
-            for i in range(remaining):
-                new_population.append(combined[fronts[front_idx][sorted_indices[i]]])
-        
-        return new_population
-
-    def select_parents(self, population, fitnesses, num_parents):
-        # Tournament selection (single-objective)
-        parents = []
-        for _ in range(num_parents):
-            candidates = random.sample(list(zip(population, fitnesses)), k=optimization_config.tournament_size)
-            winner = max(candidates, key=lambda x: x[1])
-            parents.append(winner[0])
-        return parents
     
     def nsga2_tournament_selection(self, population, fronts, fitness_values, crowding_distances, num_parents):
         """
@@ -1574,19 +1442,6 @@ class HighwaySegmentGA:
         if generation % 50 == 0:  # Reset crossover failures every 50 generations
             stats['crossover_failures'] = 0
     
-    def get_constraint_summary(self):
-        """Get a summary of constraint statistics for the entire session"""
-        stats = self._generation_stats
-        if stats['total_attempts'] > 0:
-            failure_rate = (stats['failed_generations'] / stats['total_attempts']) * 100
-            return {
-                'total_attempts': stats['total_attempts'],
-                'failure_rate': failure_rate,
-                'fallback_count': stats['fallback_chromosomes'],
-                'crossover_failures': stats['crossover_failures']
-            }
-        return None
-
     def mutate(self, chromosome):
         """Multi-attempt mutation with same strategy, different random inputs"""
         self._generation_stats['mutation_attempts'] += 1

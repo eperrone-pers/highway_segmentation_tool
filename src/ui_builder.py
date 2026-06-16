@@ -12,6 +12,7 @@ from config import (
     get_optimization_method_names,
     get_method_key_from_display_name,
     get_preprocessing_method_names,
+    get_preprocessing_method_names_for_stage,
     get_preprocessing_method_key_from_display_name,
     get_optimization_method
 )
@@ -38,22 +39,26 @@ class MethodConfigurationPanel(ttk.Frame):
     - Consistent look and feel across all configurations
     """
     
-    def __init__(self, parent, panel_title, app, method_registry_type="preprocessing", **kwargs):
+    def __init__(self, parent, panel_title, app, method_registry_type="preprocessing", stage=None, **kwargs):
         """
         Initialize a method configuration panel.
-        
+
         Args:
             parent: Parent widget
             panel_title: Display title for the panel (e.g., "Primary Preprocessing")
             app: Main application instance
             method_registry_type: "preprocessing" or "optimization" (determines which methods to list)
+            stage: Pipeline stage for this panel ("pre_gap", "primary", "secondary", or None).
+                When set, filters the preprocessing dropdown to only show methods compatible
+                with this stage (based on PreprocessingMethodConfig.allowed_stages).
             **kwargs: Additional arguments passed to ttk.Frame
         """
         super().__init__(parent, **kwargs)
-        
+
         self.panel_title = panel_title
         self.app = app
         self.method_registry_type = method_registry_type
+        self.stage = stage
         self.is_expanded = False  # Start collapsed
         self.method_var = tk.StringVar(value="None")
         self._saved_parameters = {}  # {method_key: {param_name: value}} - persist params when switching
@@ -82,9 +87,12 @@ class MethodConfigurationPanel(ttk.Frame):
         title_method_label = ttk.Label(header_frame, text=f"{self.panel_title}")
         title_method_label.grid(row=0, column=1, sticky="w", padx=(5, 5))
         
-        # Get method names from registry
+        # Get method names from registry, filtered by stage if specified
         if self.method_registry_type == "preprocessing":
-            method_names = ["None"] + get_preprocessing_method_names()
+            if self.stage is not None:
+                method_names = ["None"] + get_preprocessing_method_names_for_stage(self.stage)
+            else:
+                method_names = ["None"] + get_preprocessing_method_names()
         else:  # optimization
             method_names = get_optimization_method_names()
         
@@ -495,7 +503,8 @@ class UIBuilder:
             parent,
             panel_title="1. Pre-Gap Preprocessing (optional)",
             app=self.app,
-            method_registry_type="preprocessing"
+            method_registry_type="preprocessing",
+            stage="pre_gap",
         )
         self.app.pregap_preprocess_panel.grid(row=row, column=0, sticky="ew", pady=3)
         return row + 1
@@ -543,7 +552,8 @@ class UIBuilder:
             parent,
             panel_title="4. Primary Preprocessing (optional)",
             app=self.app,
-            method_registry_type="preprocessing"
+            method_registry_type="preprocessing",
+            stage="primary",
         )
         self.app.primary_preprocess_panel.grid(row=row, column=0, sticky="ew", pady=3)
         return row + 1
@@ -574,7 +584,8 @@ class UIBuilder:
             parent,
             panel_title="6. Postprocessing (optional)",
             app=self.app,
-            method_registry_type="preprocessing"
+            method_registry_type="preprocessing",
+            stage="secondary",
         )
         self.app.secondary_preprocess_panel.grid(row=row, column=0, sticky="ew", pady=3)
         return row + 1
