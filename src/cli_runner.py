@@ -29,7 +29,7 @@ from config import OptionalNumericParameter, get_optimization_method, resolve_me
 from data_loader import RouteAnalysis, analyze_route_gaps, process_route_with_preprocessing
 from data_sources.base import DataSourceConfig
 from extensible_results_manager import ExtensibleJsonResultsManager
-from route_utils import filter_data_by_route, list_routes, normalize_route_id
+from route_utils import build_composite_route_column, filter_data_by_route, list_routes, normalize_route_id
 from value_parsing import coerce_none_like
 
 if TYPE_CHECKING:
@@ -117,8 +117,19 @@ class ResolvedRunSpec:
             that triggers a forced segment break between consecutive data points.
         route_column: Column name that identifies individual routes. ``None``
             means the file is treated as a single route.
+        direction_column: Optional column whose values are concatenated with
+            ``route_column`` and ``lane_column`` to form a composite route key
+            (e.g. ``"Route1|NB|K1"``). Entirely-null columns are silently ignored.
+        lane_column: Optional column whose values are concatenated with
+            ``route_column`` and ``direction_column`` to form a composite route key.
+            Entirely-null columns are silently ignored.
+        x_min: Optional lower bound on the x-column. Rows with x < x_min are
+            dropped before route determination and analysis.
+        x_max: Optional upper bound on the x-column. Rows with x > x_max are
+            dropped before route determination and analysis.
         selected_routes: Subset of route IDs to process. ``None`` means all routes
-            found in ``route_column`` are processed.
+            found in ``route_column`` are processed. When composite keys are in use,
+            supply the full composite string (e.g. ``"Route1|NB|K1"``).
         must_break_columns: Column names whose value changes force a mandatory
             breakpoint regardless of the GA solution (e.g., district or jurisdiction
             boundaries). ``None`` means no forced attribute breaks.
@@ -157,7 +168,12 @@ class ResolvedRunSpec:
     output_json_path: Path
     overwrite: bool
 
+    # Optional fields — always have defaults so existing callers need not be updated.
     data_source_config: Optional[DataSourceConfig] = None
+    direction_column: Optional[str] = None
+    lane_column: Optional[str] = None
+    x_min: Optional[float] = None
+    x_max: Optional[float] = None
 
 
 def _now_utc() -> str:
@@ -299,6 +315,22 @@ def load_and_resolve_run_spec(spec_path: str | os.PathLike[str], *, validate: bo
             raise RunSpecError("input.secondary_break_columns must be an array of strings or null")
         secondary_break_columns = [str(c).strip() for c in secondary_break_raw if str(c).strip()]
 
+    direction_column_raw = input_block.get("direction_column", None)
+    direction_column: Optional[str] = None
+    if direction_column_raw is not None:
+        direction_column = str(direction_column_raw).strip() or None
+
+    lane_column_raw = input_block.get("lane_column", None)
+    lane_column: Optional[str] = None
+    if lane_column_raw is not None:
+        lane_column = str(lane_column_raw).strip() or None
+
+    x_min_raw = input_block.get("x_min", None)
+    x_min: Optional[float] = float(x_min_raw) if x_min_raw is not None else None
+
+    x_max_raw = input_block.get("x_max", None)
+    x_max: Optional[float] = float(x_max_raw) if x_max_raw is not None else None
+
     method_key = str(method_block["method_key"]).strip()
     method_parameters = method_block.get("method_parameters") or {}
     if not isinstance(method_parameters, dict):
@@ -380,6 +412,10 @@ def load_and_resolve_run_spec(spec_path: str | os.PathLike[str], *, validate: bo
         y_column=y_column,
         gap_threshold=gap_threshold,
         route_column=route_column,
+        direction_column=direction_column,
+        lane_column=lane_column,
+        x_min=x_min,
+        x_max=x_max,
         selected_routes=selected_routes,
         must_break_columns=must_break_columns,
         secondary_break_columns=secondary_break_columns,
@@ -417,7 +453,15 @@ def _read_tabular_file(path: Path) -> pd.DataFrame:
     raise RunSpecError(f"Unsupported input file type: {path.suffix}")
 
 
-def _convert_columns_for_analysis(df: pd.DataFrame, *, x_column: str, y_column: str, route_column: Optional[str]) -> pd.DataFrame:
+def _convert_columns_for_analysis(
+    df: pd.DataFrame,
+    *,
+    x_column: str,
+    y_column: str,
+    route_column: Optional[str],
+    direction_column: Optional[str] = None,
+    lane_column: Optional[str] = None,
+) -> pd.DataFrame:
     """Coerce DataFrame columns from string dtype to appropriate types for analysis.
 
     Mirrors the GUI data-load pipeline so the CLI produces identical input to
@@ -428,7 +472,8 @@ def _convert_columns_for_analysis(df: pd.DataFrame, *, x_column: str, y_column: 
     - ``y_column`` is coerced to numeric; rows with non-numeric or missing Y values are
       left in the DataFrame as ``NaN`` with a warning logged. Configure the
       ``invalid_data_handler`` pre-gap preprocessing method to clean these before analysis.
-    - ``route_column`` (when present) is normalized to stripped strings.
+    - ``route_column``, ``direction_column``, and ``lane_column`` (when present) are
+      normalized to stripped strings and excluded from numeric coercion.
     - All other columns undergo safe numeric coercion: if every non-null value
       can be parsed as a number, the column becomes numeric. Columns that contain
       any leading-zero integers (e.g., zip codes, padded section IDs) are left as
@@ -439,10 +484,12 @@ def _convert_columns_for_analysis(df: pd.DataFrame, *, x_column: str, y_column: 
         x_column: Name of the distance/station column.
         y_column: Name of the pavement-metric column.
         route_column: Name of the route-ID column, or ``None`` for single-route files.
+        direction_column: Optional name of the direction/roadbed column.
+        lane_column: Optional name of the lane column.
 
     Returns:
-        DataFrame with x/y as numeric, route column as string, and other columns
-        coerced where safe. Rows with missing x, y, or route values are dropped.
+        DataFrame with x/y as numeric, categorical columns as string, and other columns
+        coerced where safe. Rows with missing x or route values are dropped.
 
     Raises:
         RunSpecError: If ``x_column`` or ``y_column`` is absent from the DataFrame,
@@ -454,12 +501,13 @@ def _convert_columns_for_analysis(df: pd.DataFrame, *, x_column: str, y_column: 
     if y_column not in df.columns:
         raise RunSpecError(f"Y column {y_column!r} not found in input file")
 
-    # Normalize route column to string (categorical) if present.
-    if route_column and route_column in df.columns:
+    # Normalize categorical columns (route, direction, lane) to stripped strings.
+    _categorical_cols = [c for c in (route_column, direction_column, lane_column) if c and c in df.columns]
+    for col in _categorical_cols:
         try:
-            df[route_column] = df[route_column].astype("string").str.strip()
+            df[col] = df[col].astype("string").str.strip()
         except Exception as e:
-            raise RunSpecError(f"Could not normalize route column {route_column!r} to string: {e}") from e
+            raise RunSpecError(f"Could not normalize column {col!r} to string: {e}") from e
 
     def _has_leading_zero_integers(series: pd.Series) -> bool:
         try:
@@ -478,9 +526,10 @@ def _convert_columns_for_analysis(df: pd.DataFrame, *, x_column: str, y_column: 
             return series
         return numeric
 
+    _skip_numeric = set(_categorical_cols)
     # Convert X/Y to numeric; for other columns, attempt safe numeric conversion.
     for col in list(df.columns):
-        if route_column and col == route_column:
+        if col in _skip_numeric:
             continue
         if col == x_column or col == y_column:
             df[col] = pd.to_numeric(df[col], errors="coerce")
@@ -683,18 +732,83 @@ def _run_analysis_from_resolved_spec(
         input_file_stem = spec.data_file_path.stem
 
     df = _convert_columns_for_analysis(
-        raw_df, x_column=spec.x_column, y_column=spec.y_column, route_column=spec.route_column
+        raw_df,
+        x_column=spec.x_column,
+        y_column=spec.y_column,
+        route_column=spec.route_column,
+        direction_column=spec.direction_column,
+        lane_column=spec.lane_column,
     )
+
+    # Build composite route column BEFORE x-range filtering so we can compare
+    # the pre/post-filter route lists and log any routes dropped by the filter.
+    component_order: List[str] = []
+    if spec.direction_column or spec.lane_column:
+        try:
+            df, effective_route_column, component_order = build_composite_route_column(
+                df, spec.route_column, spec.direction_column, spec.lane_column
+            )
+        except ValueError as exc:
+            raise RunSpecError(str(exc)) from exc
+        if effective_route_column and effective_route_column != spec.route_column:
+            log(
+                f"Composite route key built from: {component_order} "
+                f"→ column '{effective_route_column}'"
+            )
+    else:
+        effective_route_column = spec.route_column
+
+    # Capture route set before x-range filtering so we can report which routes
+    # lose all their data after the filter is applied.
+    _pre_filter_routes: Optional[set] = None
+    if (spec.x_min is not None or spec.x_max is not None) and effective_route_column:
+        if effective_route_column in df.columns:
+            _pre_filter_routes = set(list_routes(df, effective_route_column))
+
+    # Apply x-range filter.
+    if spec.x_min is not None:
+        before = len(df)
+        df = df[df[spec.x_column] >= spec.x_min].copy()
+        excluded = before - len(df)
+        if excluded:
+            log(f"X-range filter: excluded {excluded} row(s) with {spec.x_column} < {spec.x_min}")
+    if spec.x_max is not None:
+        before = len(df)
+        df = df[df[spec.x_column] <= spec.x_max].copy()
+        excluded = before - len(df)
+        if excluded:
+            log(f"X-range filter: excluded {excluded} row(s) with {spec.x_column} > {spec.x_max}")
+
+    # Log routes that had all their rows removed by the x-range filter.
+    if _pre_filter_routes and effective_route_column and effective_route_column in df.columns:
+        _post_filter_routes = set(list_routes(df, effective_route_column))
+        _dropped = _pre_filter_routes - _post_filter_routes
+        x_range_str = (
+            f"[{spec.x_min if spec.x_min is not None else '–'}, "
+            f"{spec.x_max if spec.x_max is not None else '–'}]"
+        )
+        for _route_id in sorted(_dropped):
+            log(
+                f"Route {_route_id!r} skipped — no data within x-range {x_range_str} "
+                f"(all rows excluded by x-range filter)"
+            )
+
+    if effective_route_column is None and df.empty and (spec.x_min is not None or spec.x_max is not None):
+        x_range_str = (
+            f"[{spec.x_min if spec.x_min is not None else '–'}, "
+            f"{spec.x_max if spec.x_max is not None else '–'}]"
+        )
+        raise RunSpecError(f"No data remains within x-range {x_range_str}")
 
     # Mirror GUI behavior: in single-route mode, the GUI load pipeline creates a synthetic
     # route column in-memory (typically named "route"). This affects metadata like
     # input_file_info.column_info.total_columns.
-    if spec.route_column is None and "route" not in df.columns:
+    if effective_route_column is None and "route" not in df.columns:
         df["route"] = input_file_stem
 
     actual_route_column, all_routes, routes_to_process = _determine_routes(
         df,
-        route_column=spec.route_column,
+        route_column=effective_route_column,
         selected_routes=spec.selected_routes,
         input_file_stem=input_file_stem,
         log=log,
@@ -854,9 +968,20 @@ def _run_analysis_from_resolved_spec(
     # Structural parity: the GUI omits must_break_columns when not set.
     if spec.must_break_columns is not None:
         route_processing_info["must_break_columns"] = spec.must_break_columns
-    
+
     if spec.secondary_break_columns is not None:
         route_processing_info["secondary_break_columns"] = spec.secondary_break_columns
+
+    if spec.direction_column is not None:
+        route_processing_info["direction_column"] = spec.direction_column
+    if spec.lane_column is not None:
+        route_processing_info["lane_column"] = spec.lane_column
+    if component_order:
+        route_processing_info["composite_route_components"] = component_order
+    if spec.x_min is not None:
+        route_processing_info["x_min"] = spec.x_min
+    if spec.x_max is not None:
+        route_processing_info["x_max"] = spec.x_max
     
     # Add preprocessing config to route_processing_info for JSON export
     if spec.preprocessing_config is not None:
