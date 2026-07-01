@@ -220,6 +220,39 @@ class OptimizationResultsSaver:
             if secondary_break_cols and isinstance(secondary_break_cols, list) and any(secondary_break_cols):
                 route_processing_config['secondary_break_columns'] = [str(c).strip() for c in secondary_break_cols if str(c).strip()]
 
+            # Direction / lane columns and milepoint range — needed for route_info decomposition
+            # and for reproducibility.
+            from route_utils import normalize_route_column_selection as _nrcs
+
+            def _safe_str_var(attr_name):
+                """Return string value of a tkinter StringVar, or None if not a real str."""
+                attr = getattr(self.app, attr_name, None)
+                if attr is None:
+                    return None
+                try:
+                    v = attr.get()
+                    return v if isinstance(v, str) else None
+                except Exception:
+                    return None
+
+            direction_col = _nrcs(_safe_str_var('direction_column'))
+            lane_col = _nrcs(_safe_str_var('lane_column'))
+            if direction_col is not None:
+                route_processing_config['direction_column'] = direction_col
+            if lane_col is not None:
+                route_processing_config['lane_column'] = lane_col
+
+            component_order = getattr(self.app, '_active_component_order', None)
+            if isinstance(component_order, list) and component_order:
+                route_processing_config['composite_route_components'] = list(component_order)
+
+            x_min = getattr(self.app, 'x_min', None)
+            x_max = getattr(self.app, 'x_max', None)
+            if isinstance(x_min, (int, float)):
+                route_processing_config['x_min'] = x_min
+            if isinstance(x_max, (int, float)):
+                route_processing_config['x_max'] = x_max
+
             json_output_path = manager.save_analysis_results(
                 analysis_results,
                 json_path,

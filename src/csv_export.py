@@ -3,8 +3,14 @@
 Reads the JSON output produced by the analysis pipeline and writes a flat CSV
 where each row is one segment from the best (first pareto) solution per route.
 
-Columns: route_id, segment_index, start, end, length, point_count,
-         <y_col>_avg, <y_col>_min, <y_col>_max, <y_col>_std, is_mandatory
+Base columns: route_id[, route][, direction][, lane], segment_index, start, end,
+              length, point_count, <y_col>_avg, <y_col>_min, <y_col>_max,
+              <y_col>_std, is_mandatory
+
+When a composite route key was used (direction_column and/or lane_column active),
+the individual ``route``, ``direction``, and ``lane`` fields present in
+``route_info`` are inserted as separate columns immediately after ``route_id``.
+Only columns that were active (present in ``route_info``) are emitted.
 """
 
 from __future__ import annotations
@@ -18,6 +24,9 @@ import pandas as pd
 
 _logger = logging.getLogger(__name__)
 
+# Ordered list of optional component column names as they should appear in CSV.
+_COMPONENT_FIELDS = ("route", "direction", "lane")
+
 
 def segments_to_dataframe(json_data: Dict[str, Any]) -> pd.DataFrame:
     """Build a flat segments DataFrame from parsed JSON results.
@@ -25,6 +34,10 @@ def segments_to_dataframe(json_data: Dict[str, Any]) -> pd.DataFrame:
     Uses the first pareto point (best / representative solution) for each
     route. For single-objective and constrained methods this is the only
     point; for NSGA-II it is the first Pareto-front solution.
+
+    When the results contain composite route keys (direction_column or
+    lane_column was active), the individual ``route``, ``direction``, and
+    ``lane`` fields are added as columns immediately after ``route_id``.
 
     Args:
         json_data: Parsed JSON results dict as produced by the analysis
@@ -44,7 +57,16 @@ def segments_to_dataframe(json_data: Dict[str, Any]) -> pd.DataFrame:
     rows: List[Dict[str, Any]] = []
 
     for route_result in json_data.get("route_results", []):
-        route_id = route_result.get("route_info", {}).get("route_id", "unknown")
+        route_info = route_result.get("route_info", {})
+        route_id = route_info.get("route_id", "unknown")
+
+        # Collect whichever optional component fields are present in route_info.
+        component_values: Dict[str, str] = {
+            field: route_info[field]
+            for field in _COMPONENT_FIELDS
+            if field in route_info
+        }
+
         pareto_points = (
             route_result.get("processing_results", {}).get("pareto_points", [])
         )
@@ -63,9 +85,10 @@ def segments_to_dataframe(json_data: Dict[str, Any]) -> pd.DataFrame:
             continue
 
         for seg in segment_details:
-            rows.append(
+            row: Dict[str, Any] = {"route_id": route_id}
+            row.update(component_values)
+            row.update(
                 {
-                    "route_id": route_id,
                     "segment_index": seg.get("segment_index"),
                     "start": seg.get("start"),
                     "end": seg.get("end"),
@@ -78,6 +101,7 @@ def segments_to_dataframe(json_data: Dict[str, Any]) -> pd.DataFrame:
                     "is_mandatory": seg.get("is_mandatory"),
                 }
             )
+            rows.append(row)
 
     return pd.DataFrame(rows)
 

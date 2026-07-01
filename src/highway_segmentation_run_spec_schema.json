@@ -127,7 +127,39 @@
         "selected_routes": {
           "type": ["array", "null"],
           "items": { "type": "string", "minLength": 1 },
-          "description": "Optional explicit list of routes to process. If null/omitted, process all routes"
+          "description": "Optional explicit list of routes to process. If null/omitted, process all routes. When direction_column or lane_column are configured, route IDs are composite strings (e.g. 'Route1|NB|K1') — list those composite keys here to filter."
+        },
+
+        "direction_column": {
+          "description": "Optional column containing roadbed/direction identifier (e.g. NB, SB, K1, K6). Concatenated with route_column and lane_column to form a composite route key.",
+          "anyOf": [
+            {"type": "string", "minLength": 1},
+            {"type": "null"}
+          ]
+        },
+
+        "lane_column": {
+          "description": "Optional column containing lane identifier. Concatenated with route_column and direction_column to form a composite route key.",
+          "anyOf": [
+            {"type": "string", "minLength": 1},
+            {"type": "null"}
+          ]
+        },
+
+        "x_min": {
+          "description": "Optional minimum x-value (milepoint). Rows where the x-column value is less than x_min are excluded before analysis.",
+          "anyOf": [
+            {"type": "number"},
+            {"type": "null"}
+          ]
+        },
+
+        "x_max": {
+          "description": "Optional maximum x-value (milepoint). Rows where the x-column value is greater than x_max are excluded before analysis.",
+          "anyOf": [
+            {"type": "number"},
+            {"type": "null"}
+          ]
         },
 
         "must_break_columns": {
