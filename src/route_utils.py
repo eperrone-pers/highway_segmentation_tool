@@ -16,9 +16,17 @@ import math
 from typing import Any, Dict, List, Optional
 
 
-# UI sentinel used in the route-column dropdown to indicate single-route mode.
-# Centralized here so it is consistent across UI, controller, and visualization.
+# UI sentinels used in the route/direction/lane dropdowns to indicate "not selected".
+# Centralized here so they are consistent across UI, controller, and visualization.
 ROUTE_COLUMN_NONE_SENTINEL = "None - treat as single route"
+DIRECTION_COLUMN_NONE_SENTINEL = "No Direction Field Selected"
+LANE_COLUMN_NONE_SENTINEL = "No Lane Field Selected"
+
+_NONE_SENTINELS = frozenset({
+    ROUTE_COLUMN_NONE_SENTINEL,
+    DIRECTION_COLUMN_NONE_SENTINEL,
+    LANE_COLUMN_NONE_SENTINEL,
+})
 
 # Internal/sentinel route IDs that should never be treated as real routes.
 # Stored in lower-case for easy comparisons against normalized lower-case values.
@@ -368,15 +376,14 @@ def normalize_route_column_selection(value: Any) -> Optional[str]:
     Rules:
     - None -> None
     - Empty/whitespace-only -> None
-    - Exact match of ROUTE_COLUMN_NONE_SENTINEL -> None
+    - Any UI sentinel (ROUTE_COLUMN_NONE_SENTINEL, DIRECTION_COLUMN_NONE_SENTINEL,
+      LANE_COLUMN_NONE_SENTINEL) -> None
     - Otherwise -> stripped string
     """
     if value is None:
         return None
 
     text = str(value).strip()
-    if not text:
-        return None
-    if text == ROUTE_COLUMN_NONE_SENTINEL:
+    if not text or text in _NONE_SENTINELS:
         return None
     return text

@@ -16,6 +16,8 @@ from tkinter import filedialog, messagebox
 from config import UIConfig
 from route_utils import (
     ROUTE_COLUMN_NONE_SENTINEL,
+    DIRECTION_COLUMN_NONE_SENTINEL,
+    LANE_COLUMN_NONE_SENTINEL,
     build_composite_route_column,
     list_routes,
     normalize_route_column_selection,
@@ -281,12 +283,14 @@ class FileManager:
                 if current_y == "Load data first..." or current_y not in columns:
                     self.app.y_column.set("")
                     self.app.log_message(f"Cleared Y column selection (was '{current_y}', not in new file)")
-            col_options = [ROUTE_COLUMN_NONE_SENTINEL] + columns
+            route_options = [ROUTE_COLUMN_NONE_SENTINEL] + columns
+            direction_options = [DIRECTION_COLUMN_NONE_SENTINEL] + columns
+            lane_options = [LANE_COLUMN_NONE_SENTINEL] + columns
             if hasattr(self.app, 'route_column_combo'):
-                self.app.route_column_combo['values'] = col_options
-                self.app.log_message(f"Updated route column combo with {len(col_options)} options: {col_options}")
+                self.app.route_column_combo['values'] = route_options
+                self.app.log_message(f"Updated route column combo with {len(route_options)} options: {route_options}")
                 current_route_col = self.app.route_column.get()
-                if current_route_col and current_route_col not in col_options:
+                if current_route_col and current_route_col not in route_options:
                     self.app.route_column.set(ROUTE_COLUMN_NONE_SENTINEL)
                     self.app.log_message(f"Reset route column selection: '{current_route_col}' not found in new file")
                 elif normalize_route_column_selection(current_route_col) is None:
@@ -294,13 +298,13 @@ class FileManager:
             else:
                 self.app.log_message("Warning: route_column_combo widget not found!")
             if hasattr(self.app, 'direction_column_combo'):
-                self.app.direction_column_combo['values'] = col_options
-                if self.app.direction_column.get() not in col_options:
-                    self.app.direction_column.set(ROUTE_COLUMN_NONE_SENTINEL)
+                self.app.direction_column_combo['values'] = direction_options
+                if self.app.direction_column.get() not in direction_options:
+                    self.app.direction_column.set(DIRECTION_COLUMN_NONE_SENTINEL)
             if hasattr(self.app, 'lane_column_combo'):
-                self.app.lane_column_combo['values'] = col_options
-                if self.app.lane_column.get() not in col_options:
-                    self.app.lane_column.set(ROUTE_COLUMN_NONE_SENTINEL)
+                self.app.lane_column_combo['values'] = lane_options
+                if self.app.lane_column.get() not in lane_options:
+                    self.app.lane_column.set(LANE_COLUMN_NONE_SENTINEL)
             
             # INTENTIONALLY LEAVE COLUMNS EMPTY - Force explicit user selection
             # This prevents auto-selection mistakes when switching between files
@@ -887,9 +891,9 @@ class FileManager:
                     if col == route_col:
                         self.app.route_column.set(ROUTE_COLUMN_NONE_SENTINEL)
                     elif col == direction_col:
-                        self.app.direction_column.set(ROUTE_COLUMN_NONE_SENTINEL)
+                        self.app.direction_column.set(DIRECTION_COLUMN_NONE_SENTINEL)
                     elif col == lane_col:
-                        self.app.lane_column.set(ROUTE_COLUMN_NONE_SENTINEL)
+                        self.app.lane_column.set(LANE_COLUMN_NONE_SENTINEL)
                 show_error_message(
                     "Column Not Found",
                     f"Column(s) {missing} not found in the selected data file.\n\n"

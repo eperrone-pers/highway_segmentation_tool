@@ -18,7 +18,7 @@ from config import (
 )
 from data_sources.type_registry import get_display_names as get_source_type_display_names
 from value_parsing import parse_optional_float, parse_optional_int
-from route_utils import ROUTE_COLUMN_NONE_SENTINEL
+from route_utils import ROUTE_COLUMN_NONE_SENTINEL, DIRECTION_COLUMN_NONE_SENTINEL, LANE_COLUMN_NONE_SENTINEL
 from parameter_tree_view import ParameterTreeView, DEFAULT_TREEVIEW_HEIGHT
 from tooltip import ParameterTreeTooltip, attach_tooltip
 
@@ -453,45 +453,64 @@ class UIBuilder:
         self.app.route_column_combo.grid(row=0, column=0, sticky="w")
         self.app.route_column_combo.bind('<<ComboboxSelected>>', self.app.on_route_column_change)
 
-        self.app.filter_routes_button = ttk.Button(route_controls_frame, text="Filter",
-                                                  command=self.app.open_route_filter_dialog,
+        self.app.filter_routes_button = ttk.Button(route_controls_frame, text="Filter Data...",
+                                                  command=self.app.open_data_filter_dialog,
                                                   state="disabled")
         self.app.filter_routes_button.grid(row=0, column=1, padx=(3, 0))
+        self.app.filter_data_button = self.app.filter_routes_button  # same widget, two references
 
         self.app.route_info_label = ttk.Label(route_controls_frame, text="", foreground="steelblue")
         self.app.route_info_label.grid(row=0, column=2, padx=(5, 0), sticky="w")
 
-        # Row 3: X Column (Distance)
-        ttk.Label(setup_frame, text="X Column (Distance):").grid(row=3, column=0, sticky="w", pady=(5, 0))
+        # Row 3: Direction column (optional — subdivides each route by direction/roadbed)
+        ttk.Label(setup_frame, text="Direction Column (Optional):").grid(row=3, column=0, sticky="w", pady=(5, 0))
+        self.app.direction_column_combo = ttk.Combobox(
+            setup_frame, textvariable=self.app.direction_column, width=20, state="readonly"
+        )
+        self.app.direction_column_combo.set(DIRECTION_COLUMN_NONE_SENTINEL)
+        self.app.direction_column_combo.grid(row=3, column=1, sticky="w", padx=ui_config.standard_padding_x, pady=(5, 0))
+        self.app.direction_column_combo.bind('<<ComboboxSelected>>', self.app.on_direction_column_change)
+
+        # Row 4: Lane column (optional — subdivides by lane)
+        ttk.Label(setup_frame, text="Lane Column (Optional):").grid(row=4, column=0, sticky="w", pady=(5, 0))
+        self.app.lane_column_combo = ttk.Combobox(
+            setup_frame, textvariable=self.app.lane_column, width=20, state="readonly"
+        )
+        self.app.lane_column_combo.set(LANE_COLUMN_NONE_SENTINEL)
+        self.app.lane_column_combo.grid(row=4, column=1, sticky="w", padx=ui_config.standard_padding_x, pady=(5, 0))
+        self.app.lane_column_combo.bind('<<ComboboxSelected>>', self.app.on_lane_column_change)
+
+        # Row 5: X Column (Distance)
+        ttk.Label(setup_frame, text="X Column (Distance):").grid(row=5, column=0, sticky="w", pady=(5, 0))
         self.app.x_column_combo = ttk.Combobox(setup_frame, textvariable=self.app.x_column,
                                               width=20, state="readonly")
         self.app.x_column_combo.set("Load data first...")
-        self.app.x_column_combo.grid(row=3, column=1, sticky="w", padx=ui_config.standard_padding_x, pady=(5, 0))
+        self.app.x_column_combo.grid(row=5, column=1, sticky="w", padx=ui_config.standard_padding_x, pady=(5, 0))
         self.app.x_column_combo.bind('<<ComboboxSelected>>', self.app.on_column_change)
 
-        # Row 4: Y Column (Data Values)
-        ttk.Label(setup_frame, text="Y Column (Data Values):").grid(row=4, column=0, sticky="w", pady=(5, 0))
+        # Row 6: Y Column (Data Values)
+        ttk.Label(setup_frame, text="Y Column (Data Values):").grid(row=6, column=0, sticky="w", pady=(5, 0))
         self.app.y_column_combo = ttk.Combobox(setup_frame, textvariable=self.app.y_column,
                                               width=20, state="readonly")
         self.app.y_column_combo.set("Load data first...")
-        self.app.y_column_combo.grid(row=4, column=1, sticky="w", padx=ui_config.standard_padding_x, pady=(5, 0))
+        self.app.y_column_combo.grid(row=6, column=1, sticky="w", padx=ui_config.standard_padding_x, pady=(5, 0))
         self.app.y_column_combo.bind('<<ComboboxSelected>>', self.app.on_column_change)
 
-        # Row 5: Output Data File (Results)
-        ttk.Label(setup_frame, text="Output Data File:").grid(row=5, column=0, sticky="w", pady=(10, 0))
+        # Row 7: Output Data File (Results)
+        ttk.Label(setup_frame, text="Output Data File:").grid(row=7, column=0, sticky="w", pady=(10, 0))
         self.app.save_name_entry = ttk.Entry(setup_frame, textvariable=self.app.custom_save_name,
                                        width=ui_config.entry_field_width_large)
-        self.app.save_name_entry.grid(row=5, column=1, sticky="ew", padx=ui_config.standard_padding_x, pady=(10, 0))
+        self.app.save_name_entry.grid(row=7, column=1, sticky="ew", padx=ui_config.standard_padding_x, pady=(10, 0))
         ttk.Button(setup_frame, text="Browse...",
-                  command=self.app.browse_save_location).grid(row=5, column=2, padx=ui_config.standard_padding_x, pady=(10, 0), sticky="w")
+                  command=self.app.browse_save_location).grid(row=7, column=2, padx=ui_config.standard_padding_x, pady=(10, 0), sticky="w")
 
-        # Row 6: Reset button + auto-save info
+        # Row 8: Reset button + auto-save info
         ttk.Button(setup_frame, text="Reset to Defaults",
-                  command=self.app.reset_parameters).grid(row=6, column=0, sticky="w", pady=(10, 0))
+                  command=self.app.reset_parameters).grid(row=8, column=0, sticky="w", pady=(10, 0))
 
         info_label = ttk.Label(setup_frame, text="Parameters auto-save when optimization starts and on exit.",
                               font=("Arial", 8), foreground="gray")
-        info_label.grid(row=6, column=1, columnspan=2, sticky="w", pady=(10, 0))
+        info_label.grid(row=8, column=1, columnspan=2, sticky="w", pady=(10, 0))
         
         return row + 1
     

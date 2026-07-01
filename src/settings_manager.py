@@ -12,7 +12,12 @@ from tkinter import messagebox
 from typing import Dict, Any
 
 from config import get_optimization_method
-from route_utils import normalize_route_column_selection
+from route_utils import (
+    normalize_route_column_selection,
+    ROUTE_COLUMN_NONE_SENTINEL,
+    DIRECTION_COLUMN_NONE_SENTINEL,
+    LANE_COLUMN_NONE_SENTINEL,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +71,8 @@ class SettingsManager:
                 'x_column': '',
                 'y_column': '',
                 'route_column': '',
+                'direction_column': '',
+                'lane_column': '',
                 'gap_threshold': 10000,
                 # Multi-select list of input columns that force mandatory breakpoints
                 # whenever their value changes (attribute-based must-break).
@@ -349,12 +356,23 @@ class SettingsManager:
                 suspicious_patterns = ['Gap Threshold', 'X Column', 'Y Column', 'Route Column']
                 if any(pattern in route_col_value for pattern in suspicious_patterns):
                     app.log_message(f"Rejecting corrupted route_column value from settings: '{route_col_value}'")
-                    from route_utils import ROUTE_COLUMN_NONE_SENTINEL
                     app.route_column.set(ROUTE_COLUMN_NONE_SENTINEL)
                 else:
                     app.route_column.set(route_col_value)
             else:
                 app.route_column.set(route_col_value)
+        if 'direction_column' in ui_state and hasattr(app, 'direction_column'):
+            _dir = ui_state.get('direction_column') or ''
+            app.direction_column.set(
+                DIRECTION_COLUMN_NONE_SENTINEL if not _dir or normalize_route_column_selection(_dir) is None
+                else _dir
+            )
+        if 'lane_column' in ui_state and hasattr(app, 'lane_column'):
+            _lane = ui_state.get('lane_column') or ''
+            app.lane_column.set(
+                LANE_COLUMN_NONE_SENTINEL if not _lane or normalize_route_column_selection(_lane) is None
+                else _lane
+            )
 
         try:
             raw = ui_state.get('must_break_columns', [])
