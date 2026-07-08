@@ -16,6 +16,9 @@ from tkinter import filedialog, messagebox
 from config import UIConfig
 from route_utils import (
     ROUTE_COLUMN_NONE_SENTINEL,
+    DIRECTION_COLUMN_NONE_SENTINEL,
+    LANE_COLUMN_NONE_SENTINEL,
+    build_composite_route_column,
     list_routes,
     normalize_route_column_selection,
     normalize_route_id,
@@ -23,6 +26,21 @@ from route_utils import (
 
 # Create UI config instance
 ui_config = UIConfig()
+
+
+def _get_str_var(app, attr_name: str):
+    """Return the string value of a tkinter StringVar attribute, or None.
+
+    Guards against Mock objects (used in tests) whose .get() returns a non-string.
+    """
+    attr = getattr(app, attr_name, None)
+    if attr is None:
+        return None
+    try:
+        val = attr.get()
+        return val if isinstance(val, str) else None
+    except Exception:
+        return None
 
 
 def is_test_environment():
@@ -265,31 +283,41 @@ class FileManager:
                 if current_y == "Load data first..." or current_y not in columns:
                     self.app.y_column.set("")
                     self.app.log_message(f"Cleared Y column selection (was '{current_y}', not in new file)")
+            route_options = [ROUTE_COLUMN_NONE_SENTINEL] + columns
+            direction_options = [DIRECTION_COLUMN_NONE_SENTINEL] + columns
+            lane_options = [LANE_COLUMN_NONE_SENTINEL] + columns
             if hasattr(self.app, 'route_column_combo'):
-                # Add "None" option at the beginning for route column
-                route_options = [ROUTE_COLUMN_NONE_SENTINEL] + columns
                 self.app.route_column_combo['values'] = route_options
                 self.app.log_message(f"Updated route column combo with {len(route_options)} options: {route_options}")
-                
-                # Check if current route column selection is still valid
                 current_route_col = self.app.route_column.get()
                 if current_route_col and current_route_col not in route_options:
-                    # Current selection is no longer valid - reset to "None"
                     self.app.route_column.set(ROUTE_COLUMN_NONE_SENTINEL)
                     self.app.log_message(f"Reset route column selection: '{current_route_col}' not found in new file")
                 elif normalize_route_column_selection(current_route_col) is None:
-                    # Reset to "None" if currently showing placeholder/sentinel or empty
                     self.app.route_column.set(ROUTE_COLUMN_NONE_SENTINEL)
             else:
                 self.app.log_message("Warning: route_column_combo widget not found!")
+            if hasattr(self.app, 'direction_column_combo'):
+                self.app.direction_column_combo['values'] = direction_options
+                if self.app.direction_column.get() not in direction_options:
+                    self.app.direction_column.set(DIRECTION_COLUMN_NONE_SENTINEL)
+            if hasattr(self.app, 'lane_column_combo'):
+                self.app.lane_column_combo['values'] = lane_options
+                if self.app.lane_column.get() not in lane_options:
+                    self.app.lane_column.set(LANE_COLUMN_NONE_SENTINEL)
             
             # INTENTIONALLY LEAVE COLUMNS EMPTY - Force explicit user selection
             # This prevents auto-selection mistakes when switching between files
             # User must consciously choose the correct X and Y columns
             self.app.log_message("Column selections cleared - please select X and Y columns manually")
                     
+            # Enable filter button whenever data is loaded (not just when route col is set)
+            # so users can always set a milepoint range.
+            if hasattr(self.app, 'filter_routes_button') and self.app.filter_routes_button is not None:
+                self.app.filter_routes_button.config(state="normal")
+
             # After loading columns, if a route column was previously selected, detect routes
-            if (hasattr(self.app, 'route_column') and 
+            if (hasattr(self.app, 'route_column') and
                 normalize_route_column_selection(self.app.route_column.get()) is not None):
                 self.app.log_message("Re-detecting routes after column reload...")
                 self.detect_available_routes()
@@ -479,8 +507,12 @@ class FileManager:
                 return series
             return numeric
 
+        direction_col = normalize_route_column_selection(_get_str_var(self.app, 'direction_column'))
+        lane_col = normalize_route_column_selection(_get_str_var(self.app, 'lane_column'))
+        _preserve_as_string = {c for c in (actual_route_column, direction_col, lane_col) if c}
+
         for col in list(data.columns):
-            if col == actual_route_column:
+            if col in _preserve_as_string:
                 continue
             if col == x_col or col == y_col:
                 data[col] = pd.to_numeric(data[col], errors="coerce")
@@ -558,8 +590,20 @@ class FileManager:
         # mode the route column is synthetic so repeated milepoints are legitimate.
         # Exact duplicates (same x AND same y) are dropped automatically.
         # Conflicting duplicates (same x, different y) are a data error.
+        #
+        # When direction_column / lane_column are active, include them in the
+        # uniqueness key so that rows for different lanes or directions at the
+        # same milepoint are NOT treated as duplicates of each other.
+        dedup_key = [actual_route_column, x_col]
+        if user_selected_route_column:
+            _direction_col = normalize_route_column_selection(_get_str_var(self.app, 'direction_column'))
+            _lane_col = normalize_route_column_selection(_get_str_var(self.app, 'lane_column'))
+            for _extra in [_direction_col, _lane_col]:
+                if _extra and _extra in data.columns and _extra not in dedup_key:
+                    dedup_key.append(_extra)
+
         dup_mask = (
-            data.duplicated(subset=[actual_route_column, x_col], keep=False)
+            data.duplicated(subset=dedup_key, keep=False)
             if user_selected_route_column
             else pd.Series(False, index=data.index)
         )
@@ -569,20 +613,23 @@ class FileManager:
             exact_dup_count = 0
             exact_dup_messages = []
 
-            for (route_val, x_val), group in dup_data.groupby(
-                [actual_route_column, x_col], sort=False
-            ):
+            for keys, group in dup_data.groupby(dedup_key, sort=False):
+                assert isinstance(keys, tuple), "dedup_key always has >=2 elements"
+                route_val, x_val = keys[0], keys[1]
+                extra_parts = "".join(
+                    f", {dedup_key[i]}={keys[i]}" for i in range(2, len(keys))
+                )
                 distinct_y = group[y_col].nunique(dropna=True)
                 if distinct_y <= 1:
                     dropped = len(group) - 1
                     exact_dup_count += dropped
                     exact_dup_messages.append(
-                        f"  Route '{route_val}', {x_col}={x_val}: dropped {dropped} duplicate row(s)"
+                        f"  Route '{route_val}', {x_col}={x_val}{extra_parts}: dropped {dropped} duplicate row(s)"
                     )
                 else:
                     y_list = group[y_col].tolist()
                     conflict_messages.append(
-                        f"  Route '{route_val}', {x_col}={x_val}: {y_col} values = {y_list}"
+                        f"  Route '{route_val}', {x_col}={x_val}{extra_parts}: {y_col} values = {y_list}"
                     )
 
             if conflict_messages:
@@ -604,7 +651,7 @@ class FileManager:
 
             if exact_dup_count > 0:
                 data = data.drop_duplicates(
-                    subset=[actual_route_column, x_col], keep="first"
+                    subset=dedup_key, keep="first"
                 ).reset_index(drop=True)
                 self.app.log_message(
                     f"Removed {exact_dup_count} exact duplicate row(s) "
@@ -802,18 +849,28 @@ class FileManager:
             self.app.selected_routes = None
 
     def detect_available_routes(self):
-        """Detect and populate available routes based on selected route column."""
+        """Detect and populate available routes based on selected grouping columns.
+
+        Considers route_column, direction_column, and lane_column together.
+        When multiple columns are active, builds a composite key so that each
+        unique combination is presented as a distinct route.
+        """
         data_path = self.get_data_file_path()
         active_source = getattr(self.app, '_active_data_source', None)
-        route_col = normalize_route_column_selection(self.app.route_column.get())
+        route_col = normalize_route_column_selection(_get_str_var(self.app, 'route_column'))
+        direction_col = normalize_route_column_selection(_get_str_var(self.app, 'direction_column'))
+        lane_col = normalize_route_column_selection(_get_str_var(self.app, 'lane_column'))
 
-        if route_col is None:
+        # If no grouping columns active, single-route mode — no route list needed.
+        if route_col is None and direction_col is None and lane_col is None:
             self.app.available_routes = []
             self.app.selected_routes = None
             return
 
         if not data_path and active_source is not None:
-            self._detect_routes_from_db_source(active_source, route_col)
+            # DB path only supports route_col for now; fall through to legacy helper.
+            if route_col is not None:
+                self._detect_routes_from_db_source(active_source, route_col)
             return
 
         if not data_path:
@@ -822,76 +879,95 @@ class FileManager:
             return
 
         try:
-            # First, read the CSV headers to verify the column exists
+            # Validate all specified columns exist before loading.
             df_headers = pd.read_csv(data_path, nrows=0)
-            if route_col not in df_headers.columns:
-                available_columns = list(df_headers.columns)
-                self.app.log_message(f"ERROR: Column '{route_col}' not found in CSV file")
-                self.app.log_message(f"Available columns: {available_columns}")
-                
-                # Auto-reset to "None" to prevent repeated errors
-                self.app.route_column.set(ROUTE_COLUMN_NONE_SENTINEL)
-                
+            all_cols = list(df_headers.columns)
+            cols_to_load = [c for c in (route_col, direction_col, lane_col) if c is not None]
+            missing = [c for c in cols_to_load if c not in all_cols]
+            if missing:
+                for col in missing:
+                    self.app.log_message(f"ERROR: Column '{col}' not found in CSV file")
+                    self.app.log_message(f"Available columns: {all_cols}")
+                    if col == route_col:
+                        self.app.route_column.set(ROUTE_COLUMN_NONE_SENTINEL)
+                    elif col == direction_col:
+                        self.app.direction_column.set(DIRECTION_COLUMN_NONE_SENTINEL)
+                    elif col == lane_col:
+                        self.app.lane_column.set(LANE_COLUMN_NONE_SENTINEL)
                 show_error_message(
-                    "Column Not Found", 
-                    f"Route column '{route_col}' not found in the selected data file.\n\n" +
-                    "This may happen when switching between different CSV files.\n\n" +
-                    "Available columns:\n" + "\n".join(f"• {col}" for col in available_columns) +
-                    "\n\nThe route column has been reset to 'None'. " +
-                    "Please select a valid route column if you need multi-route processing.",
-                    self.app.log_message
+                    "Column Not Found",
+                    f"Column(s) {missing} not found in the selected data file.\n\n"
+                    "The affected column selection(s) have been reset to 'None'.\n\n"
+                    "Available columns:\n" + "\n".join(f"• {c}" for c in all_cols),
+                    self.app.log_message,
                 )
                 self.app.available_routes = []
                 self.app.selected_routes = None
                 return
 
-            # Load just the route column to get distinct values
-            df = pd.read_csv(data_path, usecols=[route_col], dtype={route_col: str})
+            # Load only the grouping columns.
+            dtype_map = {c: str for c in cols_to_load}
+            df = pd.read_csv(data_path, usecols=cols_to_load, dtype=dtype_map)
 
-            # B1 behavior: rows with missing/invalid route IDs are excluded from analysis.
-            # So do NOT create a "Default" bucket; instead, ignore invalid route IDs here.
-            normalized = df[route_col].apply(normalize_route_id)
+            if direction_col is not None or lane_col is not None:
+                # Multi-column: build composite so every unique combination is a group.
+                df_composite, effective_col, active_order = build_composite_route_column(
+                    df, route_col, direction_col, lane_col
+                )
+                if effective_col is None:
+                    # All grouping columns entirely null → single-route mode.
+                    self.app.available_routes = []
+                    self.app.selected_routes = None
+                    self.app._active_component_order = []
+                    return
+                work_df, work_col = df_composite, effective_col
+            else:
+                # Single-column: use route_col directly, preserving B1 null-exclusion behavior.
+                work_df, work_col = df, route_col
+                active_order = [route_col] if route_col else []
+
+            normalized = work_df[work_col].apply(normalize_route_id)
             invalid_count = int(normalized.isna().sum())
 
-            distinct_routes = list_routes(df, route_col)
+            distinct_routes = list_routes(work_df, work_col)
 
             if invalid_count > 0:
                 self.app.log_message(
-                    f"Ignored {invalid_count} record(s) with missing route IDs in column '{route_col}'. "
+                    f"Ignored {invalid_count} record(s) with missing route IDs. "
                     "Those records will be excluded from multi-route analysis."
                 )
 
             if len(distinct_routes) == 0:
-                # All route IDs are missing/invalid. This is a hard error in multi-route mode.
                 self.app.log_message(
-                    f"ERROR: No valid route IDs found in column '{route_col}'. "
-                    "All rows have missing route IDs."
+                    "ERROR: No valid route groups found. All rows have missing group IDs."
                 )
                 show_error_message(
                     "No Valid Routes",
-                    f"All records in the selected route column '{route_col}' are missing/invalid.\n\n"
+                    "All records in the selected grouping columns are missing/invalid.\n\n"
                     "Multi-route analysis cannot proceed.\n\n"
-                    "Choose a different route column, or select 'None - treat as single route'.",
+                    "Choose different columns, or select 'None' to treat as a single route.",
                     self.app.log_message,
                 )
-                self.app.route_column.set(ROUTE_COLUMN_NONE_SENTINEL)
                 self.app.available_routes = []
                 self.app.selected_routes = None
                 return
 
             self.app.available_routes = distinct_routes
+            self.app._active_component_order = active_order
 
-            # Default: no filter (use all routes). Preserve an explicit prior selection
-            # only if every selected route still exists in the new data.
+            # Preserve a prior selection only when all selected routes still exist.
             current = getattr(self.app, 'selected_routes', None)
             if not current:
-                self.app.selected_routes = None  # no filter = use all
+                self.app.selected_routes = None
             else:
                 valid = [r for r in current if r in distinct_routes]
                 self.app.selected_routes = valid if valid else None
 
             self.app._update_route_info_display()
-            self.app.log_message(f"Found {len(distinct_routes)} routes in column '{route_col}': {distinct_routes}")
+            self.app.log_message(
+                f"Found {len(distinct_routes)} route group(s) from column(s) "
+                f"{[c for c in (route_col, direction_col, lane_col) if c]}: {distinct_routes}"
+            )
 
         except FileNotFoundError:
             self.app.log_message(f"ERROR: Data file not found: {data_path}")

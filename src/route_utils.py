@@ -13,12 +13,20 @@ Important: This module intentionally avoids importing pandas/numpy/tkinter.
 from __future__ import annotations
 
 import math
-from typing import Any, Optional
+from typing import Any, Dict, List, Optional
 
 
-# UI sentinel used in the route-column dropdown to indicate single-route mode.
-# Centralized here so it is consistent across UI, controller, and visualization.
+# UI sentinels used in the route/direction/lane dropdowns to indicate "not selected".
+# Centralized here so they are consistent across UI, controller, and visualization.
 ROUTE_COLUMN_NONE_SENTINEL = "None - treat as single route"
+DIRECTION_COLUMN_NONE_SENTINEL = "No Direction Field Selected"
+LANE_COLUMN_NONE_SENTINEL = "No Lane Field Selected"
+
+_NONE_SENTINELS = frozenset({
+    ROUTE_COLUMN_NONE_SENTINEL,
+    DIRECTION_COLUMN_NONE_SENTINEL,
+    LANE_COLUMN_NONE_SENTINEL,
+})
 
 # Internal/sentinel route IDs that should never be treated as real routes.
 # Stored in lower-case for easy comparisons against normalized lower-case values.
@@ -243,6 +251,121 @@ def prepare_routes_for_optimization(
     return prepared_routes, preprocessed_data_by_route
 
 
+_COMPOSITE_ROUTE_COLUMN = "__composite_route__"
+
+
+def build_composite_route_column(
+    df,
+    route_col: Optional[str],
+    direction_col: Optional[str],
+    lane_col: Optional[str],
+) -> tuple:
+    """Build a composite route column from route, direction, and lane components.
+
+    Determines which of the three columns are "active" (contain at least one
+    non-null, non-empty value across all rows), then combines them into a single
+    composite identifier separated by ``"|"``.  This is the entry point for
+    multi-component route grouping; all downstream code uses the returned
+    *effective_route_col* as a normal route column — it never needs to know a
+    composite was formed.
+
+    Active-column rules:
+    - A column specified as ``None`` is skipped.
+    - A column whose every row normalizes to ``None`` (entirely null/empty) is
+      treated as inactive and silently dropped.
+    - Within an active column, individual null/empty row values become the
+      literal string ``"NULL"`` so those rows form their own distinct group
+      (e.g. ``"Route1|NULL|K1"``).
+
+    Return cases:
+    - 0 active columns → single-route mode; returns ``(df, None, [])``.
+    - 1–3 active columns → creates ``"__composite_route__"`` on a copy of *df*
+      (even for a single active column, so null values normalize to the
+      literal ``"NULL"`` consistently) and returns
+      ``(modified_df, "__composite_route__", active_cols)``.
+
+    Args:
+        df: DataFrame containing the route/direction/lane columns.
+        route_col: Name of the route column, or None.
+        direction_col: Name of the direction column, or None.
+        lane_col: Name of the lane column, or None.
+
+    Returns:
+        Tuple of ``(df, effective_route_col, component_order)`` where:
+
+        - *df* is the (possibly modified) DataFrame.
+        - *effective_route_col* is the column name to use downstream as the
+          route column, or ``None`` for single-route mode.
+        - *component_order* is the list of active source column names in join
+          order (e.g. ``["RDB", "DIRECTION", "LANE"]``).  Empty only when no
+          columns are active (single-route mode).
+
+    Raises:
+        ValueError: If a specified (non-None) column name is absent from *df*.
+    """
+    for col in (route_col, direction_col, lane_col):
+        if col is not None and col not in df.columns:
+            raise ValueError(
+                f"Column '{col}' not found in DataFrame. "
+                f"Available columns: {list(df.columns)}"
+            )
+
+    # Evaluate active columns in fixed order: route → direction → lane.
+    candidates = [c for c in (route_col, direction_col, lane_col) if c is not None]
+    active_cols = [
+        col for col in candidates
+        if df[col].apply(normalize_route_id).notna().any()
+    ]
+
+    if not active_cols:
+        return df, None, []
+
+    def _row_composite(row) -> str:
+        parts = []
+        for col in active_cols:
+            normalized = normalize_route_id(row[col])
+            parts.append(normalized if normalized is not None else "NULL")
+        return "|".join(parts)
+
+    df = df.copy()
+    df[_COMPOSITE_ROUTE_COLUMN] = df.apply(_row_composite, axis=1)
+    return df, _COMPOSITE_ROUTE_COLUMN, list(active_cols)
+
+
+def decompose_route_id(
+    route_id: str,
+    component_order: List[str],
+    direction_column: Optional[str],
+    lane_column: Optional[str],
+) -> Dict[str, str]:
+    """Split a composite route ID back into per-role fields.
+
+    Args:
+        route_id: The composite key, e.g. ``"Route1|NB|K1"``.
+        component_order: Ordered list of source column names that were joined
+            to form *route_id* (e.g. ``["RDB", "DIRECTION", "LANE"]``).
+        direction_column: Name of the direction source column, if any.
+        lane_column: Name of the lane source column, if any.
+
+    Returns:
+        Dict with any of the keys ``"route"``, ``"direction"``, ``"lane"``
+        populated for each active component. Returns ``{"route": route_id}``
+        when *component_order* is empty.
+    """
+    if not component_order:
+        return {"route": route_id}
+    parts = route_id.split("|", len(component_order) - 1)
+    result: Dict[str, str] = {}
+    for col_name, value in zip(component_order, parts):
+        if col_name == direction_column:
+            result["direction"] = value
+        elif col_name == lane_column:
+            result["lane"] = value
+        else:
+            result["route"] = value
+    return result
+
+
 def normalize_route_column_selection(value: Any) -> Optional[str]:
     """Normalize a route column selection from the UI.
 
@@ -253,15 +376,14 @@ def normalize_route_column_selection(value: Any) -> Optional[str]:
     Rules:
     - None -> None
     - Empty/whitespace-only -> None
-    - Exact match of ROUTE_COLUMN_NONE_SENTINEL -> None
+    - Any UI sentinel (ROUTE_COLUMN_NONE_SENTINEL, DIRECTION_COLUMN_NONE_SENTINEL,
+      LANE_COLUMN_NONE_SENTINEL) -> None
     - Otherwise -> stripped string
     """
     if value is None:
         return None
 
     text = str(value).strip()
-    if not text:
-        return None
-    if text == ROUTE_COLUMN_NONE_SENTINEL:
+    if not text or text in _NONE_SENTINELS:
         return None
     return text

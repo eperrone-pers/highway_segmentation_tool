@@ -11,6 +11,7 @@ from pathlib import Path
 
 from config import get_optimization_method
 from value_parsing import SetEncoder
+from route_utils import decompose_route_id
 
 # Import analysis framework
 try:
@@ -20,6 +21,7 @@ except ImportError:
         "Cannot import AnalysisResult from 'analysis.base'. "
         "Ensure the project's 'src' directory is on PYTHONPATH/sys.path."
     )
+
 
 
 class JsonResultsManager:
@@ -298,20 +300,24 @@ class JsonResultsManager:
         
         return config
     
-    def _build_route_results(self, results_list: List[AnalysisResult]) -> List[Dict[str, Any]]:
+    def _build_route_results(
+        self,
+        results_list: List[AnalysisResult],
+        route_processing_info: Optional[Dict[str, Any]] = None,
+    ) -> List[Dict[str, Any]]:
         """
         Build the route_results section of the JSON.
-        
+
         This converts each AnalysisResult into the schema format with:
         - Route identification and processing context
-        - Input data analysis summary 
+        - Input data analysis summary
         - Processing results with optimization outcomes
         """
         route_results = []
-        
+
         for i, result in enumerate(results_list):
             route_data = {
-                "route_info": self._build_route_info(result),
+                "route_info": self._build_route_info(result, route_processing_info),
                 "input_data_analysis": self._build_input_data_analysis(result),
                 "processing_results": self._build_processing_results(result)
             }
@@ -327,11 +333,29 @@ class JsonResultsManager:
         
         return route_results
     
-    def _build_route_info(self, result: AnalysisResult) -> Dict[str, Any]:
-        """Build route identification section."""
-        return {
-            "route_id": result.route_id
-        }
+    def _build_route_info(
+        self,
+        result: AnalysisResult,
+        route_processing_info: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Build route identification section.
+
+        When *route_processing_info* contains ``composite_route_components``,
+        the composite ``route_id`` is split and individual ``route``,
+        ``direction``, and/or ``lane`` fields are added alongside it.
+        """
+        info: Dict[str, Any] = {"route_id": result.route_id}
+        if route_processing_info:
+            components = route_processing_info.get("composite_route_components")
+            if components:
+                decomposed = decompose_route_id(
+                    result.route_id,
+                    components,
+                    route_processing_info.get("direction_column"),
+                    route_processing_info.get("lane_column"),
+                )
+                info.update(decomposed)
+        return info
     
     def _build_input_data_analysis(self, result: AnalysisResult) -> Dict[str, Any]:
         """

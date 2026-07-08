@@ -242,6 +242,39 @@ class EnhancedVisualizationWindow:
         
         return f"Method: {method} | Routes: {total_routes} | Generations: {generations}"
         
+    def _apply_x_range_filter_to_original_data(self) -> None:
+        """Clip original_data_by_route to the x_min/x_max stored in the JSON result.
+
+        When an x-range filter was active during the analysis run, the JSON stores
+        x_min and x_max in route_processing. Restricting scatter to the same range
+        prevents the visualization from showing data points that were intentionally
+        excluded from the analysis.
+        """
+        if not self.json_results or not self.original_data_by_route:
+            return
+        route_processing = self.json_results.get('input_parameters', {}).get('route_processing', {})
+        x_min = route_processing.get('x_min')
+        x_max = route_processing.get('x_max')
+        x_col = route_processing.get('x_column')
+        if (x_min is None and x_max is None) or not x_col:
+            return
+        filtered: dict = {}
+        for route_id, df in self.original_data_by_route.items():
+            if x_col not in df.columns:
+                filtered[route_id] = df
+                continue
+            try:
+                x_series = pd.to_numeric(df[x_col], errors='coerce')
+                mask = pd.Series(True, index=df.index)
+                if x_min is not None:
+                    mask &= x_series >= float(x_min)
+                if x_max is not None:
+                    mask &= x_series <= float(x_max)
+                filtered[route_id] = df.loc[mask].copy()
+            except Exception:
+                filtered[route_id] = df
+        self.original_data_by_route = filtered
+
     def load_original_data(self):
         """Load original data from input file info in JSON schema."""
         self.original_data_by_route = {}
@@ -287,12 +320,35 @@ class EnhancedVisualizationWindow:
                 route_column = route_processing.get('route_column')
                 self._route_column_name = route_column
 
+                # For composite-mode runs (direction_column / lane_column were active),
+                # rebuild the __composite_route__ column in the freshly-read CSV so that
+                # group_original_data_by_route can match composite route IDs correctly.
+                # Without this, matching "TestRoute1|NB|K1" against the "RDB" column
+                # (which only contains "TestRoute1") always produces an empty grouping.
+                route_column_for_grouping = route_column
+                composite_components = route_processing.get('composite_route_components')
+                if (composite_components and isinstance(composite_components, list)
+                        and len(composite_components) > 1):
+                    try:
+                        from route_utils import build_composite_route_column as _build_comp
+                        _direction = route_processing.get('direction_column')
+                        _lane = route_processing.get('lane_column')
+                        _df_comp, _comp_col, _ = _build_comp(
+                            self.original_data, route_column, _direction, _lane
+                        )
+                        if _comp_col is not None:
+                            self.original_data = _df_comp
+                            route_column_for_grouping = _comp_col
+                    except Exception as _exc:
+                        _safe_print(f"[WARN] Could not rebuild composite column for grouping: {_exc}")
+
                 self.original_data_by_route = group_original_data_by_route(
                     self.original_data,
                     self.routes,
-                    route_column,
+                    route_column_for_grouping,
                 )
-                        
+                self._apply_x_range_filter_to_original_data()
+
                 _safe_print(f"[SUCCESS] Loaded original data from {file_to_load}")
                 self.loaded_original_data_path = str(Path(file_to_load).resolve())
                 try:
@@ -331,11 +387,28 @@ class EnhancedVisualizationWindow:
                 route_processing = self.json_results.get('input_parameters', {}).get('route_processing', {})
                 route_column = route_processing.get('route_column')
                 self._route_column_name = route_column
+                route_column_for_grouping = route_column
+                composite_components = route_processing.get('composite_route_components')
+                if (composite_components and isinstance(composite_components, list)
+                        and len(composite_components) > 1):
+                    try:
+                        from route_utils import build_composite_route_column as _build_comp
+                        _direction = route_processing.get('direction_column')
+                        _lane = route_processing.get('lane_column')
+                        _df_comp, _comp_col, _ = _build_comp(
+                            self.original_data, route_column, _direction, _lane
+                        )
+                        if _comp_col is not None:
+                            self.original_data = _df_comp
+                            route_column_for_grouping = _comp_col
+                    except Exception as _exc:
+                        _safe_print(f"[WARN] Could not rebuild composite column for grouping: {_exc}")
                 self.original_data_by_route = group_original_data_by_route(
                     self.original_data,
                     self.routes,
-                    route_column,
+                    route_column_for_grouping,
                 )
+                self._apply_x_range_filter_to_original_data()
                 _safe_print(f"[INFO] Populated route data from in-memory DB DataFrame ({len(self.original_data_by_route)} routes).")
             try:
                 self._refresh_secondary_column_options()
@@ -517,19 +590,8 @@ class EnhancedVisualizationWindow:
             except Exception:
                 pass
         
-    def on_route_keyrelease(self, event=None):
-        """Handle type-ahead functionality."""
-        typed_text = self.route_combo.get().lower()
-        
-        if typed_text:
-            matches = [route for route in self.routes if typed_text in route.lower()]
-            if matches:
-                self.route_combo['values'] = matches
-                # Type-ahead filtering applied
-                
     def on_route_changed(self, event=None):
         """Handle route selection change."""
-        # Route changed
         # Reset zoom state on route change (user preference)
         self._seg_x_zoom_enabled = False
         try:

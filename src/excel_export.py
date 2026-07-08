@@ -148,6 +148,50 @@ class HighwaySegmentationExcelExporter:
             logging.exception("Excel export traceback:")  # This logs the full traceback
             return False, error_msg
     
+    @property
+    def _active_component_fields(self) -> List[str]:
+        """Ordered list of component field names present in any route_info.
+
+        Returns only fields that actually appear (e.g. ["route", "direction",
+        "lane"]).  Empty when no composite key was used.  Result is cached.
+        """
+        if not hasattr(self, "_active_component_fields_cache"):
+            seen: set = set()
+            for route in self.json_data.get("route_results", []):
+                for field in ("route", "direction", "lane"):
+                    if field in route.get("route_info", {}):
+                        seen.add(field)
+            self._active_component_fields_cache = [
+                f for f in ("route", "direction", "lane") if f in seen
+            ]
+        return self._active_component_fields_cache
+
+    def _component_headers(self) -> List[str]:
+        """Header labels for active component columns (capitalized)."""
+        return [f.capitalize() for f in self._active_component_fields]
+
+    def _insert_component_headers(self, headers: List[str]) -> List[str]:
+        """Insert component header labels immediately after 'Route ID' in *headers*."""
+        idx = next((i for i, h in enumerate(headers) if h == "Route ID"), None)
+        if idx is None or not self._active_component_fields:
+            return headers
+        return headers[: idx + 1] + self._component_headers() + headers[idx + 1 :]
+
+    def _write_route_id_and_components(
+        self, ws, row: int, route_info: dict, route_id_col: int = 1
+    ) -> int:
+        """Write route_id at *route_id_col*, then component values in the next columns.
+
+        Returns the column number immediately after the last component column,
+        which is the column to use for the first non-identity data value.
+        """
+        ws.cell(row=row, column=route_id_col, value=route_info.get("route_id", ""))
+        next_col = route_id_col + 1
+        for field in self._active_component_fields:
+            ws.cell(row=row, column=next_col, value=route_info.get(field, ""))
+            next_col += 1
+        return next_col
+
     def _create_worksheet_with_headers(self, sheet_name: str, headers: List[str]) -> Worksheet:
         """Create a new sheet, write bold column headers in row 1, and return the worksheet."""
         ws = self.workbook.create_sheet(title=sheet_name)
@@ -261,11 +305,14 @@ class HighwaySegmentationExcelExporter:
     
     def _create_route_summary_tab(self):
         """Tab 3: Route Summary - Per-route data analysis"""
-        ws = self._create_worksheet_with_headers("Route Summary", [
-            "Route ID", "Data Points", "Route Start", "Route End", "Total Route Length",
-            "X Min", "X Max", "Y Min", "Y Max", "Gap Count", "Total Gap Length", 
-            "Analyzable Length", "Mandatory Breakpoints Count", "Solutions Generated"
-        ])
+        ws = self._create_worksheet_with_headers(
+            "Route Summary",
+            self._insert_component_headers([
+                "Route ID", "Data Points", "Route Start", "Route End", "Total Route Length",
+                "X Min", "X Max", "Y Min", "Y Max", "Gap Count", "Total Gap Length",
+                "Analyzable Length", "Mandatory Breakpoints Count", "Solutions Generated",
+            ]),
+        )
         
         route_results = self.json_data.get('route_results', [])
         row = 2
@@ -288,24 +335,30 @@ class HighwaySegmentationExcelExporter:
             elif 'best_solution' in processing_results:
                 solutions_count = 1
                 
-            # Add row data
-            route_data = [
-                self._safe_str(route_info.get('route_id', '')),
-                self._safe_int(data_summary.get('total_data_points', 0)),
-                self._safe_float(data_range.get('x_min', 0)),
-                self._safe_float(data_range.get('x_max', 0)),
-                self._safe_float(data_range.get('x_max', 0) - data_range.get('x_min', 0)),
-                self._safe_float(data_range.get('x_min', 0)),
-                self._safe_float(data_range.get('x_max', 0)),
-                self._safe_float(data_range.get('y_min', 0)),
-                self._safe_float(data_range.get('y_max', 0)),
-                self._safe_int(gap_analysis.get('total_gaps', 0)),
-                self._safe_float(gap_analysis.get('total_gap_length', 0)),
-                self._safe_float(mandatory_segments.get('total_analyzable_length', 0)),
-                self._safe_int(len(mandatory_segments.get('mandatory_breakpoints', []))),
-                self._safe_int(solutions_count)
+            # Add row data — route_id first, then optional component columns, then metrics.
+            component_values = [
+                route_info.get(f, "") for f in self._active_component_fields
             ]
-            
+            route_data = (
+                [self._safe_str(route_info.get('route_id', ''))]
+                + component_values
+                + [
+                    self._safe_int(data_summary.get('total_data_points', 0)),
+                    self._safe_float(data_range.get('x_min', 0)),
+                    self._safe_float(data_range.get('x_max', 0)),
+                    self._safe_float(data_range.get('x_max', 0) - data_range.get('x_min', 0)),
+                    self._safe_float(data_range.get('x_min', 0)),
+                    self._safe_float(data_range.get('x_max', 0)),
+                    self._safe_float(data_range.get('y_min', 0)),
+                    self._safe_float(data_range.get('y_max', 0)),
+                    self._safe_int(gap_analysis.get('total_gaps', 0)),
+                    self._safe_float(gap_analysis.get('total_gap_length', 0)),
+                    self._safe_float(mandatory_segments.get('total_analyzable_length', 0)),
+                    self._safe_int(len(mandatory_segments.get('mandatory_breakpoints', []))),
+                    self._safe_int(solutions_count),
+                ]
+            )
+
             for col, value in enumerate(route_data, 1):
                 ws.cell(row=row, column=col, value=value)
             row += 1
@@ -317,44 +370,46 @@ class HighwaySegmentationExcelExporter:
     
     def _create_breakpoints_gaps_tab(self):
         """Tab 4: Mandatory Breakpoints & Gaps - Combined breakpoint information"""
-        ws = self._create_worksheet_with_headers("Mandatory Breakpoints & Gaps", [
-            "Route ID", "Breakpoint #", "Milepoint", "Breakpoint Type", "Gap Length", 
-            "Reason", "Previous Segment Length", "Next Segment Length"
-        ])
+        ws = self._create_worksheet_with_headers(
+            "Mandatory Breakpoints & Gaps",
+            self._insert_component_headers([
+                "Route ID", "Breakpoint #", "Milepoint", "Breakpoint Type", "Gap Length",
+                "Reason", "Previous Segment Length", "Next Segment Length",
+            ]),
+        )
         
         route_results = self.json_data.get('route_results', [])
         row = 2
         
         for route in route_results:
-            route_id = route.get('route_info', {}).get('route_id', '')
+            route_info = route.get('route_info', {})
             data_analysis = route.get('input_data_analysis', {})
             gap_analysis = data_analysis.get('gap_analysis', {})
             mandatory_segments = data_analysis.get('mandatory_segments', {})
-            
+
             # Get mandatory breakpoints and gap segments
             breakpoints = mandatory_segments.get('mandatory_breakpoints', [])
             gap_segments = gap_analysis.get('gap_segments', [])
-            
+
             # Create breakpoint list with types and gap information
             breakpoint_info = []
-            
+
             for i, bp in enumerate(breakpoints):
                 bp_type = "route_start" if i == 0 else "route_end" if i == len(breakpoints) - 1 else "internal"
                 gap_length = ""
                 reason = "Route boundary" if bp_type in ["route_start", "route_end"] else "Internal breakpoint"
-                
-                # Check if this breakpoint is a gap start
+
                 for gap in gap_segments:
-                    if abs(self._safe_float(gap.get('start', 0)) - self._safe_float(bp)) < 0.001:  # Gap start
+                    if abs(self._safe_float(gap.get('start', 0)) - self._safe_float(bp)) < 0.001:
                         bp_type = "gap_start"
                         gap_length = self._safe_float(gap.get('length', 0))
                         reason = "Data gap detected"
                         break
-                    elif abs(self._safe_float(gap.get('end', 0)) - self._safe_float(bp)) < 0.001:  # Gap end
+                    elif abs(self._safe_float(gap.get('end', 0)) - self._safe_float(bp)) < 0.001:
                         bp_type = "gap_end"
                         reason = "Gap boundary"
                         break
-                
+
                 breakpoint_info.append({
                     'bp_num': i + 1,
                     'milepoint': self._safe_float(bp),
@@ -362,94 +417,90 @@ class HighwaySegmentationExcelExporter:
                     'gap_length': gap_length,
                     'reason': reason
                 })
-            
+
             # Calculate previous and next segment lengths
             for i, bp_info in enumerate(breakpoint_info):
                 prev_length = ""
                 next_length = ""
-                
+
                 if i > 0:
                     prev_length = self._safe_float(bp_info['milepoint']) - self._safe_float(breakpoint_info[i-1]['milepoint'])
                 if i < len(breakpoint_info) - 1:
                     next_length = self._safe_float(breakpoint_info[i+1]['milepoint']) - self._safe_float(bp_info['milepoint'])
-                
-                # Add to worksheet with formatting for gap rows
-                ws.cell(row=row, column=1, value=route_id)
-                ws.cell(row=row, column=2, value=bp_info['bp_num'])
-                ws.cell(row=row, column=3, value=bp_info['milepoint'])
-                ws.cell(row=row, column=4, value=bp_info['type'])
-                ws.cell(row=row, column=5, value=bp_info['gap_length'])
-                ws.cell(row=row, column=6, value=bp_info['reason'])
-                ws.cell(row=row, column=7, value=prev_length)
-                ws.cell(row=row, column=8, value=next_length)
-                
-                # Highlight gap rows
+
+                # c is the first data column after route_id + component columns
+                c = self._write_route_id_and_components(ws, row, route_info)
+                ws.cell(row=row, column=c,     value=bp_info['bp_num'])
+                ws.cell(row=row, column=c + 1, value=bp_info['milepoint'])
+                ws.cell(row=row, column=c + 2, value=bp_info['type'])
+                ws.cell(row=row, column=c + 3, value=bp_info['gap_length'])
+                ws.cell(row=row, column=c + 4, value=bp_info['reason'])
+                ws.cell(row=row, column=c + 5, value=prev_length)
+                ws.cell(row=row, column=c + 6, value=next_length)
+
                 if bp_info['type'] in ['gap_start', 'gap_end']:
-                    for col in range(1, 9):
-                        ws.cell(row=row, column=col).fill = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
-                
+                    for col in range(1, c + 7):
+                        ws.cell(row=row, column=col).fill = PatternFill(
+                            start_color="FFF2CC", end_color="FFF2CC", fill_type="solid"
+                        )
+
                 row += 1
-        
-        # Enhanced auto-fit columns with better widths for readability
-        column_widths = {'A': 15, 'B': 12, 'C': 12, 'D': 15, 'E': 12, 'F': 20, 'G': 18, 'H': 18}
-        for col_letter, width in column_widths.items():
-            ws.column_dimensions[col_letter].width = width
+
+        for column in ws.columns:
+            max_length = max(len(str(cell.value or "")) for cell in column)
+            ws.column_dimensions[column[0].column_letter].width = min(max_length + 2, 20)
     
     def _create_all_solutions_tab(self):
         """Tab 5: All Solutions - Every solution/Pareto point"""
-        ws = self._create_worksheet_with_headers("All Solutions", [
-            "Route ID", "Solution ID", "Point ID", "Method Type", "Solution Type",
-            "Objective 1", "Objective 2", "Objective 3", "Rank/Quality",
-            "Total Segments", "Avg Segment Length", "Min Segment", "Max Segment"
-        ])
+        ws = self._create_worksheet_with_headers(
+            "All Solutions",
+            self._insert_component_headers([
+                "Route ID", "Solution ID", "Point ID", "Method Type", "Solution Type",
+                "Objective 1", "Objective 2", "Objective 3", "Rank/Quality",
+                "Total Segments", "Avg Segment Length", "Min Segment", "Max Segment",
+            ]),
+        )
         
         route_results = self.json_data.get('route_results', [])
         analysis_method = self.json_data.get('analysis_metadata', {}).get('analysis_method', '')
         row = 2
         
         for route in route_results:
-            route_id = route.get('route_info', {}).get('route_id', '')
+            route_info = route.get('route_info', {})
+            route_id = route_info.get('route_id', '')
             processing_results = route.get('processing_results', {})
-            
-            # Determine method and solution type
+
             method_type = "multi_objective" if analysis_method == "multi" else "single_objective" if analysis_method in ["single", "constrained"] else "deterministic"
-            
+
             if 'pareto_points' in processing_results:
-                # Multi-objective: multiple Pareto points
                 pareto_points = processing_results['pareto_points']
                 for point in pareto_points:
                     point_id = point.get('point_id', '')
                     solution_id = f"{route_id}_P{point_id}"
                     objective_values = point.get('objective_values', [])
                     segmentation = point.get('segmentation', {})
-                    
-                    # Calculate segment statistics
+
                     segment_lengths = segmentation.get('segment_lengths', [])
                     total_segments = len(segment_lengths)
                     avg_segment = sum(segment_lengths) / len(segment_lengths) if segment_lengths else 0
                     min_segment = min(segment_lengths) if segment_lengths else 0
                     max_segment = max(segment_lengths) if segment_lengths else 0
-                    
-                    # Add row
-                    ws.cell(row=row, column=1, value=route_id)
-                    ws.cell(row=row, column=2, value=solution_id)
-                    ws.cell(row=row, column=3, value=point_id)
-                    ws.cell(row=row, column=4, value=method_type)
-                    ws.cell(row=row, column=5, value="pareto_point")
-                    
-                    # Objectives (up to 3)
+
+                    c = self._write_route_id_and_components(ws, row, route_info)
+                    ws.cell(row=row, column=c,     value=solution_id)
+                    ws.cell(row=row, column=c + 1, value=point_id)
+                    ws.cell(row=row, column=c + 2, value=method_type)
+                    ws.cell(row=row, column=c + 3, value="pareto_point")
                     for i, obj_val in enumerate(objective_values[:3]):
-                        ws.cell(row=row, column=6 + i, value=obj_val)
-                    
-                    ws.cell(row=row, column=9, value="")  # Rank/Quality - could be added later
-                    ws.cell(row=row, column=10, value=total_segments)
-                    ws.cell(row=row, column=11, value=avg_segment)
-                    ws.cell(row=row, column=12, value=min_segment)
-                    ws.cell(row=row, column=13, value=max_segment)
+                        ws.cell(row=row, column=c + 4 + i, value=obj_val)
+                    ws.cell(row=row, column=c + 7, value="")
+                    ws.cell(row=row, column=c + 8, value=total_segments)
+                    ws.cell(row=row, column=c + 9, value=avg_segment)
+                    ws.cell(row=row, column=c + 10, value=min_segment)
+                    ws.cell(row=row, column=c + 11, value=max_segment)
                     row += 1
-                    
+
             elif 'best_solution' in processing_results:
-                # Single objective: one best solution  
                 best_solution = processing_results['best_solution']
                 solution_id = f"{route_id}_Best"
                 segmentation = best_solution.get('segmentation', {})
@@ -461,19 +512,18 @@ class HighwaySegmentationExcelExporter:
                 min_segment = min(segment_lengths) if segment_lengths else 0
                 max_segment = max(segment_lengths) if segment_lengths else 0
                 
-                # Add row
-                ws.cell(row=row, column=1, value=route_id)
-                ws.cell(row=row, column=2, value=solution_id)
-                ws.cell(row=row, column=3, value="best")
-                ws.cell(row=row, column=4, value=method_type)
-                ws.cell(row=row, column=5, value="best_solution")
-                ws.cell(row=row, column=6, value=best_solution.get('fitness', ''))
-                ws.cell(row=row, column=10, value=total_segments)
-                ws.cell(row=row, column=11, value=avg_segment)
-                ws.cell(row=row, column=12, value=min_segment)
-                ws.cell(row=row, column=13, value=max_segment)
+                c = self._write_route_id_and_components(ws, row, route_info)
+                ws.cell(row=row, column=c,     value=solution_id)
+                ws.cell(row=row, column=c + 1, value="best")
+                ws.cell(row=row, column=c + 2, value=method_type)
+                ws.cell(row=row, column=c + 3, value="best_solution")
+                ws.cell(row=row, column=c + 4, value=best_solution.get('fitness', ''))
+                ws.cell(row=row, column=c + 8, value=total_segments)
+                ws.cell(row=row, column=c + 9, value=avg_segment)
+                ws.cell(row=row, column=c + 10, value=min_segment)
+                ws.cell(row=row, column=c + 11, value=max_segment)
                 row += 1
-        
+
         # Auto-fit columns
         for column in ws.columns:
             max_length = max(len(str(cell.value or "")) for cell in column)
@@ -481,97 +531,83 @@ class HighwaySegmentationExcelExporter:
     
     def _create_all_segmentation_output_tab(self):
         """Tab 6: All Segmentation Output - Every segment from every solution"""
-        ws = self._create_worksheet_with_headers("All Segmentation Output", [
-            "Route ID", "Solution ID", "Segment Number", "Start Milepoint", "End Milepoint",
-            "Segment Length", "Segment Type", "Data Points in Segment",
-            "Y Value Min", "Y Value Max", "Y Value Avg", "Y Value Std Dev"
-        ])
+        ws = self._create_worksheet_with_headers(
+            "All Segmentation Output",
+            self._insert_component_headers([
+                "Route ID", "Solution ID", "Segment Number", "Start Milepoint", "End Milepoint",
+                "Segment Length", "Segment Type", "Data Points in Segment",
+                "Y Value Min", "Y Value Max", "Y Value Avg", "Y Value Std Dev",
+            ]),
+        )
         
         route_results = self.json_data.get('route_results', [])
         row = 2
         
         for route in route_results:
-            route_id = route.get('route_info', {}).get('route_id', '')
+            route_info = route.get('route_info', {})
+            route_id = route_info.get('route_id', '')
             processing_results = route.get('processing_results', {})
-            
+
             if 'pareto_points' in processing_results:
-                # Multi-objective: process all Pareto points
                 pareto_points = processing_results['pareto_points']
                 for point in pareto_points:
                     point_id = point.get('point_id', '')
                     solution_id = f"{route_id}_P{point_id}"
                     segmentation = point.get('segmentation', {})
-                    
+
                     breakpoints = segmentation.get('breakpoints', [])
                     segment_lengths = segmentation.get('segment_lengths', [])
                     segment_details = segmentation.get('segment_details', [])
-                    
-                    # Create segments
+
                     for i in range(len(breakpoints) - 1):
-                        ws.cell(row=row, column=1, value=route_id)
-                        ws.cell(row=row, column=2, value=solution_id)
-                        ws.cell(row=row, column=3, value=i + 1)
-                        ws.cell(row=row, column=4, value=breakpoints[i])
-                        ws.cell(row=row, column=5, value=breakpoints[i + 1])
-                        ws.cell(row=row, column=6, value=segment_lengths[i] if i < len(segment_lengths) else "")
-                        
-                        # Get segment details for enhanced Y-statistics
+                        c = self._write_route_id_and_components(ws, row, route_info)
+                        ws.cell(row=row, column=c,     value=solution_id)
+                        ws.cell(row=row, column=c + 1, value=i + 1)
+                        ws.cell(row=row, column=c + 2, value=breakpoints[i])
+                        ws.cell(row=row, column=c + 3, value=breakpoints[i + 1])
+                        ws.cell(row=row, column=c + 4, value=segment_lengths[i] if i < len(segment_lengths) else "")
                         if i < len(segment_details):
-                            segment_detail = segment_details[i]
-                            data_points = segment_detail.get('data_point_count', 0)
-                            ws.cell(row=row, column=7, value="data" if data_points > 0 else "gap")
-                            ws.cell(row=row, column=8, value=data_points)
-                            ws.cell(row=row, column=9, value=segment_detail.get('y_value_min'))
-                            ws.cell(row=row, column=10, value=segment_detail.get('y_value_max'))
-                            ws.cell(row=row, column=11, value=segment_detail.get('y_value_avg'))
-                            ws.cell(row=row, column=12, value=segment_detail.get('y_value_std'))
+                            sd = segment_details[i]
+                            dp = sd.get('data_point_count', 0)
+                            ws.cell(row=row, column=c + 5, value="data" if dp > 0 else "gap")
+                            ws.cell(row=row, column=c + 6, value=dp)
+                            ws.cell(row=row, column=c + 7, value=sd.get('y_value_min'))
+                            ws.cell(row=row, column=c + 8, value=sd.get('y_value_max'))
+                            ws.cell(row=row, column=c + 9, value=sd.get('y_value_avg'))
+                            ws.cell(row=row, column=c + 10, value=sd.get('y_value_std'))
                         else:
-                            # Fallback if no segment details available
-                            ws.cell(row=row, column=7, value="data")  # Default to data segment
-                            ws.cell(row=row, column=8, value="")      # No data points info
-                            ws.cell(row=row, column=9, value="")      # No Y min
-                            ws.cell(row=row, column=10, value="")     # No Y max
-                            ws.cell(row=row, column=11, value="")     # No Y avg
-                            ws.cell(row=row, column=12, value="")     # No Y std
+                            for offset in range(5, 11):
+                                ws.cell(row=row, column=c + offset, value="")
                         row += 1
-                        
+
             elif 'best_solution' in processing_results:
-                # Single objective: process best solution
                 best_solution = processing_results['best_solution']
                 solution_id = f"{route_id}_Best"
                 segmentation = best_solution.get('segmentation', {})
-                
+
                 breakpoints = segmentation.get('breakpoints', [])
                 segment_lengths = segmentation.get('segment_lengths', [])
                 segment_details = segmentation.get('segment_details', [])
-                
-                # Create segments
+
                 for i in range(len(breakpoints) - 1):
-                    ws.cell(row=row, column=1, value=route_id)
-                    ws.cell(row=row, column=2, value=solution_id)
-                    ws.cell(row=row, column=3, value=i + 1)
-                    ws.cell(row=row, column=4, value=breakpoints[i])
-                    ws.cell(row=row, column=5, value=breakpoints[i + 1])
-                    ws.cell(row=row, column=6, value=segment_lengths[i] if i < len(segment_lengths) else "")
-                    
-                    # Get segment details for enhanced Y-statistics
+                    c = self._write_route_id_and_components(ws, row, route_info)
+                    ws.cell(row=row, column=c,     value=solution_id)
+                    ws.cell(row=row, column=c + 1, value=i + 1)
+                    ws.cell(row=row, column=c + 2, value=breakpoints[i])
+                    ws.cell(row=row, column=c + 3, value=breakpoints[i + 1])
+                    ws.cell(row=row, column=c + 4, value=segment_lengths[i] if i < len(segment_lengths) else "")
                     if i < len(segment_details):
-                        segment_detail = segment_details[i]
-                        data_points = segment_detail.get('data_point_count', 0)
-                        ws.cell(row=row, column=7, value="data" if data_points > 0 else "gap")
-                        ws.cell(row=row, column=8, value=data_points)
-                        ws.cell(row=row, column=9, value=segment_detail.get('y_value_min'))
-                        ws.cell(row=row, column=10, value=segment_detail.get('y_value_max'))
-                        ws.cell(row=row, column=11, value=segment_detail.get('y_value_avg'))
-                        ws.cell(row=row, column=12, value=segment_detail.get('y_value_std'))
+                        sd = segment_details[i]
+                        dp = sd.get('data_point_count', 0)
+                        ws.cell(row=row, column=c + 5, value="data" if dp > 0 else "gap")
+                        ws.cell(row=row, column=c + 6, value=dp)
+                        ws.cell(row=row, column=c + 7, value=sd.get('y_value_min'))
+                        ws.cell(row=row, column=c + 8, value=sd.get('y_value_max'))
+                        ws.cell(row=row, column=c + 9, value=sd.get('y_value_avg'))
+                        ws.cell(row=row, column=c + 10, value=sd.get('y_value_std'))
                     else:
-                        # Fallback if no segment details available
-                        ws.cell(row=row, column=7, value="data")  # Default to data segment
-                        ws.cell(row=row, column=8, value="")      # No data points info
-                        ws.cell(row=row, column=9, value="")      # No Y min
-                        ws.cell(row=row, column=10, value="")     # No Y max
-                        ws.cell(row=row, column=11, value="")     # No Y avg
-                        ws.cell(row=row, column=12, value="")     # No Y std
+                        for offset in range(5, 11):
+                            ws.cell(row=row, column=c + offset, value="")
                     row += 1
         
         # Auto-fit columns
@@ -581,30 +617,33 @@ class HighwaySegmentationExcelExporter:
     
     def _create_analyzable_segments_tab(self):
         """Tab 7: Analyzable Segments - RouteAnalysis segmentable sections"""
-        ws = self._create_worksheet_with_headers("Analyzable Segments", [
-            "Route ID", "Segment Number", "Start", "End", "Length", "Type",
-            "Data Points", "Valid for Analysis", "Gap Reason"
-        ])
-        
+        ws = self._create_worksheet_with_headers(
+            "Analyzable Segments",
+            self._insert_component_headers([
+                "Route ID", "Segment Number", "Start", "End", "Length", "Type",
+                "Data Points", "Valid for Analysis", "Gap Reason",
+            ]),
+        )
+
         route_results = self.json_data.get('route_results', [])
         row = 2
-        
+
         for route in route_results:
-            route_id = route.get('route_info', {}).get('route_id', '')
+            route_info = route.get('route_info', {})
             data_analysis = route.get('input_data_analysis', {})
             mandatory_segments = data_analysis.get('mandatory_segments', {})
             analyzable_segments = mandatory_segments.get('analyzable_segments', [])
-            
+
             for i, segment in enumerate(analyzable_segments):
-                ws.cell(row=row, column=1, value=route_id)
-                ws.cell(row=row, column=2, value=i + 1)
-                ws.cell(row=row, column=3, value=segment.get('start', ''))
-                ws.cell(row=row, column=4, value=segment.get('end', ''))
-                ws.cell(row=row, column=5, value=segment.get('length', ''))
-                ws.cell(row=row, column=6, value=segment.get('type', ''))
-                ws.cell(row=row, column=7, value=segment.get('data_points', ''))
-                ws.cell(row=row, column=8, value="Yes" if segment.get('type') == 'data' else "No")
-                ws.cell(row=row, column=9, value="" if segment.get('type') == 'data' else "Gap segment")
+                c = self._write_route_id_and_components(ws, row, route_info)
+                ws.cell(row=row, column=c,     value=i + 1)
+                ws.cell(row=row, column=c + 1, value=segment.get('start', ''))
+                ws.cell(row=row, column=c + 2, value=segment.get('end', ''))
+                ws.cell(row=row, column=c + 3, value=segment.get('length', ''))
+                ws.cell(row=row, column=c + 4, value=segment.get('type', ''))
+                ws.cell(row=row, column=c + 5, value=segment.get('data_points', ''))
+                ws.cell(row=row, column=c + 6, value="Yes" if segment.get('type') == 'data' else "No")
+                ws.cell(row=row, column=c + 7, value="" if segment.get('type') == 'data' else "Gap segment")
                 row += 1
         
         # Auto-fit columns
@@ -735,81 +774,83 @@ class HighwaySegmentationExcelExporter:
     
     def _create_processing_log_tab(self):
         """Tab 10: Processing Log - Analysis execution details"""
-        ws = self._create_worksheet_with_headers("Processing Log", [
-            "Timestamp", "Route ID", "Operation", "Status", "Message", 
-            "Duration", "Memory Usage", "Error Details"
-        ])
-        
-        # Extract processing information from metadata and route results
+        ws = self._create_worksheet_with_headers(
+            "Processing Log",
+            self._insert_component_headers([
+                "Timestamp", "Route ID", "Operation", "Status", "Message",
+                "Duration", "Memory Usage", "Error Details",
+            ]),
+        )
+
         metadata = self.json_data.get('analysis_metadata', {})
         route_results = self.json_data.get('route_results', [])
-        
+
         row = 2
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
-        # Analysis start log
+        # c0 is the first column after "Route ID" + component columns.
+        # For the system-level rows (no route_info), component cells are left blank.
+        ncomp = len(self._active_component_fields)
+        c0 = 3 + ncomp  # column after route_id (col 2) + ncomp component cols
+
         ws.cell(row=row, column=1, value=metadata.get('timestamp', current_time))
         ws.cell(row=row, column=2, value="System")
-        ws.cell(row=row, column=3, value="Analysis Start")
-        ws.cell(row=row, column=4, value="Completed")
-        ws.cell(row=row, column=5, value=f"Started {metadata.get('analysis_method', 'unknown')} analysis")
-        ws.cell(row=row, column=6, value="0.0s")
-        ws.cell(row=row, column=7, value="Initial")
-        ws.cell(row=row, column=8, value="")
+        ws.cell(row=row, column=c0,     value="Analysis Start")
+        ws.cell(row=row, column=c0 + 1, value="Completed")
+        ws.cell(row=row, column=c0 + 2, value=f"Started {metadata.get('analysis_method', 'unknown')} analysis")
+        ws.cell(row=row, column=c0 + 3, value="0.0s")
+        ws.cell(row=row, column=c0 + 4, value="Initial")
+        ws.cell(row=row, column=c0 + 5, value="")
         row += 1
-        
-        # Route processing logs
+
         for route in route_results:
-            route_id = route.get('route_info', {}).get('route_id', '')
-            
-            # Data loading
+            route_info = route.get('route_info', {})
+
+            # _write_route_id_and_components returns c0 for this row.
+            self._write_route_id_and_components(ws, row, route_info, route_id_col=2)
+
             ws.cell(row=row, column=1, value=current_time)
-            ws.cell(row=row, column=2, value=route_id)
-            ws.cell(row=row, column=3, value="Data Loading")
-            ws.cell(row=row, column=4, value="Completed")
-            ws.cell(row=row, column=5, value="Route data loaded successfully")
-            ws.cell(row=row, column=6, value="0.1s")
-            ws.cell(row=row, column=7, value="12MB")
-            ws.cell(row=row, column=8, value="")
+            ws.cell(row=row, column=c0,     value="Data Loading")
+            ws.cell(row=row, column=c0 + 1, value="Completed")
+            ws.cell(row=row, column=c0 + 2, value="Route data loaded successfully")
+            ws.cell(row=row, column=c0 + 3, value="0.1s")
+            ws.cell(row=row, column=c0 + 4, value="12MB")
+            ws.cell(row=row, column=c0 + 5, value="")
             row += 1
-            
-            # Gap analysis
+
             gap_analysis = route.get('input_data_analysis', {}).get('gap_analysis', {})
             total_gaps = gap_analysis.get('total_gaps', 0)
-            
+
+            self._write_route_id_and_components(ws, row, route_info, route_id_col=2)
             ws.cell(row=row, column=1, value=current_time)
-            ws.cell(row=row, column=2, value=route_id)
-            ws.cell(row=row, column=3, value="Gap Analysis")
-            ws.cell(row=row, column=4, value="Completed")
-            ws.cell(row=row, column=5, value=f"Detected {total_gaps} gaps")
-            ws.cell(row=row, column=6, value="0.2s")
-            ws.cell(row=row, column=7, value="15MB")
-            ws.cell(row=row, column=8, value="")
+            ws.cell(row=row, column=c0,     value="Gap Analysis")
+            ws.cell(row=row, column=c0 + 1, value="Completed")
+            ws.cell(row=row, column=c0 + 2, value=f"Detected {total_gaps} gaps")
+            ws.cell(row=row, column=c0 + 3, value="0.2s")
+            ws.cell(row=row, column=c0 + 4, value="15MB")
+            ws.cell(row=row, column=c0 + 5, value="")
             row += 1
-            
-            # Optimization
+
             processing_results = route.get('processing_results', {})
             solutions_count = len(processing_results.get('pareto_points', [])) if 'pareto_points' in processing_results else 1
-            
+
+            self._write_route_id_and_components(ws, row, route_info, route_id_col=2)
             ws.cell(row=row, column=1, value=current_time)
-            ws.cell(row=row, column=2, value=route_id) 
-            ws.cell(row=row, column=3, value="Optimization")
-            ws.cell(row=row, column=4, value="Completed")
-            ws.cell(row=row, column=5, value=f"Generated {solutions_count} solutions")
-            ws.cell(row=row, column=6, value="5.2s")
-            ws.cell(row=row, column=7, value="25MB")
-            ws.cell(row=row, column=8, value="")
+            ws.cell(row=row, column=c0,     value="Optimization")
+            ws.cell(row=row, column=c0 + 1, value="Completed")
+            ws.cell(row=row, column=c0 + 2, value=f"Generated {solutions_count} solutions")
+            ws.cell(row=row, column=c0 + 3, value="5.2s")
+            ws.cell(row=row, column=c0 + 4, value="25MB")
+            ws.cell(row=row, column=c0 + 5, value="")
             row += 1
         
-        # Export operation
         ws.cell(row=row, column=1, value=current_time)
         ws.cell(row=row, column=2, value="System")
-        ws.cell(row=row, column=3, value="Excel Export")
-        ws.cell(row=row, column=4, value="In Progress")
-        ws.cell(row=row, column=5, value="Excel export initiated")
-        ws.cell(row=row, column=6, value="0.0s")
-        ws.cell(row=row, column=7, value="18MB")
-        ws.cell(row=row, column=8, value="")
+        ws.cell(row=row, column=c0,     value="Excel Export")
+        ws.cell(row=row, column=c0 + 1, value="In Progress")
+        ws.cell(row=row, column=c0 + 2, value="Excel export initiated")
+        ws.cell(row=row, column=c0 + 3, value="0.0s")
+        ws.cell(row=row, column=c0 + 4, value="18MB")
+        ws.cell(row=row, column=c0 + 5, value="")
         
         # Auto-fit columns
         for column in ws.columns:

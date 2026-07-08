@@ -404,7 +404,7 @@ class ExtensibleJsonResultsManager:
         # Process each route
         for route_id, route_results_list in by_route.items():
             route_result = {
-                "route_info": self.base_json_manager._build_route_info(route_results_list[0]),
+                "route_info": self.base_json_manager._build_route_info(route_results_list[0], route_processing_info),
                 "input_data_analysis": self.base_json_manager._build_input_data_analysis(route_results_list[0]),
                 "processing_results": self._build_processing_results(
                     route_results_list[0], original_data_by_route, route_processing_info

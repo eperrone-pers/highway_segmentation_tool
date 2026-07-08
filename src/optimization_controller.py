@@ -17,6 +17,7 @@ from config import get_optimization_method, resolve_method_class
 from optimization_handler import OptimizationHandler
 from optimization_results_saver import OptimizationResultsSaver
 from route_utils import (
+    build_composite_route_column,
     list_routes,
     normalize_route_column_selection,
     normalize_route_id,
@@ -297,6 +298,19 @@ class OptimizationController:
         # main thread's view of the loaded dataset stays intact across multiple runs.
         local_data = self.app.data
 
+        def _col_val(attr):
+            raw = getattr(self.app, attr, None)
+            if raw is None:
+                return None
+            try:
+                v = raw.get()
+                return v if isinstance(v, str) else None
+            except Exception:
+                return None
+
+        direction_column = normalize_route_column_selection(_col_val('direction_column'))
+        lane_column = normalize_route_column_selection(_col_val('lane_column'))
+
         if is_single_route_mode:
             data_path = self.app.file_manager.get_data_file_path()
             if data_path:
@@ -337,6 +351,15 @@ class OptimizationController:
                 except Exception:
                     # If normalization/filtering fails for unexpected reasons, treat as fatal.
                     raise
+
+                # Apply composite key if direction/lane columns are active.
+                if direction_column is not None or lane_column is not None:
+                    df_comp, comp_col, _order = build_composite_route_column(
+                        local_data.route_data, actual_route_column, direction_column, lane_column
+                    )
+                    if comp_col is not None:
+                        local_data = dataclass_replace(local_data, route_data=df_comp)
+                        actual_route_column = comp_col
 
                 all_routes = list_routes(local_data.route_data, actual_route_column)
             else:

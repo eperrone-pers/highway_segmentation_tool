@@ -72,13 +72,12 @@ class VisualizationUIBuilder:
             control_frame,
             textvariable=win.route_var,
             values=win.routes,
-            state='normal',
-            width=25,
+            state='readonly',
+            width=28,
         )
         win.route_combo.pack(side='left', padx=5)
-        win.route_combo.bind('<KeyRelease>', win.on_route_keyrelease)
         win.route_combo.bind('<<ComboboxSelected>>', win.on_route_changed)
-        attach_tooltip(win.route_combo, "Select which route to display. Type to filter available routes.")
+        attach_tooltip(win.route_combo, "Select a route from the dropdown.")
 
         export_button = ttk.Button(
             control_frame, text="📊 Export to Excel", command=win._export_to_excel

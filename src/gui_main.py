@@ -21,7 +21,12 @@ from parameter_manager import ParameterManager
 from optimization_controller import OptimizationController
 from settings_manager import SettingsManager
 from config import UIConfig, AlgorithmConstants, ConstrainedOptimizationConfig
-from route_utils import ROUTE_COLUMN_NONE_SENTINEL, normalize_route_column_selection
+from route_utils import (
+    ROUTE_COLUMN_NONE_SENTINEL,
+    DIRECTION_COLUMN_NONE_SENTINEL,
+    LANE_COLUMN_NONE_SENTINEL,
+    normalize_route_column_selection,
+)
 from cli_export_dialog import CLIExportDialog
 from run_spec import (
     build_command_for_run_spec,
@@ -178,7 +183,11 @@ class HighwaySegmentationGUI:
         self.pregap_preprocess_panel = None  # Will be set by UIBuilder
         self.secondary_preprocess_panel = None  # Will be set by UIBuilder
         self.route_info_label: Optional[ttk.Label] = None
-        self.filter_routes_button: Optional[ttk.Button] = None
+        self.filter_routes_button: Optional[ttk.Button] = None  # kept for compat; same widget as filter_data_button
+        self.filter_data_button: Optional[ttk.Button] = None
+        self.x_min: Optional[float] = None
+        self.x_max: Optional[float] = None
+        self._active_component_order: List[str] = []
 
         self.data = None
         self._data_file_path = ""
@@ -190,8 +199,10 @@ class HighwaySegmentationGUI:
         # Column mapping - initialized empty, UI builder sets display text
         self.x_column = tk.StringVar(value="")
         self.y_column = tk.StringVar(value="")
-        self.route_column = tk.StringVar(value=ROUTE_COLUMN_NONE_SENTINEL)  # New route column selection
-        
+        self.route_column = tk.StringVar(value=ROUTE_COLUMN_NONE_SENTINEL)
+        self.direction_column = tk.StringVar(value=DIRECTION_COLUMN_NONE_SENTINEL)
+        self.lane_column = tk.StringVar(value=LANE_COLUMN_NONE_SENTINEL)
+
         # Framework parameters (like x/y columns)
         self.gap_threshold = tk.DoubleVar(value=10000)
 
@@ -492,6 +503,9 @@ class HighwaySegmentationGUI:
 
         self.available_routes = []
         self.selected_routes = None  # None = no filter applied; [] = user selected nothing (error)
+        self.x_min = None
+        self.x_max = None
+        self._active_component_order = []
         if self.route_info_label is not None:
             self.route_info_label.config(text="")
         if self.filter_routes_button is not None:
@@ -545,63 +559,95 @@ class HighwaySegmentationGUI:
                 self._reset_route_ui_state(reset_route_column=False)
         else:
             self._reset_route_ui_state(reset_route_column=False)
-    
-    def open_route_filter_dialog(self):
-        """Open the route filter dialog to select which routes to process."""
-        
-        if not self.available_routes:
-            # Try to automatically detect routes using current settings
-            data_path = self.file_manager.get_data_file_path()
-            active_source = getattr(self, '_active_data_source', None)
-            route_col = normalize_route_column_selection(
-                self.route_column.get() if hasattr(self, 'route_column') else None
-            )
 
-            if route_col is None:
-                messagebox.showwarning("No Route Column", "Please select a route column first before filtering routes.")
+    def on_direction_column_change(self, _event=None):
+        """Re-detect available routes when the direction column selection changes."""
+        if hasattr(self, 'file_manager'):
+            self.file_manager.detect_available_routes()
+
+    def on_lane_column_change(self, _event=None):
+        """Re-detect available routes when the lane column selection changes."""
+        if hasattr(self, 'file_manager'):
+            self.file_manager.detect_available_routes()
+
+    def open_route_filter_dialog(self):
+        """Alias kept for backward compatibility — delegates to open_data_filter_dialog."""
+        self.open_data_filter_dialog()
+
+    def open_data_filter_dialog(self):
+        """Open the unified data filter dialog for route groups and milepoint range."""
+        data_path = self.file_manager.get_data_file_path()
+        active_source = getattr(self, '_active_data_source', None)
+        has_data = bool(data_path or active_source)
+
+        if not has_data:
+            messagebox.showwarning("No Data Source", "Please load a data file before filtering.")
+            return
+
+        # Auto-detect routes if not yet loaded
+        if not self.available_routes:
+            try:
+                self.file_manager.detect_available_routes()
+            except Exception as e:
+                messagebox.showerror("Route Detection Error", f"Error detecting routes: {e}")
                 return
-            elif not data_path and active_source is None:
-                messagebox.showwarning("No Data Source", "Please connect to a data source before filtering routes.")
-                return
-            else:
-                self.log_message("No routes loaded. Attempting to detect routes from current settings...")
-                try:
-                    self.file_manager.detect_available_routes()
-                    if not self.available_routes:
-                        messagebox.showerror("Route Detection Failed",
-                                           f"Could not find any routes in column '{route_col}'. "
-                                           f"Please verify the route column selection and data source content.")
-                        return
-                except Exception as e:
-                    messagebox.showerror("Route Detection Error",
-                                       f"Error detecting routes: {str(e)}")
-                    return
-            
-        # Import and create route filter dialog
+
+        # Compute x extent from loaded data for the hint label
+        x_extent = None
+        if self.data is not None:
+            try:
+                import pandas as pd
+                x_col = self.x_column.get() if hasattr(self, 'x_column') else ""
+                if x_col and x_col in self.data.route_data.columns:
+                    xs = pd.to_numeric(self.data.route_data[x_col], errors="coerce").dropna()
+                    if len(xs) > 0:
+                        x_extent = (float(xs.min()), float(xs.max()))
+            except Exception:
+                pass
+
+        route_col = normalize_route_column_selection(self.route_column.get())
+        direction_col = normalize_route_column_selection(self.direction_column.get())
+        lane_col = normalize_route_column_selection(self.lane_column.get())
+
         try:
-            from route_filter_dialog import RouteFilterDialog
-            self.log_message("Opening route filter dialog...")
-            
-            dialog = RouteFilterDialog(self.root, self.available_routes, self.selected_routes)
-            result = dialog.show()
-            
+            from data_filter_dialog import DataFilterDialog
+            self.log_message("Opening data filter dialog...")
+            dlg = DataFilterDialog(
+                self.root,
+                available_routes=self.available_routes,
+                component_order=getattr(self, '_active_component_order', None) or [],
+                route_column=route_col,
+                direction_column=direction_col,
+                lane_column=lane_col,
+                selected_routes=self.selected_routes,
+                x_min=self.x_min,
+                x_max=self.x_max,
+                x_extent=x_extent,
+            )
+            result = dlg.show()
+
             if result is not None:
-                self.selected_routes = result if result else None  # empty selection → None (use all)
+                self.selected_routes = result["selected_routes"]
+                self.x_min = result["x_min"]
+                self.x_max = result["x_max"]
                 self._update_route_info_display()
                 count = len(self.selected_routes) if self.selected_routes else len(self.available_routes)
-                self.log_message(f"Route selection updated: {count} routes selected")
+                x_info = ""
+                if self.x_min is not None or self.x_max is not None:
+                    lo = f"{self.x_min}" if self.x_min is not None else ""
+                    hi = f"{self.x_max}" if self.x_max is not None else ""
+                    x_info = f", milepoint range: [{lo}, {hi}]"
+                self.log_message(f"Filter updated: {count} route group(s) selected{x_info}")
             else:
-                self.log_message("Route filter dialog cancelled or failed")
-                
+                self.log_message("Data filter dialog cancelled")
+
         except Exception as e:
-            error_msg = f"Failed to open route filter dialog: {str(e)}"
+            error_msg = f"Failed to open filter dialog: {e}"
             self.log_message(f"ERROR: {error_msg}")
-            # Use simpler error dialog for better macOS compatibility
             try:
                 messagebox.showerror("Dialog Error", error_msg)
             except Exception:
-                # Fallback if messagebox also fails
-                self.log_message(f"Critical error: {error_msg}")
+                pass
 
     def _update_must_break_columns_display(self) -> None:
         label = getattr(self, 'must_break_columns_summary', None)
@@ -698,20 +744,26 @@ class HighwaySegmentationGUI:
         label.config(text="None" if len(cleaned) == 0 else f"{len(cleaned)} selected")
     
     def _update_route_info_display(self):
-        """Update the route info label to show selected route count."""
+        """Update the route info label to show selected route count and x-range."""
         if self.route_info_label is None:
             return
 
+        parts = []
         if self.available_routes:
-            total_routes = len(self.available_routes)
-            # None means "no filter — all routes"; a list means an explicit selection.
+            total = len(self.available_routes)
             if self.selected_routes is None:
-                self.route_info_label.config(text=f"All {total_routes} routes")
+                parts.append(f"All {total} routes")
             else:
-                selected_count = len(self.selected_routes)
-                self.route_info_label.config(text=f"{selected_count} of {total_routes} selected")
-        else:
-            self.route_info_label.config(text="")
+                parts.append(f"{len(self.selected_routes)} of {total} selected")
+
+        x_min = getattr(self, 'x_min', None)
+        x_max = getattr(self, 'x_max', None)
+        if x_min is not None or x_max is not None:
+            lo = f"{x_min}" if x_min is not None else ""
+            hi = f"{x_max}" if x_max is not None else ""
+            parts.append(f"MP [{lo}, {hi}]")
+
+        self.route_info_label.config(text="  |  ".join(parts))
     
     # Dynamic Parameter Helper Methods
     def _get_dynamic_parameter(self, param_name, default_value):
@@ -805,8 +857,14 @@ class HighwaySegmentationGUI:
         route_column_raw = self.route_column.get() if hasattr(self, 'route_column') else None
         route_column = normalize_route_column_selection(route_column_raw)
 
+        direction_column_raw = self.direction_column.get() if hasattr(self, 'direction_column') else None
+        direction_column = normalize_route_column_selection(direction_column_raw)
+
+        lane_column_raw = self.lane_column.get() if hasattr(self, 'lane_column') else None
+        lane_column = normalize_route_column_selection(lane_column_raw)
+
         selected_routes = None
-        if route_column is not None:
+        if route_column is not None or direction_column is not None or lane_column is not None:
             sr = getattr(self, 'selected_routes', None)
             if isinstance(sr, (list, tuple)) and sr:
                 selected_routes = [str(r) for r in sr]
@@ -842,6 +900,10 @@ class HighwaySegmentationGUI:
             'method_key': str(method_key),
             'method_parameters': {str(k): _json_safe(v) for k, v in method_parameters.items()},
             'route_column': route_column,
+            'direction_column': direction_column,
+            'lane_column': lane_column,
+            'x_min': getattr(self, 'x_min', None),
+            'x_max': getattr(self, 'x_max', None),
             'selected_routes': [str(r) for r in selected_routes] if selected_routes is not None else None,
             'must_break_columns': must_break_columns,
             'secondary_break_columns': secondary_break_columns,
@@ -867,6 +929,10 @@ class HighwaySegmentationGUI:
             must_break_columns=state['must_break_columns'],
             secondary_break_columns=state['secondary_break_columns'],
             route_column=state['route_column'],
+            direction_column=state.get('direction_column'),
+            lane_column=state.get('lane_column'),
+            x_min=state.get('x_min'),
+            x_max=state.get('x_max'),
             selected_routes=state['selected_routes'],
             method_key=state['method_key'],
             method_parameters=state['method_parameters'],
@@ -971,6 +1037,10 @@ class HighwaySegmentationGUI:
             self.log_message(f"  Y Column: {self.y_column.get()}")
         if hasattr(self, 'route_column'):
             self.log_message(f"  Route Column: {self.route_column.get()}")
+        if hasattr(self, 'direction_column'):
+            self.log_message(f"  Direction Column: {self.direction_column.get()}")
+        if hasattr(self, 'lane_column'):
+            self.log_message(f"  Lane Column: {self.lane_column.get()}")
         if hasattr(self, 'custom_save_name'):
             self.log_message(f"  Custom Save Name: {self.custom_save_name.get()}")
         
@@ -1042,6 +1112,10 @@ class HighwaySegmentationGUI:
             tracked_vars.append(self.gap_threshold)
         if hasattr(self, 'route_column'):
             tracked_vars.append(self.route_column)
+        if hasattr(self, 'direction_column'):
+            tracked_vars.append(self.direction_column)
+        if hasattr(self, 'lane_column'):
+            tracked_vars.append(self.lane_column)
 
         for var in tracked_vars:
             try:
@@ -1136,6 +1210,10 @@ class HighwaySegmentationGUI:
                 self.settings['ui_state']['gap_threshold'] = self.gap_threshold.get()
             if hasattr(self, 'route_column'):
                 self.settings['ui_state']['route_column'] = self.route_column.get()
+            if hasattr(self, 'direction_column'):
+                self.settings['ui_state']['direction_column'] = self.direction_column.get()
+            if hasattr(self, 'lane_column'):
+                self.settings['ui_state']['lane_column'] = self.lane_column.get()
 
             try:
                 cols = getattr(self, 'must_break_columns', [])
